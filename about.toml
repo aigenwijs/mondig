@@ -1,0 +1,32 @@
+# cargo-about: maakt THIRD_PARTY_NOTICES voor de Rust-afhankelijkheden.
+# Gebruik: cargo about generate about.hbs > THIRD_PARTY_NOTICES.md
+# Zelfde licentielijst als deny.toml. Het gegenereerde bestand gaat niet in git.
+private = { ignore = true }
+accepted = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "0BSD",
+  "BlueOak-1.0.0",
+  # Mozilla-rootcertificaten in webpki-roots (via ureq, feature download); permissieve datalicentie.
+  # Toegevoegd 31-10-2026 (fase 2a), per kwartaal herzien.
+  "CDLA-Permissive-2.0",
+  # Lettertypen Sora en Geist via Fontsource (ADR 0010). Toegevoegd 01-11-2026, per kwartaal herzien.
+  "OFL-1.1",
+]
+targets = [
+  "x86_64-pc-windows-msvc",
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+]
+# Eigen crates (publish = false) horen niet in de lijst met derde partijen.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+workarounds = []

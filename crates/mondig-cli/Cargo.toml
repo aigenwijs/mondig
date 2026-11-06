@@ -1,0 +1,21 @@
+[package]
+name = "mondig-cli"
+description = "Opdrachtregel van Mondig voor ontwikkelaars, tests en benchmarks"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+ctrlc = "3.5.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+mondig-core = { path = "../mondig-core", features = ["download", "opname", "bewaren", "taalmodel"] }
+# Voor het atomair schrijven van `vergader uitschrijven --uit`, zoals de app dat doet.
+tempfile = "3.27.0"
+
+[lints]
+workspace = true

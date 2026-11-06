@@ -1,0 +1,204 @@
+/* Mondig: de eigen visuele taal van Mondig (ADR 0014) op Tailwind 4 (ADR 0010). Tokens in twee
+   lagen: vaste waarden (lettertypen, maten, beweging) en semantische kleuren die meewisselen
+   met licht en donker. Donker en licht volgen Windows (prefers-color-scheme). */
+@import 'tailwindcss';
+@import '@fontsource-variable/sora';
+@import '@fontsource-variable/geist';
+
+/* Laag 1: lettertypen, maten en beweging. Spacing volgt het 4px-raster van Tailwind. */
+@theme {
+  --font-kop: 'Sora Variable', 'Inter', system-ui, sans-serif;
+  --font-tekst: 'Geist Variable', 'Inter', system-ui, sans-serif;
+
+  /* Radius 6 voor knoppen, velden en toetsen; 10 voor vlakken. */
+  --radius-klein: 6px;
+  --radius-groot: 10px;
+
+  /* Basistekst 14 px: leesbaarheid voor niet-technische gebruikers op laptops (ADR 0014,
+     aanvulling 4-11-2026). Niets zichtbaars onder 12 px. */
+  --text-sectie: 12px;
+  --text-sectie--line-height: 1.35;
+  --text-klein: 13px;
+  --text-klein--line-height: 1.4;
+  --text-basis: 14px;
+  --text-basis--line-height: 1.5;
+  --text-midden: 15px;
+  --text-midden--line-height: 1.5;
+  --text-groot: 16px;
+  --text-groot--line-height: 1.5;
+  --text-kop2: 18px;
+  --text-kop2--line-height: 1.3;
+  --text-kop: 22px;
+  --text-kop--line-height: 1.25;
+
+  /* Schaduw van de zwevende pil, zodat hij loskomt van wat eronder ligt. */
+  --shadow-pil: 0 4px 14px rgb(0 0 0 / 0.35);
+
+  /* Beweging: 150 ms met een zachte uitloop. */
+  --ease-mondig: cubic-bezier(0.16, 1, 0.3, 1);
+  --default-transition-duration: 150ms;
+  --default-transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Laag 2: semantische kleuren. Donker is de basis; licht wint als Windows
+   op licht staat. Groen nooit als tekst of accent op wit: in licht is paars de actiekleur. */
+:root {
+  color-scheme: dark;
+  --achtergrond: #0a0a0a;
+  --vlak: #161616;
+  --verhoogd: #1c1c1c;
+  --hover: #252525;
+  --lijn: #2a2a2a;
+  /* Rand van velden, keuzelijsten en de uit-stand van schakelaars: minstens 3:1 tegen de vlakken. */
+  --rand-veld: #7a7a7a;
+  /* Lege streepjes van de niveaumeter: zichtbaar (2:1) maar rustiger dan een veldrand. */
+  --meter-leeg: #505050;
+  /* Een lichte tint van de actiekleur, voor een vlak dat opvalt zonder te schreeuwen (slepen). */
+  --nieuw: rgba(0, 255, 149, 0.1);
+  --tekst: #f0f0f0;
+  --gedempt: #a3a3a3;
+  --dim: #8c8c8c;
+  --actie: #00ff95;
+  --actie-hover: #4dffb5;
+  --op-actie: #0a0a0a;
+  --focus: #00ff95;
+  /* Rood is alleen voor opnemen: de stip en de stopknop. Met witte tekst (--op-opname) 4,5:1. */
+  --opname: #d4373c;
+  --op-opname: #ffffff;
+  --fout-tekst: #ffb59a;
+  --fout-vlak: #2a1712;
+  --gelukt: #00ff95;
+  --waarsch: #f5a524;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --achtergrond: #ffffff;
+    --vlak: #f7f7f8;
+    --verhoogd: #ffffff;
+    --hover: #eeeef1;
+    --lijn: #d7d9e6;
+    --rand-veld: #85858f;
+    --meter-leeg: #a8a8a8;
+    --nieuw: rgba(113, 0, 246, 0.07);
+    --tekst: #1a1815;
+    --gedempt: #5a544c;
+    --dim: #6a655e;
+    --actie: #7100f6;
+    --actie-hover: #5b00c4;
+    --op-actie: #ffffff;
+    --focus: #7100f6;
+    --opname: #d4373c;
+    --op-opname: #ffffff;
+    --fout-tekst: #9a3412;
+    --fout-vlak: #fdf1ec;
+    --gelukt: #0b6b3a;
+    --waarsch: #8a5300;
+  }
+}
+
+/* Utilities voor de semantische kleuren: bg-vlak, text-gedempt, border-lijn, enzovoort. */
+@theme inline {
+  --color-achtergrond: var(--achtergrond);
+  --color-vlak: var(--vlak);
+  --color-verhoogd: var(--verhoogd);
+  --color-hover: var(--hover);
+  --color-lijn: var(--lijn);
+  --color-rand-veld: var(--rand-veld);
+  --color-meter-leeg: var(--meter-leeg);
+  --color-nieuw: var(--nieuw);
+  --color-tekst: var(--tekst);
+  --color-gedempt: var(--gedempt);
+  --color-dim: var(--dim);
+  --color-actie: var(--actie);
+  --color-actie-hover: var(--actie-hover);
+  --color-op-actie: var(--op-actie);
+  --color-focus: var(--focus);
+  --color-opname: var(--opname);
+  --color-op-opname: var(--op-opname);
+  --color-fout-tekst: var(--fout-tekst);
+  --color-fout-vlak: var(--fout-vlak);
+  --color-gelukt: var(--gelukt);
+  --color-waarsch: var(--waarsch);
+}
+
+@layer base {
+  html {
+    background: var(--achtergrond);
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-tekst);
+    font-size: var(--text-basis);
+    line-height: var(--text-basis--line-height);
+    color: var(--tekst);
+    background: var(--achtergrond);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Koppen in Sora 600. */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-kop);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  /* Toetsenbordfocus: 2 px in de actiekleur, 2 px los van het element. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+}
+
+/* De streepjes van de lege staat op Bestanden dansen zolang er een bestand boven het venster hangt. */
+@keyframes dans {
+  50% {
+    transform: scaleY(0.45);
+  }
+}
+
+/* Wie minder beweging wil, krijgt geen overgangen en geen draaiende of kloppende tekens. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* De zwevende pil (sprint 3d): een doorzichtig venster, en de pil zelf altijd donker, ook als
+   Windows licht staat. Hij ligt over willekeurige programma's; donker valt overal op zonder
+   te schreeuwen (ontwerp 3d-pil.html). */
+html.pil-venster,
+html.pil-venster body {
+  background: transparent;
+  overflow: hidden;
+}
+
+.pil-donker {
+  color-scheme: dark;
+  --achtergrond: #0a0a0a;
+  --vlak: #161616;
+  --verhoogd: #1c1c1c;
+  --hover: #252525;
+  --lijn: #2a2a2a;
+  --rand-veld: #7a7a7a;
+  --meter-leeg: #505050;
+  --tekst: #f0f0f0;
+  --gedempt: #a3a3a3;
+  --dim: #8c8c8c;
+  --actie: #00ff95;
+  --actie-hover: #4dffb5;
+  --op-actie: #0a0a0a;
+  --focus: #00ff95;
+  --opname: #e5484d;
+  --fout-tekst: #ff8a5c;
+  --gelukt: #00ff95;
+  --waarsch: #f5a524;
+}

@@ -1,0 +1,33 @@
+# Licenties van onderdelen van derden (Rust)
+
+Mondig gebruikt open-sourceonderdelen. Hieronder staat per licentie welke
+onderdelen eronder vallen, gevolgd door de volledige licentietekst.
+
+## Microsoft Visual C++-runtime
+
+De Windows-installer van Mondig bevat bestanden van de Microsoft Visual C++-runtime
+(`msvcp140*.dll` en `vcruntime140*.dll`). Die vallen onder de licentievoorwaarden van
+Microsoft voor "Distributable Code" van Visual Studio en worden zonder wijziging
+meegeleverd. Zie
+https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files.
+
+## Overzicht
+
+{{#each overview}}
+- {{{name}}} ({{count}} onderdelen)
+{{/each}}
+
+{{#each licenses}}
+## {{{name}}}
+
+Gebruikt door:
+
+{{#each used_by}}
+- {{crate.name}} {{crate.version}}{{#if crate.repository}} ({{{crate.repository}}}){{/if}}
+{{/each}}
+
+```text
+{{{text}}}
+```
+
+{{/each}}

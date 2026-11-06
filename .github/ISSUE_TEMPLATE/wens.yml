@@ -1,0 +1,20 @@
+name: Wens of idee
+description: Iets wat Mondig beter of handiger zou maken
+labels: ["wens"]
+body:
+  - type: textarea
+    id: probleem
+    attributes:
+      label: Welk probleem wil je oplossen?
+      description: Beschrijf de situatie, niet meteen de oplossing.
+    validations:
+      required: true
+  - type: textarea
+    id: idee
+    attributes:
+      label: Hoe zou je het willen?
+  - type: dropdown
+    id: soevereiniteit
+    attributes:
+      label: Heeft dit gevolgen voor waar audio of tekst heen gaat?
+      options: [Nee, alles blijft lokaal, Ja, Weet ik niet]

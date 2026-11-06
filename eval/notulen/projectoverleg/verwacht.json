@@ -1,0 +1,14 @@
+{
+  "besluiten": [
+    { "tekst": "Kuipersstraat tijdens de werkzaamheden eenrichtingsverkeer van de Vlasakkerlaan naar de Heideweg, met omleiding via de Ringweg", "beurt": 7 },
+    { "tekst": "Start van de werkzaamheden verschuift naar maandag 2 maart, de bomen worden in februari al gekapt", "beurt": 19 },
+    { "tekst": "Geen informatieavond, maar een brief per post met de wijkapp en een inloopspreekuur op het plein in de eerste werkweek", "beurt": 29 }
+  ],
+  "actiepunten": [
+    { "wat": "Tijdelijk verkeersbesluit voorbereiden en bij Joost aanleveren", "wie": "Bram", "wanneer": "voor vijftien januari", "beurt": 10 },
+    { "wat": "Concept van de bewonersbrief rondsturen", "wie": "Samira", "wanneer": "uiterlijk aankomende vrijdag", "beurt": 31 },
+    { "wat": "Netbeheerder bellen en de definitieve datum voor het verleggen van de kabels schriftelijk laten bevestigen", "wie": "Anouk", "wanneer": "deze week", "beurt": 32 },
+    { "wat": "Agenda van de wethouder voor de eerste paal bekijken en laten weten wanneer dat past", "wie": "Joost", "wanneer": "voor het einde van de maand", "beurt": 33 }
+  ],
+  "geen_besluit": []
+}

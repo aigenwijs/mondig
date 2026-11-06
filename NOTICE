@@ -1,0 +1,115 @@
+Mondig
+Copyright 2026 Aigenwijs
+Licensed under the European Union Public Licence, version 1.2 (EUPL-1.2).
+See the file LICENSE.
+
+Mondig is written by Aigenwijs. In a few places it follows the approach or adapts code of the
+open source projects below, both under the MIT licence. Their copyright notices and licence
+text follow here, as the MIT licence requires.
+
+--------------------------------------------------------------------------------
+Handy
+https://github.com/cjpais/Handy
+Copyright (c) 2025 CJ Pais
+MIT licence (text below)
+
+Mondig follows Handy's approach to reliable pasting and to recording, and uses its
+microphone recording crate `handy-recorder` (MIT) as a dependency. Files:
+
+  app/src-tauri/src/plakken.rs
+  app/src-tauri/src/plakken/win32.rs
+  crates/mondig-core/src/opname/handy.rs
+  crates/mondig-core/src/sneltoets.rs
+  crates/mondig-core/src/filter.rs
+  crates/mondig-core/src/opschonen.rs
+  scripts/engine-bundelen.mjs
+  app/src/routes/modellen/+page.svelte
+  app/src/lib/components/ModelBalkjes.svelte
+  app/src/lib/components/ModelBeheerKaart.svelte
+
+The speech models in Mondig's catalogue are converted to GGUF by `handy-computer`; see
+MODEL_LICENSES.md.
+
+MIT License
+
+Copyright (c) 2025 CJ Pais
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------------
+Vibe
+https://github.com/thewh1teagle/vibe
+Copyright (c) 2024 thewh1teagle
+MIT licence (text below)
+
+Mondig follows Vibe's approach to keeping the computer awake, playback and editing of
+transcript lines, speaker labels, error messages, logging, download handling and the
+installer hook that stops a running process before an upgrade. Files:
+
+  app/src-tauri/src/wakker.rs
+  crates/mondig-core/src/wakker.rs
+  crates/mondig-core/src/probleem.rs
+  crates/mondig-core/src/logboek.rs
+  crates/mondig-core/src/download.rs
+  crates/mondig-core/src/downloadrij.rs
+  crates/mondig-core/src/gesprek.rs
+  app/src-tauri/windows/hooks.nsh
+  app/src/lib/afspelen.svelte.ts
+  app/src/lib/sprekers.ts
+  app/src/lib/verslag.ts
+  app/src/lib/wachtrijtijd.ts
+  app/src/lib/components/SprekerNaam.svelte
+  app/src/lib/components/VerslagLijst.svelte
+
+MIT License
+
+Copyright (c) 2024 thewh1teagle
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------------
+Libraries
+The Rust and npm libraries that Mondig uses, with their licences and, where required,
+their notices, are listed in THIRD_PARTY_NOTICES.md.
+
+Speech models
+Mondig does not contain the speech models. The app downloads them. Who made them, under
+which licence and what was changed is listed in MODEL_LICENSES.md.
+
+Fonts
+The PDF export uses the fonts Geist (Copyright 2024 The Geist Project Authors,
+https://github.com/vercel/geist-font) and Sora (Copyright 2019 The Sora Project Authors,
+https://github.com/sora-xor/sora-font), both under the SIL Open Font License 1.1. The
+licence texts are in crates/mondig-core/lettertypen/ and in THIRD_PARTY_NOTICES.md.

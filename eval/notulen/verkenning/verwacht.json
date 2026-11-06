@@ -1,0 +1,21 @@
+{
+  "besluiten": [
+    { "tekst": "Geen aanbesteding starten, maar een proef in de Noordwijk waarbij beide organisaties hun eigen systeem houden en alleen de uitwisseling van meldingen wordt gekoppeld", "beurt": 125 }
+  ],
+  "actiepunten": [
+    { "wat": "Geanonimiseerde voorbeeldexport van de gemeente delen met Wouter en Lotte", "wie": "Tom", "wanneer": "volgende week donderdag", "beurt": 53 },
+    { "wat": "Vraag of een DPIA nodig is voorleggen aan de functionaris gegevensbescherming van het waterschap en terugkoppelen", "wie": "Lotte", "wanneer": "voor de volgende vergadering", "beurt": 80 },
+    { "wat": "Vervolgafspraak plannen en uitnodiging rondsturen", "wie": "Karin", "wanneer": "", "beurt": 158 }
+  ],
+  "geen_besluit": [
+    { "tekst": "Kijken naar hoe andere regio's een gezamenlijk loket hebben opgelost, zijspoor dat blijft liggen", "beurt": 21 },
+    { "tekst": "Logboek van wat de eerste organisatie met een melding deed: kunnen we overwegen, maar niet ingevuld", "beurt": 68 },
+    { "tekst": "Eventueel een externe partij vragen mee te kijken naar de opzet, budget onbekend, blijft open", "beurt": 90 },
+    { "tekst": "Later misschien nog praten over de kosten, te vroeg voor cijfers", "beurt": 92 },
+    { "tekst": "Een stuurgroep instellen, in het midden gelaten", "beurt": 94 },
+    { "tekst": "Moeten we niet eens kijken naar een landelijke standaard voor uitwisseling van meldingen", "beurt": 109 },
+    { "tekst": "Testomgeving met nepdata klaarzetten als tussenstap, kunnen we overwegen maar wordt even laten liggen", "beurt": 133 },
+    { "tekst": "Een paar gezamenlijke maten kiezen om het succes van de proef te beoordelen, iets voor een volgende keer", "beurt": 154 },
+    { "tekst": "Inwoners na afloop vragen of ze op de hoogte zijn gehouden, kunnen we overwegen maar blijft open", "beurt": 156 }
+  ]
+}

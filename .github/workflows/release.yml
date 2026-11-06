@@ -1,0 +1,161 @@
+# Concept-release op de drie platforms. Handmatig starten; de release blijft een
+# concept en een prerelease tot de build is getest. Nog zonder
+# handtekeningen: die komen in fase 5.
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Eerste poort: alleen vanaf main, en alle versies moeten gelijk zijn.
+  controle:
+    name: Controle (alleen main, versies gelijk)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Alleen vanaf main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Een release maak je alleen vanaf main (nu: ${GITHUB_REF})."
+          exit 1
+
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Versies gelijk
+        run: node scripts/versie.mjs
+
+  bouwen:
+    name: Bouwen (${{ matrix.platform }})
+    needs: controle
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+          - platform: macos-latest # Apple Silicon (aarch64)
+          # Oudere glibc, zodat de AppImage op meer distributies draait.
+          - platform: ubuntu-22.04
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Linux-pakketten voor Tauri
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev \
+            libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf xdg-utils \
+            libvulkan-dev glslc spirv-headers pkg-config libasound2-dev
+
+      - name: Rust installeren (versie uit rust-toolchain.toml)
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      # transcribe.cpp bouwt de Vulkan-module en vraagt daarvoor de headers, glslc en
+      # vulkan-1.lib (ADR 0011), zoals in ci.yml.
+      - name: Vulkan-SDK installeren
+        if: matrix.platform == 'windows-latest'
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          cache: true
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Frontend-pakketten installeren
+        working-directory: app
+        run: npm ci
+
+      # De build maakt eerst de vermeldingen van derden voor in de app (ADR 0016).
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about@0.9.3
+
+      # Werkproces bouwen en samen met de rekenmodules en de C++-runtime klaarzetten
+      # voor de installer (ADR 0012). Mac en Linux volgen in sprint 3e.
+      - name: Werkproces bundelen (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: node scripts/engine-bundelen.mjs
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: app
+          # Alleen Windows krijgt de bundelconfig met het werkproces; Mac en Linux
+          # blijven ongewijzigd tot sprint 3e.
+          args: ${{ matrix.platform == 'windows-latest' && '--config src-tauri/tauri.bundel.conf.json' || '' }}
+          tagName: v__VERSION__
+          releaseName: 'Mondig v__VERSION__'
+          releaseBody: 'Concept: nog niet handmatig getest. Zie de bijlagen voor de installers.'
+          releaseDraft: true
+          prerelease: true
+
+  bijlagen:
+    name: Licenties en SBOM
+    needs: bouwen
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Rust installeren (versie uit rust-toolchain.toml)
+        run: rustup toolchain install
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      # De licentieteksten van de npm-pakketten staan in app/node_modules.
+      - name: Frontend-pakketten installeren
+        working-directory: app
+        run: npm ci
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about@0.9.3,cargo-cyclonedx@0.5.9
+
+      - name: THIRD_PARTY_NOTICES maken
+        run: |
+          cargo about generate about.hbs > THIRD_PARTY_NOTICES.md
+          printf '\n' >> THIRD_PARTY_NOTICES.md
+          node scripts/npm-licenties.mjs --notices=npm-notices.md
+          cat npm-notices.md >> THIRD_PARTY_NOTICES.md
+          rm npm-notices.md
+          # De lettertypen in de PDF's (ADR 0017), met hun OFL-tekst.
+          for lettertype in Sora Geist; do
+            printf '\n## %s (lettertype in PDF), OFL-1.1\n\n' "$lettertype" >> THIRD_PARTY_NOTICES.md
+            cat "crates/mondig-core/lettertypen/OFL-$lettertype.txt" >> THIRD_PARTY_NOTICES.md
+          done
+
+      - name: SBOM maken (CycloneDX JSON)
+        run: |
+          cargo cyclonedx --manifest-path app/src-tauri/Cargo.toml --format json \
+            --spec-version 1.5 --no-build-deps --override-filename mondig.cdx
+          cp app/src-tauri/mondig.cdx.json mondig-sbom.cdx.json
+
+      - name: Aan de concept-release hangen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          versie="$(sed -n '/^\[workspace.package\]/,/^\[/{s/^version *= *"\(.*\)"/\1/p}' Cargo.toml)"
+          test -n "$versie"
+          gh release upload "v${versie}" THIRD_PARTY_NOTICES.md mondig-sbom.cdx.json --clobber

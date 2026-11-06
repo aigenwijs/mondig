@@ -1,0 +1,25 @@
+{
+  "besluiten": [
+    { "tekst": "Balie vanaf 1 maart op woensdagmiddag alleen nog op afspraak, met ter plekke een afspraak maken voor wie niet kon boeken", "beurt": 11 },
+    { "tekst": "Alle pdf-formulieren per 1 februari van de website, behalve twee zonder digitale vervanger, met verwijzing naar het digitale loket", "beurt": 37 },
+    { "tekst": "Norm: een terugbelverzoek wordt binnen twee werkdagen afgehandeld", "beurt": 58 },
+    { "tekst": "Drie maanden pilot met de gedeelde inbox vanaf 1 februari, alleen met het eigen team", "beurt": 68 }
+  ],
+  "actiepunten": [
+    { "wat": "Woensdagrooster aanpassen en rondsturen", "wie": "Dennis", "wanneer": "uiterlijk vrijdag", "beurt": 15 },
+    { "wat": "Directie informeren over de woensdagregeling", "wie": "Marieke", "wanneer": "voor het einde van de week", "beurt": 16 },
+    { "wat": "Extra tijdsloten op woensdag toevoegen en bevestigingsmail aanpassen", "wie": "Jeroen", "wanneer": "begin volgende week", "beurt": 17 },
+    { "wat": "Kapot nummerbord en stoelen in de wachtruimte regelen via facilitair", "wie": "", "wanneer": "", "beurt": 21 },
+    { "wat": "Lijst van alle pdf-formulieren met per formulier de vervanger rondsturen", "wie": "Fatima", "wanneer": "voor twintig januari", "beurt": 39 },
+    { "wat": "DigiD-koppeling van het verhuisformulier testen", "wie": "Jeroen", "wanneer": "volgende week", "beurt": 43 },
+    { "wat": "Aan Kim vragen het telefoonnummer in de bedrijfsvermelding te corrigeren", "wie": "Marieke", "wanneer": "voor het einde van de maand", "beurt": 49 },
+    { "wat": "Lijst met synoniemen voor de zoekfunctie opstellen op basis van de twintig meest gemiste zoektermen", "wie": "Fatima", "wanneer": "de komende twee weken", "beurt": 53 },
+    { "wat": "Voorbeeld van de terugbelnotitie maken en aan het team voorleggen", "wie": "Sanne", "wanneer": "", "beurt": 74 },
+    { "wat": "Contact opnemen met de leverancier van het zaaksysteem over een rapportage", "wie": "Ruud", "wanneer": "", "beurt": 79 },
+    { "wat": "Inwerkschema voor de balie herschrijven", "wie": "Dennis", "wanneer": "voordat de nieuwe collega's beginnen, over twee weken", "beurt": 85 },
+    { "wat": "Flyers bij de balie opnieuw laten drukken", "wie": "", "wanneer": "voor eind februari", "beurt": 90 }
+  ],
+  "geen_besluit": [
+    { "tekst": "Boodschap met de gemiddelde doorlooptijd in de wachtmuziek van de telefoon, alleen genoemd, niet opgepakt", "beurt": 27 }
+  ]
+}

@@ -1,0 +1,32 @@
+[workspace]
+resolver = "3"
+members = ["crates/mondig-core", "crates/mondig-cli", "crates/mondig-engine", "app/src-tauri"]
+
+[workspace.package]
+version = "0.3.0-dev"
+edition = "2024"
+# 1.92: de minimale versie van krilla (ADR 0017).
+rust-version = "1.92"
+authors = ["Aigenwijs <hallo@aigenwijs.com>"]
+license = "EUPL-1.2"
+publish = false
+
+[profile.release]
+# Kleinere binary; de app is geen rekenzwaar proces in deze fase.
+lto = "thin"
+codegen-units = 1
+
+[workspace.lints.rust]
+# Geen unsafe-code in eigen code; mondig-core en mondig-cli verbieden het zelfs (forbid).
+unsafe_code = "deny"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+# Streng vanaf het begin: pedantic als basis, losse regels erbovenop.
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+dbg_macro = "warn"
+print_stdout = "warn"

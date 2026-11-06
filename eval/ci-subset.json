@@ -1,0 +1,585 @@
+{
+  "beschrijving": "Vaste subset van Multilingual LibriSpeech (Nederlands, test) voor de CI-meetlat van Mondig.",
+  "bron": {
+    "dataset": "facebook/multilingual_librispeech",
+    "config": "dutch",
+    "split": "test",
+    "revisie": "2e83e61823b4c47dcbcb1980bb88601274127609",
+    "licentie": "CC-BY-4.0",
+    "url": "https://huggingface.co/datasets/facebook/multilingual_librispeech",
+    "bronvermelding": "Multilingual LibriSpeech (Pratap e.a., 2020, arXiv:2012.03411), Nederlandse config, CC BY 4.0. Voorgelezen audioboeken van LibriVox."
+  },
+  "methode": "Deterministisch: elke 38e rij van de split vanaf rij 0 (rij 0, 38, 76, ...). De sha256 hoort bij het Opus-bestand zoals de datasets-server het levert; het wav-bestand wordt daar lokaal met ffmpeg uit gemaakt (16 kHz mono).",
+  "totaal_rijen_split": 3075,
+  "aantal": 81,
+  "totale_duur_s": 1243.67,
+  "fragmenten": [
+    {
+      "rij": 0,
+      "id": "3034_2211_000000",
+      "tekst": "arm klein haft zei de eik dat was toch een al te kort leven en op iederen zomerdag werd dezelfde dans dezelfde toespraak hetzelfde antwoord en hetzelfde inslapen herhaald",
+      "duur_s": 15.49,
+      "sha256": "1d2db1334465ba4c53b1b49a47dfccb62b5e126ce2752337b16b82f50d68029e"
+    },
+    {
+      "rij": 38,
+      "id": "3034_2211_000038",
+      "tekst": "de kroon van den boom wiegelde zich heen en weer als zocht zij in dringend verlangen zij staarde achterwaarts nu rook de boom den geur van het muskusplantje en al spoedig den nog sterkeren geur van de kamperfoelie en de viooltjes",
+      "duur_s": 17.41,
+      "sha256": "f5e5acfb0a36724e8a50265549bdd6a71931025c3272cbc466e281419709a25a"
+    },
+    {
+      "rij": 76,
+      "id": "3034_2211_000076",
+      "tekst": "zou je dat denken vroeg de bal dan weet je zeker niet dat mijn vader en moeder marokijnleeren pantoffels geweest zijn en dat ik een kurk in mijn lijf heb zitten",
+      "duur_s": 10.44,
+      "sha256": "d44e25ecc77960a957107ee7dd9bf1e80762ab2fb929c025eb89e2d33b31c3da"
+    },
+    {
+      "rij": 114,
+      "id": "3034_2211_000114",
+      "tekst": "woensdag o wat stroomde de regen daar buiten neer hjalmar kon het in zijn slaap hooren en toen ole luk oie een raam openschoof stond het water tot aan het kozijn toe het was daar buiten een heele zee",
+      "duur_s": 17.92,
+      "sha256": "13b0e01ae1f8554c15c3a526b8d65f7caa1cd81ed5bc3996e6163c1f59d38c4f"
+    },
+    {
+      "rij": 152,
+      "id": "3034_2211_000152",
+      "tekst": "en eindelijk bleef er nog maar een enkele op de heuvel staan waar vroeger het kasteel geweest was en de stad was zeer klein en arm en de schooljongens kwamen met hun boeken onder de arm en zeiden tweeduizend inwoners maar dat was niet waar want zo veel had zij er niet",
+      "duur_s": 17.16,
+      "sha256": "3b65072f1e448506d233e85943d58033d6fb1f8e6846e80749854b1db1d76144"
+    },
+    {
+      "rij": 190,
+      "id": "3034_2211_000190",
+      "tekst": "dinsdag zoodra hjalmar te bed gegaan was raakte ole luk oie al de meubelen in de kamer met zijn kleinen tooverstaf aan",
+      "duur_s": 13.46,
+      "sha256": "60cde080b57b301e92f11187726f119e819938f59b7a512d88e220487cc05ad3"
+    },
+    {
+      "rij": 228,
+      "id": "3798_2211_000024",
+      "tekst": "och je bent zeker niet wijs riep de smid uit wil je ook een gouden hoefbeslag hebben een gouden hoefbeslag jawel zei de mestkever ben ik dan niet even goed als dat groote dier daar dat opgepast en geroskamd wordt en dat men eten en drinken voorzet behoor ik ook niet in den keizerlijken stal",
+      "duur_s": 19.07,
+      "sha256": "56933da576c11e2077854e62d283b0c46cf4da3abba7c1c7067ce64dcdfb6827"
+    },
+    {
+      "rij": 266,
+      "id": "3798_2211_000062",
+      "tekst": "dat is een gevaarlijke vrouw zei de oude kobold maar zijn beide zonen gingen den heuvel uit want nu hadden zij er genoeg van en wat kan uw dochter die nu volgt vroeg de grijze kobold ik heb geleerd noorwegen lief te hebben zeide zij en nimmer zal ik trouwen als ik niet naar noorwegen kan gaan",
+      "duur_s": 18.47,
+      "sha256": "439614251b258a747c40614b6feae434e51125fe17282daedc394be073a43912"
+    },
+    {
+      "rij": 304,
+      "id": "3798_2211_000100",
+      "tekst": "en nu drentelde hij over den mesthoop rond en dacht aan zijn schoonen droom van het doode paard en de geërfde hoefijzers daar pakte een hand den mestkever eensklaps beet drukte hem en draaide hem om en om",
+      "duur_s": 15.04,
+      "sha256": "0dcc93e1d7e2741c206dc366db314e0872a3ff45f4ec315af7d6c8e6c5c239b1"
+    },
+    {
+      "rij": 342,
+      "id": "3798_2211_000138",
+      "tekst": "ben je dan niet in den stal van den keizer geweest vroeg de mestkever daar is de vochtigheid warm en geurig dat is mijn klimaat maar dat kan men niet op reis meenemen is er hier in den tuin geen mesthoop waar personen van een aanzienlijken stand zooals ik zich te huis kunnen voelen en logeeren",
+      "duur_s": 18.47,
+      "sha256": "b6c404d948171582a989addbdb7768b9f89b02393928add1975da3030596e6f2"
+    },
+    {
+      "rij": 380,
+      "id": "4429_3478_000029",
+      "tekst": "zal ik hier tekenen vroeg hij over de tafel buigend holmes leunde over zijn schouder en bracht zijn beide handen over zijn hoofd zo is het goed zeide hij",
+      "duur_s": 11.6,
+      "sha256": "df581fd0e4c64ec4f698bcc32def3c70429d4963c675c0df71a0d83e9795dbb0"
+    },
+    {
+      "rij": 418,
+      "id": "4429_3478_000067",
+      "tekst": "het viel mij op dat wanneer ik kon zien hetgeen in de maand augustus achttiendrieëntachtig aan boord van de sea unicorn was gebeurd ik inlichtingen zou krijgen over het lot mijns vaders",
+      "duur_s": 11.47,
+      "sha256": "325c855c92d1a5afc7ee2be5c2b8e6616e0c63f4270ffe912aa5407a4e4db0d2"
+    },
+    {
+      "rij": 456,
+      "id": "4429_3478_000105",
+      "tekst": "en dat er enige weken moeten verlopen eer wij de aandelen op het spoor kunnen komen holmes had de omslag van het notitieboekje met zijn vergrootglas bestudeerd hier is een vlek zei hij ja mijnheer het was een bloedvlek ik vertelde u reeds dat ik het boek van den vloer opraapte",
+      "duur_s": 19.89,
+      "sha256": "5fe4374aa06a973d5bb954448a08ae31276e930a1c0fd62d22fb7ca30f968f6a"
+    },
+    {
+      "rij": 494,
+      "id": "4429_3478_000143",
+      "tekst": "dat is het raam mijnheer holmes dat ons ten minste enige aanwijzing bij het onderzoek verschaft u herinnert zich dat een metselaar slater genaamd die om één uur 's nachts van forest row kwam twee dagen voordat de moord plaats had stilstond bij het voorbijgaan van woodmans lee",
+      "duur_s": 18.23,
+      "sha256": "063de281b820100a055c7d9eda9d38e7602b7446b630a8526bc8c6c360bbf9b2"
+    },
+    {
+      "rij": 532,
+      "id": "4429_3478_000181",
+      "tekst": "toen wij allen werden opgeschrikt door een zacht maar duidelijk geknars in de richting van de tuindeur iemand was binnengekomen weder heerste er geruime tijd stilte en ik begon reeds te vrezen dat het een vals alarm was toen zachte voetstappen gehoord werden aan de andere kant van de hut",
+      "duur_s": 19.4,
+      "sha256": "dfe094215d2e3e219400dcb989c7592e5c963af90ba6867a38647b09235fa665"
+    },
+    {
+      "rij": 570,
+      "id": "4429_3991_000017",
+      "tekst": "uh waarheen vroeg jones naar den tower zeg hun dat zij tegenover jacobsons werf moeten aanleggen onze boot liep zeer snel wij schoten de lange linie van geladen schuiten voorbij alsof deze stil lagen",
+      "duur_s": 15.69,
+      "sha256": "15a38910de70cd3845f6000c0ace9a15a7bc6acea3d1393e674c3391121958b6"
+    },
+    {
+      "rij": 608,
+      "id": "4429_3991_000055",
+      "tekst": "god zegene uw lief kalm gelaat riep zij zenuwachtig snikkend het doet mij goed u te zien o wat heb ik heden een dag vol angst doorgemaakt",
+      "duur_s": 12.04,
+      "sha256": "e7bb3d898b14fa30f21b34b193c93d9b69c1dba680c4e159ddba93715d9ea2e3"
+    },
+    {
+      "rij": 646,
+      "id": "4429_3991_000093",
+      "tekst": "en toch zijt gij niet op de hoogte der feiten zei holmes deze houtsplinter die naar ik alle reden heb te geloven vergiftigd is stak achter het oor van den man zoals gij daar nog zien kunt deze kaart zoals gij haar thans ziet lag op de tafel en daarnaast lag dit vreemdsoortig instrument met stenen knop hoe past dit alles in uwe theorie",
+      "duur_s": 19.86,
+      "sha256": "aecc4cabfa75d15ba3d1d64c94e4c721488105f40e0f993519a53df7ec071c0a"
+    },
+    {
+      "rij": 684,
+      "id": "4429_3991_000131",
+      "tekst": "zelfs de besten van ons worden soms uit de koers gebracht het spreekt van zelf dat ook dit zal blijken een vals alarm te zijn maar als ambtenaar der wet ben ik verplicht geen kans te laten glippen doch er is iemand aan de deur misschien is hij het wel",
+      "duur_s": 14.74,
+      "sha256": "5cb04e8835fa99482ebd7d1e95b2f1efc4aab6b9683d5af6746e408a919b9f8b"
+    },
+    {
+      "rij": 722,
+      "id": "4429_3991_000169",
+      "tekst": "zijne handen waren verre van vereelt ik bespeur door mijn lens vooral aan het einde van het touw meer dan één bloedig teken waaruit ik opmaak dat hij zo overhaast omlaag gleed dat hem de huid van zijn hand werd afgeschuurd",
+      "duur_s": 13.07,
+      "sha256": "a6923c8e0314833f0f7a214465887efb28d76e1ac757b5a5aeebc6148d4255c4"
+    },
+    {
+      "rij": 760,
+      "id": "4429_3991_000207",
+      "tekst": "of de koopman achmet leefde of stierf woog even zwaar voor mij als rook maar toen ik van dien schat hoorde sprong mijn hart op van vreugde en verlangen en dacht ik wat ik er in het oude vaderland mede zou aanvangen en hoe mijne familieleden zouden opkijken als zij hun deugniet terug zagen komen met zijn zakken vol gouden moidores",
+      "duur_s": 19.11,
+      "sha256": "f0bb887cce5f0729aab6362700bc954d5c52a8e0f79040e1dcf41dfde6ba21f0"
+    },
+    {
+      "rij": 798,
+      "id": "4429_3991_000245",
+      "tekst": "zij zijn door een deskundige onderzocht en deze verklaarde dat zij hoogst zeldzaam en van buitengewoon grote waarde zijn gij kunt zelf oordelen hoe fraai ze zijn",
+      "duur_s": 11.07,
+      "sha256": "bb7c9103919e2b4003dbafd39e025e531cc0b231b85db18153cfe887ef875703"
+    },
+    {
+      "rij": 836,
+      "id": "4429_3991_000283",
+      "tekst": "in het begin van juli trokken wij uit om de oproerlingen te shahgunge te ontmoeten en sloegen hen voor enige tijd terug doch ons kruit raakte op en wij waren genoodzaakt op de stad terug te trekken",
+      "duur_s": 11.45,
+      "sha256": "05eb3dd5d681e1cf7990eb26c8a366160753ff9ca923cbe1f6244c2bda4863b8"
+    },
+    {
+      "rij": 874,
+      "id": "4429_3991_000321",
+      "tekst": "of uw lijk zal hedenavond in de stroom geworpen worden en wij lopen tot de opstandelingen over er bestaat geen middenweg wat kiest gij dood of leven wij kunnen u slechts drie minuten bedenktijd geven want de tijd gaat om en alles moet geschied zijn eer de volgende ronde komt",
+      "duur_s": 17.15,
+      "sha256": "e5cd4edc23d9fef7762aa1f7f0d385404ac93686256a4bd88cc76777b3e36ab0"
+    },
+    {
+      "rij": 912,
+      "id": "4429_3991_000359",
+      "tekst": "dusdanige moorden worden steeds gevolgd door een feestmaal want zij zijn menseneters een fraai beminnelijk volkje watson indien deze knaap zijn eigen zin had kunnen volgen dan had onze zaak nog een ellendiger wending genomen",
+      "duur_s": 14.16,
+      "sha256": "b19060373f3483f71b99e059f8ba38931137459f67750f3bbac61f0b5c51bbc7"
+    },
+    {
+      "rij": 950,
+      "id": "4429_3991_000397",
+      "tekst": "zijn bagage bleef in het hotel er was echter niets in dat tot enige opheldering kon dienen wat kleren enige boeken en een groot aantal curiositeiten van de andaman eilanden hij was een der officieren geweest die met de bewaking der daar verbannen misdadigers belast zijn",
+      "duur_s": 18.92,
+      "sha256": "b2b3cbbf7457e0529c313863a9d4ae1eb57a486405c50790e16d52461210a46c"
+    },
+    {
+      "rij": 988,
+      "id": "4429_3991_000435",
+      "tekst": "daarneven lag een stuk papier waarop enige woorden gekrabbeld waren holmes wierp er een blik op en reikte het toen aan mij over gij ziet zeide hij met een veelbetekenende oogopslag bij het licht van de lantaarn las ik met een schok van ontzetting het teken der vier",
+      "duur_s": 19.71,
+      "sha256": "14eadc59c80ec841ac73ce80d04afa61712e6ed8b6a32c64d71d21006d571f2f"
+    },
+    {
+      "rij": 1026,
+      "id": "4429_3991_000473",
+      "tekst": "voor beiden zullen er enige honderdduizenden ponden zijn denk eens een jaarlijkse rente van tienduizend pond sterling er zullen niet veel zulke rijke dames in engeland te vinden zijn is dat niet prachtig",
+      "duur_s": 14.22,
+      "sha256": "92cb12edbb21a77b7072a77833ed7a97a86c1678fd4f97d79d2cb03035f50d44"
+    },
+    {
+      "rij": 1064,
+      "id": "4429_3991_000511",
+      "tekst": "maar mijn geluk was nooit van lange duur plotseling en zonder de minste waarschuwing brak de grote opstand uit de ene maand was indië uiterlijk zo stil en eenzaam als surrey of kent en de volgende braken er tweemaal honderdduizend zwarte duivels los en geleek het gehele land een hel",
+      "duur_s": 18.96,
+      "sha256": "9c5361e7849773541b2f8744b2ea058b85e86fa859b2b9a8b8f7632efbf66fcf"
+    },
+    {
+      "rij": 1102,
+      "id": "4429_3991_000549",
+      "tekst": "herinnert gij u de afdeling der detective politie in de baker street waarvan ik mij bij de zaak jefferson hop bediende welnu vroeg ik lachend",
+      "duur_s": 10.26,
+      "sha256": "b9b663e8993a5f1af1d0db235efdc4a8f0ab52882969bf1e6c43a86daafcc6c7"
+    },
+    {
+      "rij": 1140,
+      "id": "4429_3991_000587",
+      "tekst": "voor elk onzer een en plaatste ons teken der vier eronder want wij hadden gezworen dat een altijd voor de overigen zou handelen zodat niet een meer recht had dan de andere dat is een eed waaromtrent ik met de hand op het hart kan getuigen dat ik hem nimmer geschonden heb",
+      "duur_s": 16.63,
+      "sha256": "872a601d25d5cf50d90538ee6c24e9b6fc48159eee3de9faa8598cbeb030da8d"
+    },
+    {
+      "rij": 1178,
+      "id": "4429_3991_000625",
+      "tekst": "daarom zeide ik goddank dan zeg ik ook goddank fluisterde zij toen ik haar in mijn armen sloot wie ooit een schat verloren had ik wist dat ik er dien avond één had verkregen",
+      "duur_s": 19.13,
+      "sha256": "2dee109a9e4fe09a1cf52b5563d7c8d2d96a9a674fc33f97d7f1108283f12e3b"
+    },
+    {
+      "rij": 1216,
+      "id": "4429_3991_000663",
+      "tekst": "ik bezat niet die beroepsijver en geestdrift die mijn metgezel staande hield noch kon ik de zaak anders dan als een abstract vraagstuk beschouwen wat de overleden bartholomeus sholto betreft ik had weinig goeds van hem vernomen en kon geen genoegzame antipathie tegen zijne moordenaars gevoelen",
+      "duur_s": 17.41,
+      "sha256": "e20848b3b1fab6fc3c6d85f685257b82cdccbd84691333cd9b5290d692b82e9b"
+    },
+    {
+      "rij": 1254,
+      "id": "4429_3991_000701",
+      "tekst": "hij nam de lens en de maatstok en kroop op zijn knieën de kamer rond al metende vergelijkende en onderzoekende met zijn lange smalle neus slechts een paar duim van de planken verwijderd terwijl zijne ogen er met buitengewone scherpte op gevestigd waren als die van een vogel die naar voedsel zoekt",
+      "duur_s": 16.55,
+      "sha256": "56c573befe733675251e771833b9bb29d99c8001035c9f61da82eb5870afbb7c"
+    },
+    {
+      "rij": 1292,
+      "id": "4429_3991_000739",
+      "tekst": "een hunner slanker en ouder dan de anderen trad voorwaarts met een zeker gezaghebbend voorkomen waardoor ik mijn lachen nauwelijks kon bedwingen ik heb uwe boodschap ontvangen sir zeide hij en ze dadelijk bij elkaar geroepen drie zitten er in de doos en één staat met tramkaartjes",
+      "duur_s": 16.57,
+      "sha256": "b40c422085bbac83c80b9eaf1db0e736144ad9645fa17dd8d439b1d0b8857430"
+    },
+    {
+      "rij": 1330,
+      "id": "4429_3991_000777",
+      "tekst": "en toch stel ik mij voor dat jonathan small er heel iets voor zoude willen geven zo hij zijne hulp niet had ingeroepen maar hoe kwam hij aan zulk een zeldzaam metgezel",
+      "duur_s": 10.81,
+      "sha256": "58d127e02e0a53cbdb55a45bfb785d62a5697fe94c4564f755f2f1fd2d8970cc"
+    },
+    {
+      "rij": 1368,
+      "id": "4429_3991_000815",
+      "tekst": "mr abel white was een vriendelijk man en dikwijls kwam hij in mijn kleine hut een pijp met mij roken want in de oost of west zijn de blanken veel eigener met elkaar dan dit in europa het geval zoude zijn",
+      "duur_s": 11.78,
+      "sha256": "013fd14197af42777d93e2d765379f811db493b3a40835afa08abe7de2152659"
+    },
+    {
+      "rij": 1406,
+      "id": "4429_3991_000853",
+      "tekst": "heeft een grove vierkante zool en een hoefijzer onder de hak hij is een man van middelbare leeftijd zeer door de zon gebruind en is een ontvlucht veroordeelde deze weinige gegevens zouden u van enige dienst kunnen zijn gevoegd bij het feit dat een grote lap vel van zijn hand is afgeschaafd de andere man ha",
+      "duur_s": 19.11,
+      "sha256": "30f5e55a1b13d4475fc074e42531936963271a41512ffea5adf06bf2481adbcf"
+    },
+    {
+      "rij": 1444,
+      "id": "4429_3991_000891",
+      "tekst": "tevens hield ik mij overtuigd dat deze small al was hij nog zo geslepen daaraan vooruit niet gedacht zou hebben toen bedacht ik dat wijl hij gewis enige tijd in londen had doorgebracht daar wij de overtuiging hadden dat hij voortdurend een waakzaam oog op pondicherry lodge gehouden had",
+      "duur_s": 16.72,
+      "sha256": "28149500136359d6fcdb462c5e6f3d15eccd7f86b1d21984730f69398e08848e"
+    },
+    {
+      "rij": 1482,
+      "id": "4429_3991_000929",
+      "tekst": "hij had die voor zich en zijne landgenoot ondertekend met het teken van vier zoals hij het enigszins dramatisch noemde door hulp van deze kaart ontdekken de officieren of een hunner de schat en brengen die naar engeland over terwijl zij naar wij willen veronderstellen een daarbij gestelde voorwaarde onvervuld lieten",
+      "duur_s": 17.6,
+      "sha256": "ee65f1385ba529df1e46e68cdd71a068a29d36e63da421504e562e16598b4add"
+    },
+    {
+      "rij": 1520,
+      "id": "4429_4370_000017",
+      "tekst": "ongetwijfeld was die stap verkeerd maar omdat zij met de boemeltrein te zes uur zeven was gearriveerd bijgevolg sinds drie uur van de namiddag niets had genuttigd",
+      "duur_s": 12.13,
+      "sha256": "9d033bf18c74ede8b4c157411dcf9956b5cc4ef2f10db08e3d5d91aafb97f903"
+    },
+    {
+      "rij": 1558,
+      "id": "4429_4370_000055",
+      "tekst": "pa's ontstemming en ma's meelijden met haar zo gesarde man niet begrepen nu iedere minuut iedere seconde kon numero veertien door de gleuf van de deur worden gestoken",
+      "duur_s": 14.58,
+      "sha256": "9de4c3e02fa4a7b849bf7dbae373765649d262bd532cd096de06aec23b80b845"
+    },
+    {
+      "rij": 1596,
+      "id": "3798_4370_000030",
+      "tekst": "best ik zal me mond houwen doe maar op zei die nors in de leunstoel zakkend wel zeker sarde ma die wel had kunnen huilen van spijt als die man haar een traan waard was geweest wel zeker nou nog kommanderen eerst het kostelijke eten bederven en wij ons nou haasten",
+      "duur_s": 19.42,
+      "sha256": "3c10ebd6eaf2538a96bc5a74c188e4506b59b720f6bb79084152eb3a9254e81f"
+    },
+    {
+      "rij": 1634,
+      "id": "4396_4370_000029",
+      "tekst": "als het klopte ging het morgen in inkt hij telde langzaam soms hield-ie stijf de inktloze pen halfwege een kolom boog dieper naar het papier telde voort",
+      "duur_s": 12.45,
+      "sha256": "059940192578968d571f9f721a734d9517963da7aaa174ad7db37ad018f3454f"
+    },
+    {
+      "rij": 1672,
+      "id": "4396_4370_000067",
+      "tekst": "en in de wazing van muren en daken keilde ergens de zon een wilde weerkaatsing van spartelend licht of een vuur was ontstoken scheelt je 'n paar duizend gulden op je portie zei hendrik de as van z'n geklede jas meppend",
+      "duur_s": 13.91,
+      "sha256": "43663d1fa586c38a5db1138632f6e8ddbf343ff33c9a09062d88b0b679a0abcf"
+    },
+    {
+      "rij": 1710,
+      "id": "4396_4370_000105",
+      "tekst": "dat was niet de psychologische toon iemand die zwaar beschimpt is iemand wiens kozijn ten derde male met krijt bevuild wordt sust men niet op die wijze",
+      "duur_s": 10.12,
+      "sha256": "2ecfce47e2fbb2e7d4ef7b9009e47cfb09dedb44eab552f3ee8f2e4c1b504d6c"
+    },
+    {
+      "rij": 1748,
+      "id": "3798_4626_000017",
+      "tekst": "ik was net tot de conclusie gekomen dat het op het ogenblik droog was dat de lucht wat lichter werd en dat ik het dus maar even wagen zou ik telde dus opstaan een twee drie en een paar minuten later waren we in het plantsoentje tegenover de school",
+      "duur_s": 15.91,
+      "sha256": "24f92e54bf8f8c6b6d31dee06970d316c97658430d4d5553a92343a12e262f5a"
+    },
+    {
+      "rij": 1786,
+      "id": "3798_4626_000055",
+      "tekst": "dit alles neemt echter niet weg dat je een kind voor z'n eigen gevoel van rechtvaardigheid toch graag even z'n zaak laat verdedigen vertel me toch eens waarom zitten jullie zo te kribben samen",
+      "duur_s": 13.64,
+      "sha256": "e3f5a619005d2cbbfda2f1c5d57f6855bb3a5e49c24eeb0773fdeeffac063064"
+    },
+    {
+      "rij": 1824,
+      "id": "3798_4626_000093",
+      "tekst": "maar vannacht had ze zo gehoest en vanmorgen keek ze zo koortsig uit der oogjes dat ze het niet op der verantwoording dorst te nemen haar met dat gure weer er door te sturen",
+      "duur_s": 10.47,
+      "sha256": "b7285eb7bdd76bbaa681e51a5b7193bbfb1d1f0b6abb38b9901170bba616ab14"
+    },
+    {
+      "rij": 1862,
+      "id": "3798_4626_000131",
+      "tekst": "en waarom je me nog steeds zo levendig voor de geest staat een echte baangrachter was ze kort en stevig in elkaar getimmerd met een paar felle blauwe ogen stroblond haar waar een gouden gloed over lichtte",
+      "duur_s": 15.74,
+      "sha256": "7311dbf4aca94a573ee1f40909ff02bf05a2952f80bc14bf007efb0943bbe54f"
+    },
+    {
+      "rij": 1900,
+      "id": "3798_4626_000169",
+      "tekst": "en heel smartelijk voel ik dat de toekomst geen schatten genoeg kan brengen om haar dit gemis te vergoeden einde van juutje",
+      "duur_s": 10.4,
+      "sha256": "8c39bd9fd6afbaa198d8caa6f46c629d9d7fee7790377869b24bb6901ae33d99"
+    },
+    {
+      "rij": 1938,
+      "id": "3798_4626_000207",
+      "tekst": "speelkwartier zalig ogenblikje van verademing voor jezelf op z'n minst evengoed als voor de kinderen even ontspanning van je ijzeren zelfbeheersing even het verslappen van je voortdurende waakzaamheid het sluiten van de honderd paar ogen en oren",
+      "duur_s": 18.96,
+      "sha256": "9c5f141f8e8e0d8d1ab508ad1e174e9caa2013bffc1b721f4696f1f7e8779f49"
+    },
+    {
+      "rij": 1976,
+      "id": "3798_4626_000245",
+      "tekst": "maar toch de vreugde was kort geweest want ik vrees m'n jongen dat je in korte tijd m'n geestelijke voorraadschuur geheel uitgeput zoudt hebben en ik je aan knapper koppen had moeten toevertrouwen om je onverzadiglijke honger naar kennis verder te stillen",
+      "duur_s": 16.46,
+      "sha256": "dcb5bb46c1e2b3ce369de465417977c9e4a3383a8db16c5cba22528595aefaa2"
+    },
+    {
+      "rij": 2014,
+      "id": "3798_4626_000283",
+      "tekst": "maar ik voelde toch wel dat het maar een schijn overwinning was geweest en dat het maar een haartje gescheeld had of ik had formeel de nederlaag geleden en de volgende keer pakte ik de zaak weer anders aan",
+      "duur_s": 12.48,
+      "sha256": "d356bf9080aed8da7811f76556e59b099e662c8efdcd4c5ad5f2ed754c35be3c"
+    },
+    {
+      "rij": 2052,
+      "id": "3798_4626_000321",
+      "tekst": "m'n nieuwe leerling en ik bekijken elkaar hoe heet je vraag ik chris manders en hoe oud ben je",
+      "duur_s": 10.05,
+      "sha256": "e053362b2c58f405fef893773cfd22d06c337cc27a1bcdcce0780bd8169f6258"
+    },
+    {
+      "rij": 2090,
+      "id": "3798_4626_000359",
+      "tekst": "en toen het eindelijk op half twaalf stond toen wou het er ook niet weer vandaan het was om dol van te worden en zo vertelde ik mijn verhaaltje af onder het succes d'estime van mijn toehoorders",
+      "duur_s": 12.48,
+      "sha256": "16ccecf0cb858c57a103a2a41ea1aab5f70b7213df638fcd18b31ca254bf2af6"
+    },
+    {
+      "rij": 2128,
+      "id": "3798_4626_000397",
+      "tekst": "een kind kan thuis hard en gevoelloos een despoot voor de jongere broertjes en zusjes zelfs misschien voor vader en moeder wezen en op school het lievelingetje van de juffrouw worden alleen omdat het intelligent is en netjes werken en bovenal stil zitten en z'n mond houden kan",
+      "duur_s": 18.22,
+      "sha256": "cdd4a464c9cd2fa94b2e70dca2485e840ec90c72eca691ddb3bd2afdcd6d88fa"
+    },
+    {
+      "rij": 2166,
+      "id": "3798_4626_000435",
+      "tekst": "het werd winter en jopie verzuimde vaak zijn schoenen benne stuk kwam het grotere broertje zeggen en eindelijk was het zijn schoenen kennen niet meer gemaakt zegt de schoenmaker ja maar zei ik moet hij dan voortaan maar thuis blijven",
+      "duur_s": 15.41,
+      "sha256": "5cbcf467050d55900fef2a9a9f670a0a65a1f42f88130f18cdcc89a069d47581"
+    },
+    {
+      "rij": 2204,
+      "id": "3798_4626_000473",
+      "tekst": "en toen moest arie branie als altijd natuurlijk weer laten zien wat hij wel durfde en nu och heer deze ene keer was het misgegaan en ik rilde bij de gedachte aan dat toneel",
+      "duur_s": 12.27,
+      "sha256": "9eae406ead9be4d01d7c205111038a37b21218e0123b5aab2a33ae99e286f5bd"
+    },
+    {
+      "rij": 2242,
+      "id": "3798_4626_000511",
+      "tekst": "even een grote blik ik mag niet meedoen van engelientje kom dat heeft ze niet zo gemeend ga maar mee dan zal ik het nog eens voor je vragen kinderen mientje zegt dat ze niet met jullie mee mag doen dat is toch een vergissing he",
+      "duur_s": 17.55,
+      "sha256": "d9b5bc530d5dbf64fe013ba216a0cc4f55aefd4fd3e3dcfe6f9d77c434413325"
+    },
+    {
+      "rij": 2280,
+      "id": "3798_4626_000549",
+      "tekst": "daar komt ze bedaard en triomfantelijk aanwandelen ter weerszijden geflankeerd door twee trouwe trawanten napoleon zelf zou trots op zo'n dochter geweest zijn",
+      "duur_s": 12.52,
+      "sha256": "5e8575a20639c18b9313791e85d3427f3665f3128dc9fad7bc6eb9267ecef2fb"
+    },
+    {
+      "rij": 2318,
+      "id": "3798_4626_000587",
+      "tekst": "ik ken een moeder die haar kind graag verhaaltjes vertelt maar ze zijn altijd naar het volgend model geknipt een inleiding jantje was wel een lief jongetje maar erg ongehoorzaam aan zijn moeder als ze zei enzovoorts twee voorbereiding tot drie",
+      "duur_s": 18.67,
+      "sha256": "bc7093c121db0efe911190ad43ce055ab58269334dc197123be51a12997825cd"
+    },
+    {
+      "rij": 2356,
+      "id": "3798_4626_000625",
+      "tekst": "terwijl de klas en ik ons verdiepten in het mysterie van een haak tien ha-ken een raam vier ra-men bouwde hij een spoorbrug van griffels en potloden of trachtte uit te vinden onder welke helling le een sponsendoos op de bank kunt plaatsen eer hij met kletterend geraas over de planken vloer komt rollen",
+      "duur_s": 18.79,
+      "sha256": "2c4feee38bf980e2786870daa153f745e386c408cd1e7ec30b8168c30da62acb"
+    },
+    {
+      "rij": 2394,
+      "id": "3798_4626_000663",
+      "tekst": "ja d'r man en zij hadden ook wel gemerkt dat de jongen erg bijdehand was en ze hadden er al over gepraat of hij later niet wat verder zou kunnen leren als hij van school kwam maar nu al op een andere school en het kind boven z'n stand opbrengen ze wist niet of d'r man daar wel voor te porren zou zijn",
+      "duur_s": 17.27,
+      "sha256": "2c279c187673c1661373ecb1fc16adc96e395cc40abc705e97f67ccea8d5ef92"
+    },
+    {
+      "rij": 2432,
+      "id": "3798_4626_000701",
+      "tekst": "maar ik sta nu maar op te houwe u zal d'r in school ook genoeg mee te stellen hebben lief duifje in onze ark uw mondje bracht de vrede citeerde ik bij mijzelf terwijl ik verder ging",
+      "duur_s": 13.25,
+      "sha256": "ab9f5bda9ee7e411657a565b12321d61dd46f562bd3485530b2995c579c7109a"
+    },
+    {
+      "rij": 2470,
+      "id": "3798_4626_000739",
+      "tekst": "toen begon hun hartje toch wel heel hard te kloppen want ze voelden zich zo eenzaam in dat grote bos de oudsten hielden hun tranen nog in en bleven maar roepen al beefden hun stemmetjes ook maar de kleintjes snikten en schreiden zoo luid ze konden terwijl zij oh",
+      "duur_s": 15.89,
+      "sha256": "4fb82c6bfca9b6852798516f1218af093969264512921bd53f504cc18d2a6bc2"
+    },
+    {
+      "rij": 2508,
+      "id": "3798_4626_000777",
+      "tekst": "maar ligt er sneeuw dan is het lawaai dubbel sterk maar het is een vrolijke aardige drukte het ergst is de herrie bij stormachtig weer dan hebben ze de wind in het hoofd en gillen als dol door elkaar",
+      "duur_s": 13.16,
+      "sha256": "fdb86e0e3d90c0bbbe241ad6fd7614cf8739179dff22f22a407e08703ce40a7a"
+    },
+    {
+      "rij": 2546,
+      "id": "3798_4626_000815",
+      "tekst": "ik weet alleen dat ze het kwaadaardigste terugstootendste schepseltje was dat ik ooit gezien had ze was midden in de cursus naar onze school over geplaatst de onderwijzeres bij wie ze kwam wist er geen raad mee",
+      "duur_s": 14.85,
+      "sha256": "b060b9b2c2537c3c3436d05212cf896608e7564188ba749f89633c801b9d8f99"
+    },
+    {
+      "rij": 2584,
+      "id": "3798_4626_000853",
+      "tekst": "de rest van de geschiedenis is gauw verteld ik hielp eenmaal andermaal en toen nog eens maar ik begreep zelf al dat het zo toch niet voortgaan kon en toen ik bovendien merkte dat moeder misbruik maakte van m'n genegenheid voor jopie en kwam lamenteren dat ik toch zelf zoveel van het schaap hield",
+      "duur_s": 18.2,
+      "sha256": "2c6a59e5d8b42fe86ebb53a42c6498f36d1a0180c6dad508c1b42a1da949fa15"
+    },
+    {
+      "rij": 2622,
+      "id": "3798_4626_000891",
+      "tekst": "en ik begon een der meijertjes te fouilleren en had dadelijk beet grote ontsteltenis in de klas terwijl nellie riep ja juffrouw dat is 'm maar daar begon me die kleine deugniet tekeer te gaan",
+      "duur_s": 13.3,
+      "sha256": "e9096a1b20a8fcdc492b2e98bf94099ae403a7c1c89f4359532c6783e98e4328"
+    },
+    {
+      "rij": 2660,
+      "id": "3798_4626_000929",
+      "tekst": "niet te wild jongens waarschuwde ik nog eens onder het voorbij lopen u let er wel op meneer de commissaris dan tikte hij geheel in z'n rol even aan z'n pet lachte me met z'n zachte blauwe ogen geruststellend toe en zei ja juffrouw en dan liet ik ze hun gang maar weer gaan",
+      "duur_s": 16.61,
+      "sha256": "36867bcb6cc29e3c7da6d0d6750165dbd4e73707a9c106902ebebc3e15b22a9f"
+    },
+    {
+      "rij": 2698,
+      "id": "3798_4626_000967",
+      "tekst": "ze speelde graag schooltje en dan natuurlijk zij de juffrouw zodra een ander zich voor die rol opwierp verdijde zij het langer mee te doen trouwens ze was er geknipt voor regeren bazen het was haar lust en leven",
+      "duur_s": 14.73,
+      "sha256": "1e92edb4210f17aa7eb983b53191f446da91717e4cb857ade7fd91bafc9c938d"
+    },
+    {
+      "rij": 2736,
+      "id": "3798_4727_000032",
+      "tekst": "alzo heeft de vis het land aan een hengelaar die onverdronken blijft aan de kant doch valt deze uit zijn boot in de sloot pierdood of bij abuis als jeugdig drenkeling van de sluis",
+      "duur_s": 13.77,
+      "sha256": "cba7dd53fdb11fc4a38525377c212f4914a77eedbe814ff16cc7a8929c40675b"
+    },
+    {
+      "rij": 2774,
+      "id": "880_795_000031",
+      "tekst": "het was een heerlijk ontbijt hoewel zij er niets van meekregen en toen ze naar huis gingen zoveel geluk achterlatende waren er geloof ik in de ganse stad geen vrolijker schepseltjes dan de vier hongerige meisjes die hun ontbijt hadden weggegeven en zich op die kerstmorgen tevreden stelden met brood en melk",
+      "duur_s": 19.1,
+      "sha256": "0d55c7a149ed22279e5289c0218d27aac6b694808fabbbceadffd68205e1bbc0"
+    },
+    {
+      "rij": 2812,
+      "id": "880_795_000069",
+      "tekst": "die een plotselinge ingeving kreeg allemaal mis de oude heer laurence zond het antwoordde mevrouw march de grootvader van die jongen hiernaast wat ter wereld bracht hem dat in het hoofd wij kennen hem niet eens riep meta",
+      "duur_s": 13.55,
+      "sha256": "7d6159e8c9fc9c75547731db69a913ba467c91e9e5bcda1182ebe3317949fc3c"
+    },
+    {
+      "rij": 2850,
+      "id": "880_795_000107",
+      "tekst": "hagar bij de hand leidende wier gezang mooier werd gevonden dan al het andere bij elkaar het vierde bedrijf stelde de wanhopige rodrigo voor op het punt zichzelf te doorsteken omdat met hem gezegd heeft dat sara ontrouw geworden is",
+      "duur_s": 14.96,
+      "sha256": "af786708b6bcdd8af939786ae15a13c89ca676fbc6a811010dc4bc5ca00935bc"
+    },
+    {
+      "rij": 2888,
+      "id": "880_795_000145",
+      "tekst": "dat ben ik gelukkig nog niet en als het van het opgestoken haar komt dan zal ik het tot mijn twintigste jaar in twee staarten laten hangen dreigde jo terwijl ze haar haar lostrok en haar kastanjebruine manen schudde",
+      "duur_s": 12.91,
+      "sha256": "61234bbca4ede77bb6b98475e68727305980cc6fa6c62fa4c61b6803ddd87613"
+    },
+    {
+      "rij": 2926,
+      "id": "880_795_000183",
+      "tekst": "neen sinst nicolaas zei bets moeder heeft het gedaan en meta lachte met haar vriendelijksten glimlach in weerwil van haar grijzen baard en witte wenkbrauwen tante march had zeker een goede bui en heeft al dat lekkers gestuurd",
+      "duur_s": 14.43,
+      "sha256": "98108fc6ab73fae87592ccef27f4832d0398d617c6b3cf52ca595a6c17927f69"
+    },
+    {
+      "rij": 2964,
+      "id": "11290_9412_000014",
+      "tekst": "ik ga niet weg voordat het vat leeg is zei de wolf op eens kwam de boer in de kelder hij had het leven gehoord van het uit en inspringen van den vos de vos zag hem en was in een sprong buiten de wolf wilde hem achterna maar hij had zich zo dik gegeten dat hij er niet meer door kon en bleef steken",
+      "duur_s": 18.47,
+      "sha256": "91856cc9f3730c23b00da8669bc9e967b912a0be65aec44a1478133c69f66759"
+    },
+    {
+      "rij": 3002,
+      "id": "11290_9412_000052",
+      "tekst": "mooie waar te koop mooie waar sneeuwwitje keek door haar venstertje en riep goeden dag vrouwtje wat heb je te koop goede waar mooie waar rijgsnoeren van alle kleuren en zij liet er haar een zien die van bontkleurige zijde gevlochten was",
+      "duur_s": 16.32,
+      "sha256": "99940b38f78cc7e361d33665f7ad6d6ec2403ff2440bc481a193ff5c640ba6ae"
+    },
+    {
+      "rij": 3040,
+      "id": "11290_9412_000090",
+      "tekst": "maar de dwergen antwoordden wij geven haar niet niet voor al het goud dat in de wereld is toen sprak hij schenk haar mij dan want ik kan niet leven zonder sneeuwwitje te zien ik zal haar eren en hoogachten als wat mij het allerliefste is",
+      "duur_s": 14.03,
+      "sha256": "755625ff7bbcce4a7ae288f5b0d406bba447a2e3efeea322e9931974124e827f"
+    }
+  ]
+}

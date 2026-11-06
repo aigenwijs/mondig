@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "pil",
+  "description": "De zwevende pil: alleen gebeurtenissen van de app ontvangen. Tonen, verbergen en de knoppen lopen via onze eigen commando's.",
+  "windows": ["pil"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+}

@@ -1,0 +1,98 @@
+# Meetlat voor de spraakengine: meet woordfouten van Parakeet op een vaste openbare
+# set (eval/ci-testset.md) en vergelijkt met de basislijn. Rekentijd kost geld (ADR 0004),
+# dus deze workflow draait alleen handmatig (sinds 6-11-2026; daarvoor ook bij PR's die
+# engine-, audio-, filter-, meet- of modelcode raakten). Lokaal meet `mondig-cli bench` hetzelfde. Alleen het standaardmodel Parakeet Ultra (snel); Whisper meten we lokaal.
+#
+# Let op: eval/basislijn.json is gemeten op Windows. Linux kan iets andere getallen
+# geven, dus de drempel staat hier voorlopig ruimer (DREMPEL). Na de eerste run staat
+# de Linux-meting als artifact "bench-uitkomst"; die wordt de CI-basislijn
+# (eval/basislijn-ci.json) en dan gaat de drempel terug naar 1,0.
+name: Bench
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  MODEL: parakeet-ultra-q8
+  # Procentpunt achteruitgang die de run laat falen. Voorlopig ruim, zie bovenaan.
+  DREMPEL: "3.0"
+
+jobs:
+  bench:
+    name: Meetlat (Linux, Parakeet)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      # transcribe.cpp bouwt ggml met CMake; de Vulkan-module vraagt de headers en glslc
+      # (libvulkan-dev, glslc). De meting draait op de processor, dus de module wordt
+      # alleen gebouwd, niet geladen. ffmpeg zet de Opus-bestanden van de testset om naar wav.
+      # ALSA (libasound2-dev, via pkg-config) is nodig voor de opnamelaag (cpal, sinds 3b).
+      - name: Bouwpakketten
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential libvulkan-dev glslc spirv-headers ffmpeg pkg-config libasound2-dev
+
+      - name: Rust installeren (versie uit rust-toolchain.toml)
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Mondig-cli en werkproces bouwen
+        run: cargo build --release -p mondig-cli -p mondig-engine
+
+      - name: Modelmap cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.local/share/com.aigenwijs.spraak/modellen
+          key: modellen-${{ hashFiles('crates/mondig-core/src/modellen.json') }}
+
+      - name: Testaudio cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/ci-audio
+          key: ci-audio-${{ hashFiles('eval/ci-subset.json') }}
+
+      # Slaat zelf over wat er al staat (controleert grootte en sha256).
+      - name: Model downloaden
+        run: target/release/mondig-cli modellen download "$MODEL"
+
+      # Controleert elke sha256 tegen het manifest; bij afwijking stopt de run.
+      - name: Testset ophalen
+        run: node eval/scripts/haal-ci-subset.mjs "$RUNNER_TEMP/ci-audio"
+
+      # transcribe-cpp bouwt libtranscribe.so in de build-map. Buiten `cargo run` vindt de
+      # lader hem niet vanzelf; de Linux-bundel regelt dat later zelf (sprint 3e).
+      - name: Motorbibliotheek vindbaar maken
+        run: echo "LD_LIBRARY_PATH=$(dirname "$(find target/release/build -name 'libtranscribe.so*' -print -quit)")" >> "$GITHUB_ENV"
+
+      - name: Meten
+        run: |
+          target/release/mondig-cli bench \
+            --set "$RUNNER_TEMP/ci-audio" \
+            --model "$MODEL" \
+            --basislijn eval/basislijn.json \
+            --drempel "$DREMPEL" \
+            --json > "$RUNNER_TEMP/bench.json"
+
+      - name: Uitkomst bewaren
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: bench-uitkomst
+          path: ${{ runner.temp }}/bench.json
+          if-no-files-found: ignore
+          retention-days: 30

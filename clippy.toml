@@ -1,0 +1,4 @@
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+# Namen in de documentatie die geen code zijn (".." houdt de standaardlijst van clippy).
+doc-valid-idents = ["LibreOffice", "OpenDocument", "WebVTT", "SubRip", ".."]

@@ -1,0 +1,9 @@
+# Build-instellingen voor de hele workspace.
+
+[env]
+# transcribe.cpp (ggml) wordt via CMake gebouwd. Onder MSVC krijgt de Release-configuratie
+# dan geen optimalisatievlag mee, en dan is de motor tientallen keren trager (gemeten in
+# sprint 2b met whisper.cpp: 56 s in plaats van 3,7 s voor 11 s audio met Whisper small).
+# Deze vlaggen zetten het goed en zijn ook geldig voor gcc en clang.
+CMAKE_C_FLAGS_RELEASE = "-O2 -DNDEBUG"
+CMAKE_CXX_FLAGS_RELEASE = "-O2 -DNDEBUG"

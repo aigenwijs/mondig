@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Beveiligingsprobleem
+    url: mailto:hallo@aigenwijs.com?subject=Mondig%20security
+    about: Meld beveiligingsproblemen niet openbaar, maar per mail.

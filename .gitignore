@@ -1,0 +1,61 @@
+# Rust
+/target/
+**/target/
+
+# Node / frontend
+node_modules/
+/app/dist/
+/app/build/
+/app/.svelte-kit/
+*.tsbuildinfo
+.vite/
+
+# Tauri
+/app/src-tauri/gen/schemas/
+/app/src-tauri/target/
+
+# Modellen en audio (nooit in git)
+*.bin
+*.gguf
+*.onnx
+*.safetensors
+/models/
+/eval/audio/
+/eval/transcripten/
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
+*.webm
+*.mp4
+# Uitzondering: synthetische sinustonen voor de formaattests (README in die map).
+!/crates/mondig-core/tests/bestanden/*
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Editor en OS
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Gegenereerde release-bijlagen (zie .github/workflows/release.yml)
+*.cdx.json
+
+# Door scripts/engine-bundelen.mjs klaargezet voor de installer (ADR 0012)
+/app/src-tauri/binaries/
+/app/src-tauri/engine-libs/
+
+# Door scripts/vermeldingen.mjs gemaakt voor de app (ADR 0016)
+/app/src/lib/gegenereerd/

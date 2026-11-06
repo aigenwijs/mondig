@@ -1,0 +1,6 @@
+{
+  "tekstvelden": ["naam", "licentie", "maker", "titel", "wijziging"],
+  "adresvelden": ["bron_url", "gguf_url", "licentie_url", "disclaimer_url"],
+  "adres_begint_met": "https://",
+  "nul_of_tekst": ["copyright"]
+}

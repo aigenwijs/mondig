@@ -1,0 +1,8 @@
+package-lock.json
+/build
+/.svelte-kit
+/src-tauri
+/static
+/app-icon.png
+# Gemaakt door scripts/vermeldingen.mjs bij het bouwen; niet in git.
+/src/lib/gegenereerd

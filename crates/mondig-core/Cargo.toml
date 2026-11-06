@@ -1,0 +1,71 @@
+[package]
+name = "mondig-core"
+description = "Kern van Mondig: logica zonder gebruikersinterface"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64 = "0.23.1"
+dirs = "7.0.0"
+fs4 = { version = "1.1.0", optional = true }
+handy-recorder = { version = "0.1.0", optional = true }
+rubato = "5.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = { version = "0.11.1", optional = true }
+symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "aac", "isomp4", "mkv", "flac", "ogg", "vorbis", "wav", "pcm"] }
+# Opus via libopus (BSD-3, meegebouwd met cmake); symphonia heeft zelf nog geen Opus (ADR 0015).
+symphonia-adapter-libopus = "0.3.0"
+thiserror = "2.0.21"
+ureq = { version = "3.5.0", default-features = false, features = ["rustls"], optional = true }
+# Bewaren en exporteren (ADR 0017): PDF/A-2b met krilla, Word en LibreOffice als zip met XML,
+# de lokale tijd voor datum en tijd in de naam en de documenteigenschappen. skrifa is dezelfde
+# versie die krilla gebruikt, om regels af te breken op de breedte van de tekst.
+jiff = { version = "0.2.38", optional = true }
+krilla = { version = "0.8.2", default-features = false, features = ["simple-text"], optional = true }
+skrifa = { version = "0.42.1", optional = true }
+# Alleen deflate (flate2 met miniz_oxide, dat al in de boom zit); geen versleuteling of
+# andere compressie.
+zip = { version = "9.2.1", default-features = false, features = ["deflate-flate2"], optional = true }
+# API-sleutels van taalmodellen in de sleutelbos van het besturingssysteem (ADR 0025), met de
+# standaardfeature v1: Windows Credential Manager, macOS Keychain, Secret Service op Linux.
+keyring = { version = "4.2.0", optional = true }
+# Sleutels na gebruik uit het geheugen wissen (MIT of Apache-2.0); zat al in de boom via keyring.
+zeroize = { version = "1.9.1", optional = true }
+# Alleen om een certificaatfout van ureq te herkennen (die komt als io-fout met een rustls-fout
+# erin); dezelfde rustls die ureq al gebruikt, zonder eigen features.
+rustls = { version = "0.23.46", default-features = false, optional = true }
+
+[target.'cfg(windows)'.dependencies]
+# Systeemgeluid via WASAPI-loopback (ADR 0013, aanvulling 4b-A): dezelfde cpal die
+# handy-recorder vastpint (Apache-2.0), zodat er één versie in de app zit.
+cpal = { package = "handy-cpal", version = "=0.18.2", optional = true }
+
+[lints]
+workspace = true
+
+[features]
+# Netwerkcode zit alleen in de modules download en taalmodel, elk achter een eigen feature die
+# standaard uit staat.
+default = []
+# `ureq/platform-verifier`: certificaten controleren met de opslag van het besturingssysteem
+# (op Windows de certificaatopslag van Windows), zodat het ook werkt bij een organisatie met
+# TLS-inspectie en een eigen basiscertificaat (rustls-platform-verifier, MIT of Apache-2.0).
+download = ["dep:ureq", "ureq/platform-verifier", "dep:sha2", "dep:fs4"]
+# Opnemen van de microfoon (ADR 0013): handy-recorder achter onze eigen opnamelaag; voor
+# vergaderingen ook het geluid van de computer via cpal (ADR 0013, aanvulling 4b-A).
+opname = ["dep:handy-recorder", "dep:cpal"]
+# Transcripten bewaren als Word, PDF/A, LibreOffice, tekst en ondertitels (sprint 4-C).
+bewaren = ["dep:jiff", "dep:krilla", "dep:skrifa", "dep:zip"]
+# Taalmodellen als aanbieder (ADR 0024): chat completions via ureq, sleutels in de sleutelbos.
+taalmodel = ["dep:ureq", "ureq/platform-verifier", "dep:keyring", "dep:zeroize", "dep:rustls"]
+
+[dev-dependencies]
+hound = "3.5.1"
+tempfile = "3.27.0"
+tiny_http = "0.12.0"
+sha2 = "0.11.1"

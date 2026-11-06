@@ -1,0 +1,40 @@
+name: Fout melden
+description: Iets werkt niet zoals verwacht
+labels: ["bug"]
+body:
+  - type: textarea
+    id: wat
+    attributes:
+      label: Wat gebeurde er?
+      description: En wat had je verwacht?
+    validations:
+      required: true
+  - type: textarea
+    id: stappen
+    attributes:
+      label: Hoe kunnen we het nadoen?
+      placeholder: "1. Open ...\n2. Druk op ...\n3. ..."
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Besturingssysteem
+      options: [Windows 11, Windows 10, macOS, Linux]
+    validations:
+      required: true
+  - type: input
+    id: versie
+    attributes:
+      label: Versie van Mondig
+      description: Te vinden onder Instellingen > Over
+  - type: dropdown
+    id: functie
+    attributes:
+      label: Welk onderdeel?
+      options: [Dicteren, Bestand uitschrijven, Installatie, Instellingen, Anders]
+  - type: textarea
+    id: log
+    attributes:
+      label: Logbestand (optioneel)
+      description: Exporteer via Instellingen > Hulp. Controleer eerst of er niets vertrouwelijks in staat.

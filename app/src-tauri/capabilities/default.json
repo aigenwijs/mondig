@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Minimale rechten voor het hoofdvenster: gebeurtenissen van de app ontvangen. Eigen commando's, de bestandskiezer, de sneltoets (global-shortcut) en de instellingen (store) lopen via Rust: de webview krijgt voor die plugins geen rechten.",
+  "windows": ["main"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+}
