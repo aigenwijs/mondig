@@ -3,7 +3,8 @@
     "targets": ["app", "dmg"],
     "externalBin": ["binaries/mondig-engine"],
     "resources": {
-      "infoplist/**": "./"
+      "infoplist/nl.lproj/InfoPlist.strings": "nl.lproj/InfoPlist.strings",
+      "infoplist/en.lproj/InfoPlist.strings": "en.lproj/InfoPlist.strings"
     }
   }
 }
