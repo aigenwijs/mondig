@@ -348,7 +348,14 @@ fn het_achtergrondwerkproces_draait_op_een_lagere_prioriteit() {
     )];
     let sup = geladen(instellingen("ok", &extra));
     let pid = std::fs::read_to_string(&pidbestand).unwrap();
-    let verwacht = if cfg!(windows) { "BelowNormal" } else { "10" };
+    // Mac en Linux: `nice -n 10` telt op bij de waarde van de ouder. Op de macOS-runner van
+    // GitHub draait het testproces zelf al op -10, dus het werkproces komt daar op 0.
+    let (verwacht, normaal) = if cfg!(windows) {
+        ("BelowNormal".to_string(), "Normal".to_string())
+    } else {
+        let eigen: i32 = prioriteit(&std::process::id().to_string()).parse().unwrap();
+        ((eigen + 10).min(19).to_string(), eigen.to_string())
+    };
     assert_eq!(prioriteit(&pid), verwacht, "{}", prioriteit_diagnose(&pid));
 
     // Ter vergelijking: het dicteerwerkproces draait normaal.
@@ -357,7 +364,6 @@ fn het_achtergrondwerkproces_draait_op_een_lagere_prioriteit() {
     let sup_dicteren = geladen(dicteren);
     let pid_dicteren = std::fs::read_to_string(&pidbestand).unwrap();
     assert_ne!(pid, pid_dicteren);
-    let normaal = if cfg!(windows) { "Normal" } else { "0" };
     assert_eq!(
         prioriteit(&pid_dicteren),
         normaal,
