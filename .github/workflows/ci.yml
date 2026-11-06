@@ -206,10 +206,6 @@ jobs:
         working-directory: app
         run: npm run build
 
-      # Op de Mac raken de Rust-tests de Unix-paden; --all-features voor de supervisortests.
-      - name: cargo test
-        run: cargo test --workspace --all-features
-
       # transcribe.cpp compileert de Metal-shaders met `xcrun metal` (ingebed in het werkproces).
       # Sinds Xcode 26 is die compiler soms een apart onderdeel; haal het op als het ontbreekt.
       - name: Metal-compiler controleren
@@ -246,3 +242,9 @@ jobs:
           path: target/release/bundle/dmg/*.dmg
           if-no-files-found: error
           retention-days: 7
+
+      # Op de Mac raken de Rust-tests de Unix-paden; --all-features voor de supervisortests.
+      # Na het bewaren van de dmg, zodat een falende test de proefversie niet tegenhoudt; de
+      # job wordt dan wel rood.
+      - name: cargo test
+        run: cargo test --workspace --all-features
