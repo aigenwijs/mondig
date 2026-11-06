@@ -88,19 +88,29 @@ jobs:
           tool: cargo-about@0.9.3
 
       # Werkproces bouwen en samen met de rekenmodules en de C++-runtime klaarzetten
-      # voor de installer (ADR 0012). Mac en Linux volgen in sprint 3e.
-      - name: Werkproces bundelen (Windows)
-        if: matrix.platform == 'windows-latest'
+      # voor de installer (ADR 0012). Op de Mac gaat het werkproces (Metal) mee in de .app
+      # (ADR 0029). Linux volgt later.
+      - name: Werkproces bundelen (Windows en macOS)
+        if: matrix.platform == 'windows-latest' || matrix.platform == 'macos-latest'
         run: node scripts/engine-bundelen.mjs
+
+      # transcribe.cpp compileert de Metal-shaders met `xcrun metal`; zie ci.yml.
+      - name: Metal-compiler controleren
+        if: matrix.platform == 'macos-latest'
+        run: |
+          if ! xcrun -sdk macosx metal --version; then
+            xcodebuild -downloadComponent MetalToolchain
+            xcrun -sdk macosx metal --version
+          fi
 
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: app
-          # Alleen Windows krijgt de bundelconfig met het werkproces; Mac en Linux
-          # blijven ongewijzigd tot sprint 3e.
-          args: ${{ matrix.platform == 'windows-latest' && '--config src-tauri/tauri.bundel.conf.json' || '' }}
+          # Windows en macOS krijgen een bundelconfig met het werkproces; Linux blijft
+          # ongewijzigd. Op de Mac: alleen app en dmg, ad-hoc ondertekend (ADR 0029).
+          args: ${{ matrix.platform == 'windows-latest' && '--config src-tauri/tauri.bundel.conf.json' || matrix.platform == 'macos-latest' && '--config src-tauri/tauri.bundel.macos.conf.json' || '' }}
           tagName: v__VERSION__
           releaseName: 'Mondig v__VERSION__'
           releaseBody: 'Concept: nog niet handmatig getest. Zie de bijlagen voor de installers.'

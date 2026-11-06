@@ -15,7 +15,7 @@ on:
         type: boolean
         default: false
       macos:
-        description: "Build en rooktest op macOS, met de app als download"
+        description: "Build en rooktest op macOS (Apple Silicon), met de dmg als download"
         type: boolean
         default: false
 
@@ -201,16 +201,48 @@ jobs:
         working-directory: app
         run: npm ci
 
-      # Bouwt het werkproces met Metal, zodat die build op de Mac getest wordt.
-      - name: Werkproces bouwen (Metal)
-        run: cargo build --release -p mondig-engine
-
-      - name: App bouwen met bundel (app en dmg)
+      # De Tauri-crate leest de gebouwde frontend (app/build) bij het compileren.
+      - name: Frontend bouwen
         working-directory: app
-        run: npm run tauri build -- --bundles app,dmg
+        run: npm run build
 
+      # Op de Mac raken de Rust-tests de Unix-paden; --all-features voor de supervisortests.
+      - name: cargo test
+        run: cargo test --workspace --all-features
+
+      # transcribe.cpp compileert de Metal-shaders met `xcrun metal` (ingebed in het werkproces).
+      # Sinds Xcode 26 is die compiler soms een apart onderdeel; haal het op als het ontbreekt.
+      - name: Metal-compiler controleren
+        run: |
+          if ! xcrun -sdk macosx metal --version; then
+            xcodebuild -downloadComponent MetalToolchain
+            xcrun -sdk macosx metal --version
+          fi
+
+      # De build maakt eerst de vermeldingen van derden voor in de app (ADR 0016).
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about@0.9.3
+
+      # Bouwt het werkproces met Metal en de .app en .dmg met het werkproces erin (ADR 0029).
+      - name: App bouwen met werkproces (app en dmg)
+        working-directory: app
+        run: npm run bundel:mac
+
+      # De rooktest draait op de gebouwde .app, zodat ook de plek van het werkproces getest is.
       - name: Rooktest
         timeout-minutes: 5
-        # Tot sprint 3e zit het werkproces niet in de .app; de rooktest draait daarom op de
-        # build in target/release, waar het werkproces naast de app staat.
-        run: bash scripts/rooktest.sh target/release/mondig
+        run: |
+          app="$(ls -d target/release/bundle/macos/*.app | head -n 1)"
+          ls -la "$app/Contents/MacOS"
+          test -f "$app/Contents/MacOS/mondig-engine"
+          hoofd="$(find "$app/Contents/MacOS" -type f ! -name mondig-engine | head -n 1)"
+          bash scripts/rooktest.sh "$hoofd"
+
+      - name: Dmg bewaren
+        uses: actions/upload-artifact@v7
+        with:
+          name: mondig-macos-dmg
+          path: target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 7

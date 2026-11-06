@@ -1,0 +1,9 @@
+{
+  "bundle": {
+    "targets": ["app", "dmg"],
+    "externalBin": ["binaries/mondig-engine"],
+    "resources": {
+      "infoplist/**": "./"
+    }
+  }
+}
