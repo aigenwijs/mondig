@@ -23,6 +23,8 @@ microphone recording crate `handy-recorder` (MIT) as a dependency. Files:
   crates/mondig-core/src/filter.rs
   crates/mondig-core/src/opschonen.rs
   scripts/engine-bundelen.mjs
+  crates/mondig-engine/build.rs
+  app/src-tauri/Entitlements.plist
   app/src/routes/modellen/+page.svelte
   app/src/lib/components/ModelBalkjes.svelte
   app/src/lib/components/ModelBeheerKaart.svelte
