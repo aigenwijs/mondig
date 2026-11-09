@@ -1,10 +1,25 @@
 import { leesbareGrootte } from './grootte';
 import type { Berichten } from './i18n/typen';
 import { resterendeTijdTekst } from './resterendetijd';
-import { duurMinuten, type Modelrol, type OpnieuwKeuze } from './vergadering';
+import { duurMinuten, type Modelrol, type OpnieuwKeuze, type StandToestand } from './vergadering';
 
 // Opnieuw uitschrijven (N-C4, ADR 0023): de pure hulpjes voor de dialoog, de voortgang en de
 // melding. Een model heet hier bij zijn rol, nooit bij zijn naam (N-B).
+
+/**
+ * Is er tussen twee standen een opnieuw uitschrijven geslaagd? Dan staat er andere tekst in het
+ * verslag, en wijst "Opgeslagen als..." (met Openen) naar een bestand met de oude tekst. Stoppen
+ * telt niet: het verslag blijft dan zoals het was.
+ */
+export function opnieuwGeslaagd(vorig: StandToestand | undefined, nu: StandToestand): boolean {
+  return (
+    vorig?.type === 'verslag' &&
+    vorig.opnieuw !== null &&
+    nu.type === 'verslag' &&
+    nu.opnieuw === null &&
+    nu.naOpnieuw !== null
+  );
+}
 
 /** De rol als bijvoeglijk naamwoord ("nauwkeurige"), of `null` als die niet bekend is. */
 export function rolTekst(rol: Modelrol | null, t: Berichten): string | null {

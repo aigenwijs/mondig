@@ -77,6 +77,19 @@ export function microfooninstellingOpen(): Promise<void> {
   return invoke<undefined>('microfooninstelling_open');
 }
 
+/** Het recht op toegankelijkheid op de Mac; Windows kent het niet (`niet_nodig`). */
+export type ToegangStand = 'niet_nodig' | 'toegestaan' | 'geweigerd';
+
+/** Mag Mondig op de Mac toetsen sturen (en dus plakken)? */
+export function toegankelijkheidStand(): Promise<ToegangStand> {
+  return invoke<ToegangStand>('toegankelijkheid_stand');
+}
+
+/** Zet Mondig in de lijst bij Toegankelijkheid en opent die instelling (alleen op de Mac). */
+export function toegankelijkheidOpen(): Promise<void> {
+  return invoke<undefined>('toegankelijkheid_open');
+}
+
 /** Toont de pil met deze maat in CSS-pixels; Rust kiest het scherm en de plek. */
 export function pilToon(breedte: number, hoogte: number): Promise<void> {
   return invoke<undefined>('pil_toon', { breedte, hoogte });
@@ -96,6 +109,14 @@ export function pilStand(): Promise<PilStand> {
 /** Verbergt de pil. */
 export function pilVerberg(): Promise<void> {
   return invoke<undefined>('pil_verberg');
+}
+
+/**
+ * Er is op de pil geklikt. Op de Mac activeert dat Mondig; Rust zet dan het programma waar je
+ * typte weer vooraan, zodat het volgende dictaat daar plakt. Elders doet het niets.
+ */
+export function pilKlik(): Promise<void> {
+  return invoke<undefined>('pil_klik');
 }
 
 /** Opent het venster van Mondig bij het spraakmodel (vervolgactie vanuit de pil). */

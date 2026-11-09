@@ -96,12 +96,24 @@ export type PlakUitkomst =
   | 'waarschijnlijk_geplakt'
   | 'niet_gelezen'
   | 'niet_geplakt'
+  /** Het programma las het klembord niet, dus Mondig typte de tekst. */
+  | 'getypt'
+  /** Mondig typte een deel en stopte (ander venster, een toets, beveiligde invoer); de rest staat op het klembord. */
+  | 'typen_onderbroken'
+  /** Ook typen lukte niet; de tekst (of de rest) staat op het klembord. */
+  | 'typen_mislukt'
+  /** Niets gelezen en geen tekstveld met de focus: niet getypt, de tekst staat op het klembord. */
+  | 'geen_tekstveld'
   | 'op_klembord'
   | 'beheerrechten'
   | 'toetsen_ingedrukt'
   | 'geen_venster'
   | 'mislukt'
-  | 'in_mondig';
+  | 'in_mondig'
+  /** Alleen op de Mac: geen recht op toegankelijkheid; de tekst staat op het klembord. */
+  | 'geen_toegang'
+  /** Alleen op de Mac: niets gelezen terwijl beveiligde invoer aanstond; de tekst staat op het klembord. */
+  | 'wachtwoordveld';
 
 /** Wat er met het klembord van voor het plakken gebeurde (zelfde namen als in Rust). */
 export type VorigKlembord = 'bewaard' | 'onvolledig' | 'kwijt';
@@ -133,12 +145,14 @@ export function plakHoortBij(weergave: Weergave, uitslag: PlakUitslag): boolean 
 export function plakSoort(uitkomst: PlakUitkomst): 'gelukt' | 'klembord' | 'fout' {
   switch (uitkomst) {
     case 'geplakt':
+    case 'getypt':
       return 'gelukt';
     case 'waarschijnlijk_geplakt':
       // Geen fout: misschien plakte het wel. Een status zonder stellige uitspraak.
       return 'klembord';
     case 'op_klembord':
     case 'in_mondig':
+    case 'wachtwoordveld':
       return 'klembord';
     case 'niet_gelezen':
     case 'niet_geplakt':
@@ -146,6 +160,12 @@ export function plakSoort(uitkomst: PlakUitkomst): 'gelukt' | 'klembord' | 'fout
     case 'toetsen_ingedrukt':
     case 'geen_venster':
     case 'mislukt':
+    case 'typen_onderbroken':
+    case 'typen_mislukt':
+    case 'geen_tekstveld':
+    case 'geen_toegang':
+      // Ook `geen_toegang` (Mac) is een fout, al staat de tekst op het klembord: zonder het
+      // recht plakt Mondig nooit, en de melding wijst de weg naar de instelling.
       return 'fout';
   }
 }

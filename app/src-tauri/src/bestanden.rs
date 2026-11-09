@@ -44,7 +44,7 @@ use mondig_core::bewerken::Bewerkingen;
 use mondig_core::download::{self, ModelStatus};
 use mondig_core::engine::protocol::Apparaat;
 use mondig_core::engine::supervisor::Instellingen;
-use mondig_core::gesprek::sprekernaam;
+use mondig_core::gesprek::Sprekerlabels;
 use mondig_core::logboek::{self, Gebeurtenis as LogGebeurtenis, SleepbordType};
 use mondig_core::model::{Gebruik, Model};
 use mondig_core::persoonsgegevens::Markeringen;
@@ -306,9 +306,22 @@ pub(crate) struct BestandenStaat {
     /// De stopvlag van het stuk geluid dat nu wordt klaargezet (V-1): een nieuwe klik op een
     /// regel stopt het vorige, zodat er nooit twee lange leesbeurten tegelijk lopen.
     afspelen: Mutex<Option<Arc<AtomicBool>>>,
+    /// De standaardnamen van de sprekers in de taal van de app, voor scherm, Kopiëren en Opslaan.
+    /// De interface geeft ze door ([`crate::vergadering::vergadering_zet_labels`]); tot dan zijn ze
+    /// Nederlands.
+    labels: Mutex<Sprekerlabels>,
 }
 
 impl BestandenStaat {
+    /// Onthoudt de standaardnamen van de sprekers zoals de interface ze doorgaf.
+    pub(crate) fn zet_labels(&self, labels: Sprekerlabels) {
+        *slot(&self.labels) = labels;
+    }
+
+    fn sprekerlabels(&self) -> Sprekerlabels {
+        slot(&self.labels).clone()
+    }
+
     /// Is er een bestand aan het wachten of aan het werk?
     pub(crate) fn is_bezig(&self) -> bool {
         slot(&self.lijst)
@@ -884,7 +897,7 @@ pub(crate) fn bestand_weghalen(
 }
 
 /// Het transcript van een item, als het er is.
-fn maak_transcript(item: &Item) -> Option<BestandTranscript> {
+fn maak_transcript(item: &Item, labels: &Sprekerlabels) -> Option<BestandTranscript> {
     let klaar = item.transcript.as_ref()?;
     let gefilterd = &klaar.uitgeschreven.gefilterd;
     let transcript = &gefilterd.transcript;
@@ -897,7 +910,7 @@ fn maak_transcript(item: &Item) -> Option<BestandTranscript> {
         soevereiniteit: Soevereiniteit::Lokaal,
         melding: gefilterd.uitkomst.melding(),
         waarschuwing: waarschuwing_tekst(&klaar.uitgeschreven),
-        regels: scherm_regels(klaar),
+        regels: scherm_regels(klaar, labels),
         label: item.label.clone(),
         audio_aanwezig: item.pad.is_file(),
         persoon: persoon_info(&klaar.persoon),
@@ -910,8 +923,9 @@ pub(crate) fn bestand_transcript(
     staat: State<'_, BestandenStaat>,
     taak: TaakId,
 ) -> Option<BestandTranscript> {
+    let labels = staat.sprekerlabels();
     let lijst = slot(&staat.lijst);
-    maak_transcript(lijst.items.iter().find(|i| i.taak == taak)?)
+    maak_transcript(lijst.items.iter().find(|i| i.taak == taak)?, &labels)
 }
 
 /// Past de markeringen van persoonsgegevens van een transcript aan (V-2) en geeft het transcript
@@ -922,6 +936,7 @@ fn wijzig_persoon(
     taak: TaakId,
     wijziging: impl FnOnce(&mut Markeringen) -> Result<(), Foutmelding>,
 ) -> Result<BestandTranscript, Foutmelding> {
+    let labels = staat.sprekerlabels();
     let (uitslag, veranderd) = {
         let mut lijst = slot(&staat.lijst);
         let item = lijst.item(taak).ok_or_else(geen_transcript)?;
@@ -932,7 +947,7 @@ fn wijzig_persoon(
         if veranderd && !item.opgeslagen.is_empty() {
             item.verouderd = true;
         }
-        (maak_transcript(item), veranderd && item.verouderd)
+        (maak_transcript(item, &labels), veranderd && item.verouderd)
     };
     if veranderd {
         // De lijst toont dan dat het opgeslagen bestand niet meer klopt.
@@ -995,6 +1010,7 @@ pub(crate) fn bestand_zet_tekst(
     index: usize,
     tekst: String,
 ) -> Result<Vec<TranscriptRegel>, Foutmelding> {
+    let labels = staat.sprekerlabels();
     let (regels, verouderd) = {
         let mut lijst = slot(&staat.lijst);
         let item = lijst.item(taak).ok_or_else(geen_transcript)?;
@@ -1006,7 +1022,7 @@ pub(crate) fn bestand_zet_tekst(
             .map(|(segment, _)| segment.tekst.trim().to_string())
             .ok_or_else(geen_regel)?;
         let veranderd = klaar.bewerkt.zet(index, &origineel, &tekst);
-        let regels = scherm_regels(klaar);
+        let regels = scherm_regels(klaar, &labels);
         if veranderd && !item.opgeslagen.is_empty() {
             item.verouderd = true;
         }
@@ -1076,6 +1092,7 @@ impl BestandenStaat {
     /// Het transcript als [`Document`] om te bewaren, met het label dat nu geldt. `None` als
     /// er (nog) geen transcript is.
     pub(crate) fn document(&self, taak: TaakId) -> Option<Document> {
+        let labels = self.sprekerlabels();
         let lijst = slot(&self.lijst);
         let item = lijst.items.iter().find(|i| i.taak == taak)?;
         let klaar = item.transcript.as_ref()?;
@@ -1091,7 +1108,7 @@ impl BestandenStaat {
             moment: bewaren::lokaal_moment(klaar.op_ms),
             duur_ms: ms(gefilterd.transcript.audio_duur),
             melding: gefilterd.uitkomst.melding().map(str::to_string),
-            regels: export_regels(klaar),
+            regels: export_regels(klaar, &labels),
         };
         // De naam van het bestand, het label en de titel kunnen namen of nummers bevatten.
         vervang_velden(&mut document, &klaar.persoon, true);
@@ -1415,7 +1432,7 @@ fn persoon_per_uiting(klaar: &Klaar) -> Vec<(Vec<MarkeringInfo>, String)> {
 /// De regels van het transcript op het scherm, met de spreker ("Spreker 1") als de sprekers
 /// herkend zijn (4b-D) en de tekst zoals de gebruiker hem verbeterde (V-1). Regels zonder tekst
 /// vallen weg; `index` blijft de plek in het hele transcript.
-fn scherm_regels(klaar: &Klaar) -> Vec<TranscriptRegel> {
+fn scherm_regels(klaar: &Klaar, labels: &Sprekerlabels) -> Vec<TranscriptRegel> {
     let teksten = uiting_teksten(klaar);
     let mut persoon = persoon_per_uiting(klaar).into_iter();
     klaar
@@ -1431,7 +1448,7 @@ fn scherm_regels(klaar: &Klaar) -> Vec<TranscriptRegel> {
                 start_ms: s.start_ms,
                 eind_ms: s.eind_ms,
                 tekst,
-                spreker: spreker.map(sprekernaam),
+                spreker: spreker.map(|n| labels.spreker(n)),
                 markeringen,
                 uitvoer,
             })
@@ -1442,7 +1459,7 @@ fn scherm_regels(klaar: &Klaar) -> Vec<TranscriptRegel> {
 /// De regels voor een export (tekst, Word, pdf, ondertitels), met dezelfde sprekers en
 /// dezelfde verbeterde tekst als het scherm. Zonder sprekers is `spreker` overal `None`, dus de
 /// exports zijn dan ongewijzigd.
-fn export_regels(klaar: &Klaar) -> Vec<Regel> {
+fn export_regels(klaar: &Klaar, labels: &Sprekerlabels) -> Vec<Regel> {
     klaar
         .uitgeschreven
         .uitingen()
@@ -1452,7 +1469,7 @@ fn export_regels(klaar: &Klaar) -> Vec<Regel> {
             start_ms: s.start_ms,
             eind_ms: s.eind_ms,
             tekst: uitvoer,
-            spreker: spreker.map(sprekernaam),
+            spreker: spreker.map(|n| labels.spreker(n)),
         })
         .collect()
 }
@@ -1546,18 +1563,48 @@ mod tests {
     #[test]
     fn zonder_sprekers_blijven_scherm_en_export_zoals_ze_waren() {
         let uit = klaar(uitgeschreven(None));
-        let scherm = scherm_regels(&uit);
+        let scherm = scherm_regels(&uit, &Sprekerlabels::default());
         assert_eq!(scherm.len(), 2, "een regel zonder tekst valt weg");
         assert!(scherm.iter().all(|r| r.spreker.is_none()));
-        let export = export_regels(&uit);
+        let export = export_regels(&uit, &Sprekerlabels::default());
         assert_eq!(export.len(), 3);
         assert!(export.iter().all(|r| r.spreker.is_none()));
     }
 
     #[test]
+    fn scherm_en_export_gebruiken_de_sprekerlabels_van_de_app() {
+        let uit = klaar(uitgeschreven(Some(vec![Some(1), Some(1), Some(2)])));
+        let en = Sprekerlabels {
+            jij: "You".into(),
+            anderen: "Others".into(),
+            sprekers: (1..=8).map(|n| format!("Speaker {n}")).collect(),
+        };
+        let scherm: Vec<_> = scherm_regels(&uit, &en)
+            .into_iter()
+            .map(|r| r.spreker)
+            .collect();
+        assert_eq!(
+            scherm,
+            vec![Some("Speaker 1".to_string()), Some("Speaker 2".to_string())]
+        );
+        let export: Vec<_> = export_regels(&uit, &en)
+            .into_iter()
+            .map(|r| r.spreker)
+            .collect();
+        assert_eq!(
+            export,
+            vec![
+                Some("Speaker 1".to_string()),
+                Some("Speaker 1".to_string()),
+                Some("Speaker 2".to_string())
+            ]
+        );
+    }
+
+    #[test]
     fn met_sprekers_krijgt_elke_regel_zijn_spreker_op_scherm_en_in_de_export() {
         let uit = klaar(uitgeschreven(Some(vec![Some(1), Some(1), Some(2)])));
-        let scherm: Vec<_> = scherm_regels(&uit)
+        let scherm: Vec<_> = scherm_regels(&uit, &Sprekerlabels::default())
             .into_iter()
             .map(|r| (r.tekst, r.spreker))
             .collect();
@@ -1568,7 +1615,10 @@ mod tests {
                 ("Dank u wel.".to_string(), Some("Spreker 2".to_string())),
             ]
         );
-        let export: Vec<_> = export_regels(&uit).into_iter().map(|r| r.spreker).collect();
+        let export: Vec<_> = export_regels(&uit, &Sprekerlabels::default())
+            .into_iter()
+            .map(|r| r.spreker)
+            .collect();
         assert_eq!(
             export,
             vec![
@@ -1591,7 +1641,7 @@ mod tests {
             moment: bewaren::lokaal_moment(0),
             duur_ms: 12_000,
             melding: None,
-            regels: export_regels(&uit),
+            regels: export_regels(&uit, &Sprekerlabels::default()),
         };
         let tekst = |formaat| String::from_utf8(maak(&document, formaat, true).unwrap()).unwrap();
         // Tekst, ondertitels (SRT met het label, VTT met een stem) en de rest.
@@ -1620,7 +1670,7 @@ mod tests {
     #[test]
     fn een_bewerkte_regel_staat_op_het_scherm_met_zijn_plek_in_het_hele_transcript() {
         let klaar = bewerkt_transcript();
-        let scherm = scherm_regels(&klaar);
+        let scherm = scherm_regels(&klaar, &Sprekerlabels::default());
         // De lege regel (plek 1) staat niet op het scherm, maar plek 2 blijft plek 2.
         assert_eq!(
             scherm
@@ -1655,7 +1705,7 @@ mod tests {
         // Word, OpenDocument en pdf zijn binair en gecomprimeerd: de tekst is er niet in te
         // zoeken, maar zonder de bewerking zijn ze anders.
         let zonder = Document {
-            regels: export_regels(&klaar_zonder_bewerking()),
+            regels: export_regels(&klaar_zonder_bewerking(), &Sprekerlabels::default()),
             ..document
         };
         for formaat in [Formaat::Docx, Formaat::Odt, Formaat::Pdf] {
@@ -1678,7 +1728,7 @@ mod tests {
             moment: bewaren::lokaal_moment(0),
             duur_ms: 12_000,
             melding: None,
-            regels: export_regels(klaar),
+            regels: export_regels(klaar, &Sprekerlabels::default()),
         }
     }
 
@@ -1688,12 +1738,15 @@ mod tests {
         let origineel = klaar.uitgeschreven.uitingen()[2].0.tekst.trim().to_string();
         assert!(!klaar.bewerkt.zet(2, &origineel, "   \n"));
         assert!(
-            scherm_regels(&klaar)[1]
+            scherm_regels(&klaar, &Sprekerlabels::default())[1]
                 .tekst
                 .starts_with("Dank u wel, voorzitter.")
         );
         assert!(klaar.bewerkt.zet(2, &origineel, &origineel));
-        assert_eq!(scherm_regels(&klaar)[1].tekst, "Dank u wel.");
+        assert_eq!(
+            scherm_regels(&klaar, &Sprekerlabels::default())[1].tekst,
+            "Dank u wel."
+        );
     }
 
     #[test]
@@ -1706,7 +1759,7 @@ mod tests {
                 .bewerkt
                 .zet(2, "Dank u wel.", "Bel 06 12345678 of mail jan@example.com.")
         );
-        let scherm = scherm_regels(&klaar);
+        let scherm = scherm_regels(&klaar, &Sprekerlabels::default());
         let regel = &scherm[1];
         assert_eq!(regel.markeringen.len(), 2);
         assert_eq!(
@@ -1722,7 +1775,7 @@ mod tests {
         assert!(tekst(&klaar, Formaat::Txt).contains("06 12345678"));
         // Aan: Kopiëren en elke export krijgen de plaatsvervangers, het scherm houdt de tekst.
         klaar.persoon.zet_vervangen(true);
-        let scherm = scherm_regels(&klaar);
+        let scherm = scherm_regels(&klaar, &Sprekerlabels::default());
         assert_eq!(scherm[1].uitvoer, "Bel [TELEFOON] of mail [E-MAIL].");
         assert!(scherm[1].tekst.contains("06 12345678"));
         for formaat in [
@@ -1742,7 +1795,7 @@ mod tests {
         // Een weggehaalde markering blijft staan in de tekst.
         klaar.persoon.haal_weg("jan@example.com");
         assert_eq!(
-            scherm_regels(&klaar)[1].uitvoer,
+            scherm_regels(&klaar, &Sprekerlabels::default())[1].uitvoer,
             "Bel [TELEFOON] of mail jan@example.com."
         );
     }
@@ -1754,11 +1807,11 @@ mod tests {
         let o2 = klaar.uitgeschreven.uitingen()[2].0.tekst.trim().to_string();
         klaar.bewerkt.zet(0, &o0, "Mijn nummer is 06 1234");
         klaar.bewerkt.zet(2, &o2, "5678 en dat was het.");
-        let scherm = scherm_regels(&klaar);
+        let scherm = scherm_regels(&klaar, &Sprekerlabels::default());
         assert_eq!(scherm[0].markeringen.len(), 1);
         assert_eq!(scherm[1].markeringen.len(), 1);
         klaar.persoon.zet_vervangen(true);
-        let regels = export_regels(&klaar);
+        let regels = export_regels(&klaar, &Sprekerlabels::default());
         assert_eq!(regels[0].tekst, "Mijn nummer is [TELEFOON]");
         assert!(!regels[2].tekst.contains("5678"), "{}", regels[2].tekst);
     }

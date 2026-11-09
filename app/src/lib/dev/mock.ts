@@ -1457,8 +1457,12 @@ export function installeerDevMock(): void {
         case 'pil_toon':
         case 'pil_verberg':
         case 'pil_open_mondig':
+        case 'pil_klik':
         case 'microfooninstelling_open':
+        case 'toegankelijkheid_open':
           return null;
+        case 'toegankelijkheid_stand':
+          return 'niet_nodig';
         case 'pil_stand':
           return { taak: null, luistert: false };
         case 'pil_positie_instelling':

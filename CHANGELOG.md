@@ -8,6 +8,20 @@ Alle merkbare wijzigingen staan hier. Opmaak volgens
 
 ### Toegevoegd
 
+- Dicteren overal, op Windows en de Mac: laat een programma niet plakken (een webformulier dat
+  plakken blokkeert, een terminal, een sessie op afstand), dan typt Mondig de tekst na
+  anderhalve seconde gewoon in, met de tekens zelf, dus ook goed op AZERTY en QWERTZ. Dat doet
+  Mondig alleen als er een tekstveld de focus heeft, zodat letters nooit sneltoetsen worden;
+  regeleindes worden spaties. Wissel je tijdens het typen van venster, dan stopt Mondig en staat
+  de rest op het klembord. Kan ook
+  typen niet (een wachtwoordveld op de Mac, een programma met beheerrechten op Windows), dan
+  staat de tekst op het klembord en zegt Mondig waarom.
+- Dicteren in andere programma's op de Mac: Mondig plakt de tekst met ⌘V waar je typt, houdt hem
+  buiten klembordbeheerders en zet daarna je vorige klembord terug, net als op Windows. De pil
+  verschijnt onderaan het scherm waar je werkt zonder de focus te pakken, het geluidje klinkt en
+  de Mac blijft wakker zolang Mondig opneemt of uitschrijft. Heeft Mondig nog geen toestemming
+  voor Toegankelijkheid, of typ je in een wachtwoordveld, dan staat de tekst op het klembord en
+  zegt Mondig waarom, met een knop naar de juiste instelling.
 - Op de Mac kun je opnames rechtstreeks uit Dictafoon, Foto's en Mail naar Mondig slepen, net als
   uit de Finder. Lukt het pakken van een gesleept bestand niet, dan zegt Mondig dat en wat je wel
   kunt doen: het bestand eerst naar het bureaublad slepen.
@@ -15,6 +29,11 @@ Alle merkbare wijzigingen staan hier. Opmaak volgens
   opgeschoond dictaat), want Ctrl+Spatie en Cmd+Spatie gebruikt macOS zelf. Toetsen staan als
   symbolen (⌥Spatie, ⌃⌘D) en de Command-toets mag in een eigen sneltoets. Stond er een
   Windows-sneltoets die op de Mac niet kan, dan kiest Mondig de standaard en meldt dat.
+- Spreker aanwijzen in de ruimte: ook zonder herkende sprekers kun je bij een alinea een spreker
+  aanwijzen en die een naam geven. Alinea's die je niet aanwees blijven zonder spreker, in het
+  verslag, bij kopiëren en in elke export; ze heten dus niet "Jij". De notulen van zo'n opname
+  maken niet elk actiepunt van "Jij": bij "Wie" staat alleen een naam of rol die in de tekst
+  voorkomt.
 - Stopwoorden weghalen: klanken als "ehm", "uh" en "hmm" gaan uit je dictaten, uitschriften
   van bestanden en opnames, zonder taalmodel en zonder internet. Het staat standaard aan; je zet
   het uit bij Instellingen onder Dicteren, achter Meer opties. Alleen klanken die geen woord
@@ -272,6 +291,13 @@ Alle merkbare wijzigingen staan hier. Opmaak volgens
 
 ### Gewijzigd
 
+- Een naam in het verslag geldt nu altijd voor de hele spreker, ook voor Jij en Anderen: de keuze
+  "Alleen deze beurt" is weg. Geef je twee sprekers dezelfde naam, dan zijn ze dezelfde persoon
+  en voegt Mondig ze samen ("Spreker 1 en Spreker 2 zijn nu Noor"). Een naam, samenvoegen of een
+  beurt aan een andere spreker geven kun je met "Ongedaan maken" terugdraaien. Een nieuwe naam
+  staat ook bij "Wie" in de notulen, en samenvoegen maakt de notulen niet meer tot een vorige
+  versie. Zoeken vindt beurten ook op de naam van de spreker, en de telling van sprekers rekent
+  Anderen zonder nummer niet meer als extra spreker.
 - Mondig controleert de beveiligde verbinding voor het downloaden van modellen nu met de
   certificaten van je computer. Daardoor werkt downloaden ook bij organisaties die het verkeer
   controleren met een eigen certificaat, zoals veel gemeenten.
@@ -332,6 +358,19 @@ Alle merkbare wijzigingen staan hier. Opmaak volgens
 
 ### Opgelost
 
+- Spatie en Ctrl+F (⌘F op de Mac) werken alleen nog op het tabblad dat je ziet. Op het tabblad
+  Notulen startte spatie eerst onzichtbaar geluid en opende Ctrl+F een zoekveld dat je niet zag.
+- "Vorige versie terugzetten" blijft nu staan tot je opnieuw uitschrijft of het verslag sluit,
+  ook als je een naam of tekst wijzigt. Terugzetten vraagt eerst om bevestiging, want het zet
+  ook je namen en verbeterde tekst van sindsdien terug. Je markeringen blijven.
+- "Opgeslagen als..." verdwijnt na opnieuw uitschrijven, zodat Openen niet naar een bestand met
+  de oude tekst wijst.
+- Persoonsgegevens vervangen werkt op beide tabbladen gelijk: staat het aan, dan tonen Verslag
+  en Notulen allebei `[BSN]` enzovoort, ook in de bronverwijzingen van de notulen en in de naam
+  van een spreker (`[GEGEVEN]`), zoals Kopiëren en Opslaan al deden. Bewerken begint nog steeds
+  met de echte tekst.
+- Kopiëren en opslaan gebruiken de namen van sprekers in de taal van de app ("You", "Others",
+  "Speaker 1" in het Engels), niet altijd Nederlands. Een naam die je zelf gaf, blijft staan.
 - De eerste start toont bij het downloaden de voortgang van alles samen ("0,6 van 1,8 GB") in plaats van van het ene model dat binnenkomt ("10 van 742 MB"), zodat het klopt met de knop "Downloaden (1,8 GB)".
 - Na een update kon een oude spraakengine naast de nieuwe app blijven staan, met als gevolg
   een melding als "Onbekend model". De installer stopt de spraakengine nu ook bij het

@@ -91,15 +91,34 @@ export const nl = {
   plakVorigKlembordKwijt: 'Je vorige klembord kon niet bewaard worden.',
   plakVorigKlembordOnvolledig: 'Je vorige klembord kon niet volledig bewaard worden.',
   plakOpKlembord: 'De tekst staat op het klembord. Plak hem met Ctrl+V.',
+  plakGetypt: 'De tekst staat waar je typte.',
+  plakTypenOnderbroken:
+    'Mondig stopte halverwege met typen, omdat je van venster wisselde, een toets ingedrukt hield of in een wachtwoordveld kwam. Het begin staat er al; de rest, die nog niet getypt was, staat op het klembord, zodat je hem zelf kunt plakken.',
+  plakGeenTekstveld:
+    'Mondig vond geen tekstveld om in te typen. De tekst staat op het klembord, zodat je hem zelf kunt plakken; je vorige kopie is daarmee vervangen.',
+  plakTypenMislukt:
+    'Plakken en typen lukten niet in dit venster. De tekst staat op het klembord, zodat je hem zelf kunt plakken.',
   plakBeheerrechten:
-    'Mondig kan niet plakken in dit venster, omdat het met beheerrechten draait. Kopieer de tekst en plak hem zelf.',
+    'Mondig kan niet plakken of typen in dit venster, omdat het met beheerrechten draait. De tekst staat op het klembord: plak hem met Ctrl+V. Je vorige kopie is daarmee vervangen.',
   plakToetsen:
     'Mondig plakte niet, omdat er nog een toets ingedrukt was. Kopieer de tekst en plak hem zelf.',
   plakGeenVenster: 'Er was geen venster om in te plakken. Kopieer de tekst en plak hem zelf.',
   plakNietGelezen:
     'Mondig weet niet zeker of de tekst is geplakt. Staat hij er niet, kopieer hem dan en plak hem zelf.',
   plakMislukt: 'Plakken lukte niet. Kopieer de tekst en plak hem zelf.',
-  plakNietGeplakt: 'Mondig kon niet plakken in dit venster. De tekst staat klaar onder Kopiëren.',
+  plakNietGeplakt:
+    'Mondig kon niet plakken of typen in dit venster, misschien omdat het met beheerrechten draait. De tekst staat op het klembord, zodat je hem zelf kunt plakken; je vorige kopie is daarmee vervangen.',
+  // Plakken op de Mac (mijlpaal M1)
+  plakGeenToegang:
+    'Mondig mag nog niet plakken, want macOS vraagt eerst je toestemming. De tekst staat op het klembord: plak hem met ⌘V.',
+  plakWachtwoordveld:
+    'Mondig kon niet plakken, waarschijnlijk omdat beveiligde invoer aanstond (bijvoorbeeld in een wachtwoordveld). De tekst staat op het klembord: plak hem met ⌘V.',
+  toegankelijkheidOpenen: 'Toegankelijkheid openen',
+  toegangKop: 'Geef Mondig toestemming om te plakken',
+  toegangTekst:
+    'Om de tekst te plakken waar je typt, moet Mondig toetsen mogen sturen. Zet Mondig aan in Systeeminstellingen, bij Privacy en beveiliging, Toegankelijkheid. Tot die tijd zet Mondig de tekst op het klembord.',
+  toegangOpnieuw:
+    'Staat Mondig daar al aan en plakt hij toch niet? Dat gebeurt na een nieuwe versie van Mondig. Haal Mondig dan uit de lijst met de minknop en zet hem er opnieuw in met de plusknop.',
   modelAanvullenKop: 'Het spraakmodel is nog niet compleet',
   modelAanvullenTekst: (grootte: string): string =>
     `Nog ${grootte} te downloaden. Daarna is Mondig klaar om te dicteren.`,
@@ -402,8 +421,12 @@ export const nl = {
   pilVerdacht: 'Bijna geen spraak gehoord, controleer de tekst',
   pilRest: (seconden: number): string => `Nog ${String(seconden)} s, dan stopt het dicteren`,
   pilPlakMislukt: 'Plakken lukte niet in dit venster',
-  pilPlakBeheer: 'Dit venster draait met beheerrechten, plak de tekst zelf',
+  pilPlakBeheer: 'Dit venster draait met beheerrechten, de tekst staat op het klembord',
+  pilTypenOnderbroken: 'Gestopt met typen, de rest staat op het klembord',
+  pilGeenTekstveld: 'Geen tekstveld gevonden, de tekst staat op het klembord',
+  pilTypenMislukt: 'Plakken en typen lukten niet, de tekst staat op het klembord',
   pilPlakOnzeker: 'Niet zeker of de tekst is geplakt',
+  pilPlakGeenToegang: 'Mondig mag nog niet plakken, de tekst staat op het klembord',
   pilGekopieerd: 'Gekopieerd, plak met Ctrl+V',
   plakInMondig: 'De tekst staat hieronder, want Mondig stond vooraan toen hij klaar was.',
   pilInMondig: 'De tekst staat in Mondig',
@@ -672,12 +695,7 @@ export const nl = {
   vergaderBeurtenLabel: 'Het verslag',
   vergaderNaamAria: (naam: string): string => `${naam}, naam wijzigen`,
   vergaderNaamGeven: (kant: string): string => `Naam geven aan ${kant}`,
-  vergaderNaamKop: 'Naam',
   vergaderNaamVoorbeeld: 'Bijvoorbeeld Wethouder De Vries',
-  vergaderNaamLeeg: (kant: string): string => `Laat het veld leeg om terug te gaan naar ${kant}.`,
-  vergaderNaamBereikLabel: 'Voor welke beurten',
-  vergaderNaamBeurt: 'Alleen deze beurt',
-  vergaderNaamKant: (kant: string): string => `Alle beurten van ${kant}`,
   vergaderSpreker: (nummer: number): string => `Spreker ${String(nummer)}`,
   vergaderNaamOpslaan: 'Opslaan',
   vergaderNaamGegeven: (naam: string): string => `Naam gegeven: ${naam}.`,
@@ -685,11 +703,16 @@ export const nl = {
   // Sprekers herkennen (4b-D, fase D-2)
   vergaderNaamSprekerKop: 'Naam van deze spreker',
   vergaderNaamSprekerHulp: (standaard: string): string =>
-    `Geldt voor alle beurten van deze spreker. Laat het veld leeg om terug te gaan naar ${standaard}.`,
+    `Geldt voor alle beurten van deze spreker. Heeft een andere spreker dezelfde naam, dan worden ze samengevoegd. Laat het veld leeg om terug te gaan naar ${standaard}.`,
   vergaderBeurtVanKop: 'Deze beurt is van',
   vergaderBeurtVanAria: (naam: string): string => `Geef deze beurt aan ${naam}`,
   vergaderNieuweSpreker: 'Nieuwe spreker',
   vergaderPlusSpreker: '+ Spreker',
+  vergaderSprekerAanwijzen: 'Spreker aanwijzen',
+  vergaderSprekerAanwijzenAria: (tijd: string): string =>
+    `Spreker aanwijzen bij de alinea van ${tijd}`,
+  vergaderSprekerAanwijzenHulp:
+    'Kies van wie deze alinea is, of maak een nieuwe spreker. Een naam geven kan daarna bij de spreker.',
   vergaderSamenvoegenKop: 'Is dit dezelfde persoon?',
   vergaderSamenvoegenHulp: (naam: string): string =>
     `Voeg ${naam} samen met een andere spreker. Alle beurten van ${naam} worden dan van die spreker.`,
@@ -698,6 +721,13 @@ export const nl = {
   vergaderNieuweSprekerGegeven: 'De beurt is nu van een nieuwe spreker.',
   vergaderSamengevoegd: (van: string, naar: string): string =>
     `${van} en ${naar} zijn samengevoegd.`,
+  vergaderZijnNu: (namen: string[], naam: string): string => {
+    const laatste = namen.at(-1) ?? '';
+    const lijst = namen.length > 1 ? `${namen.slice(0, -1).join(', ')} en ${laatste}` : laatste;
+    return `${lijst} zijn nu ${naam}.`;
+  },
+  vergaderOngedaanMaken: 'Ongedaan maken',
+  vergaderOngedaanGemaakt: 'Ongedaan gemaakt.',
   vergaderSprekersHerkennen: 'Sprekers herkennen…',
   vergaderSprekersSchermlezer: 'Mondig herkent nu de sprekers.',
   sprekersKop: 'Sprekers herkennen',
@@ -1163,6 +1193,10 @@ export const nl = {
       ? '1 markering staat niet meer in de tekst; lees het verslag na.'
       : `${String(aantal)} markeringen staan niet meer in de tekst; lees het verslag na.`,
   opnieuwTerugzetten: 'Vorige versie terugzetten',
+  opnieuwTerugzettenKop: 'Vorige versie terugzetten?',
+  opnieuwTerugzettenTekst:
+    'Het verslag wordt weer zoals het was voor het opnieuw uitschrijven. Namen en verbeterde tekst die je sindsdien aanpaste, gaan daarbij ook terug. Je markeringen van persoonsgegevens blijven.',
+  opnieuwTerugzettenBevestig: 'Ja, terugzetten',
   opnieuwTeruggezet: 'De vorige versie staat weer terug.',
   opnieuwVeranderdAria: 'veranderd bij opnieuw uitschrijven',
   persoonZelfKop: 'Zelf iets markeren',

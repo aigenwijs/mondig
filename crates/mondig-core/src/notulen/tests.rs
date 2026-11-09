@@ -481,6 +481,21 @@ mod export {
     }
 
     #[test]
+    fn een_nieuwe_naam_staat_in_de_export_van_de_notulen() {
+        let oud = gesprek_met_twee_lukes();
+        let mut bewaard = notulen_bij_twee_lukes(&oud);
+        let mut nieuw = oud.clone();
+        nieuw.geef_naam(0, "Noor").unwrap();
+        nieuw.geef_naam(1, "Noor").unwrap();
+        bewaard.volg(&oud, &nieuw);
+        bewaard.hercontroleer(&invoer(&nieuw));
+        let uit = txt(&bewaard.als_blok(&nieuw, &Markeringen::default()), &nieuw);
+        assert!(uit.contains("(wie: Noor; wanneer: vrijdag)"), "{uit}");
+        assert!(!uit.contains("Spreker"), "{uit}");
+        assert!(!uit.contains("vorige versie"), "{uit}");
+    }
+
+    #[test]
     fn persoonsgegevens_worden_vervangen_zoals_in_het_verslag() {
         let g = gesprek();
         let mut notulen: Notulen = serde_json::from_str(&notulen_json()).unwrap();
@@ -825,4 +840,294 @@ fn punten_krijgen_vaste_nummers_die_bij_weghalen_blijven() {
     bewaard.besluiten[0].id = 0;
     assert!(bewaard.nummer_punten());
     assert_eq!(bewaard.besluiten[0].id, 1);
+}
+
+/// Een online gesprek waarin het model Noor over twee sprekers verdeelde.
+fn gesprek_met_twee_lukes() -> Gesprek {
+    let anderen = |nummer: u8, start_ms: u64, tekst: &str| Beurt {
+        kant: Kant::Anderen,
+        sprekernummer: Some(nummer),
+        start_ms,
+        eind_ms: start_ms + 900,
+        tekst: tekst.to_string(),
+        naam: None,
+        verbeterd: false,
+    };
+    Gesprek {
+        beurten: vec![
+            anderen(1, 0, "Goedemorgen allemaal, we beginnen met het speelveld."),
+            anderen(
+                2,
+                1000,
+                "Ik pak de bewonersbrief op, die gaat voor vrijdag de deur uit.",
+            ),
+            Beurt {
+                kant: Kant::Jij,
+                sprekernummer: None,
+                naam: None,
+                ..anderen(
+                    1,
+                    5000,
+                    "Akkoord, dan besluiten we het hek aan de noordkant te plaatsen.",
+                )
+            },
+        ],
+        ..gesprek()
+    }
+}
+
+fn notulen_bij_twee_lukes(g: &Gesprek) -> BewaardeNotulen {
+    let notulen: Notulen = serde_json::from_value(json!({
+        "samenvatting": "Het overleg ging over het speelveld.",
+        "besluiten": [
+            { "tekst": "Het hek komt aan de noordkant.",
+              "bron": { "beurt": 3, "citaat": "dan besluiten we het hek aan de noordkant" } },
+        ],
+        "actiepunten": [
+            { "wat": "Bewonersbrief versturen", "wie": "Spreker 2", "wanneer": "vrijdag",
+              "bron": { "beurt": 2, "citaat": "Ik pak de bewonersbrief op" } },
+            { "wat": "Hek bestellen", "wie": "jij", "wanneer": "",
+              "bron": { "beurt": 3, "citaat": "het hek aan de noordkant te plaatsen" } },
+        ],
+    }))
+    .unwrap();
+    controleer_notulen(notulen, &invoer(g), g, herkomst())
+}
+
+#[test]
+fn de_notulen_volgen_namen_en_samengevoegde_sprekers() {
+    let oud = gesprek_met_twee_lukes();
+    let mut bewaard = notulen_bij_twee_lukes(&oud);
+    assert_eq!(bewaard.telling(), (3, 0));
+    // Jij wordt Bram, Spreker 1 en Spreker 2 worden Noor: twee beurten gaan samen.
+    let mut nieuw = oud.clone();
+    nieuw.geef_naam(2, "Bram").unwrap();
+    nieuw.geef_naam(0, "Noor").unwrap();
+    nieuw.geef_naam(1, "Noor").unwrap();
+    assert_eq!(nieuw.beurten.len(), 2);
+    assert!(
+        bewaard.bij_vorige_versie(&nieuw),
+        "zonder volgen een vorige versie"
+    );
+    bewaard.volg(&oud, &nieuw);
+    bewaard.hercontroleer(&invoer(&nieuw));
+    // De tekst bleef gelijk: geen vorige versie, en de bronnen wijzen naar de nieuwe plek.
+    assert!(!bewaard.bij_vorige_versie(&nieuw));
+    assert_eq!(bewaard.telling(), (3, 0));
+    assert_eq!(
+        bewaard.besluiten[0].controle,
+        Controle::Gevonden { beurt: 2 }
+    );
+    assert_eq!(bewaard.besluiten[0].punt.bron.beurt, 2);
+    assert_eq!(
+        bewaard.actiepunten[0].controle,
+        Controle::Gevonden { beurt: 1 }
+    );
+    // "Wie" heet nu zoals de spreker, zonder markering "niet gevonden".
+    assert_eq!(bewaard.actiepunten[0].punt.wie, "Noor");
+    assert_eq!(bewaard.actiepunten[1].punt.wie, "Bram");
+    assert!(!bewaard.actiepunten[0].wie_niet_teruggevonden);
+    assert!(!bewaard.actiepunten[1].wie_niet_teruggevonden);
+}
+
+#[test]
+fn notulen_bij_een_vorige_versie_of_na_een_andere_tekst_volgen_niet() {
+    let oud = gesprek_met_twee_lukes();
+    let bewaard = notulen_bij_twee_lukes(&oud);
+    // Een verbeterde tekst: de beurten zijn niet terug te vinden, dus geen nieuwe namen.
+    let mut verbeterd = oud.clone();
+    verbeterd.zet_tekst(1, "Iets heel anders.").unwrap();
+    verbeterd.geef_naam(1, "Noor").unwrap();
+    let mut n = bewaard.clone();
+    n.volg(&oud, &verbeterd);
+    assert!(n == bewaard);
+    // Al bij een vorige versie: niets.
+    let mut ouder = oud.clone();
+    ouder.beurten[0].eind_ms += 50;
+    let mut n = bewaard.clone();
+    n.volg(&ouder, &oud);
+    assert!(n == bewaard);
+}
+
+/// Een opname in de ruimte waar niemand een spreker aanwees: alleen de microfoon, geen nummers.
+fn ruimte_zonder_sprekers() -> Gesprek {
+    let alinea = |start_s: u64, tekst: &str| Beurt {
+        kant: Kant::Jij,
+        sprekernummer: None,
+        start_ms: start_s * 1000,
+        eind_ms: start_s * 1000 + 900,
+        tekst: tekst.to_string(),
+        naam: None,
+        verbeterd: false,
+    };
+    Gesprek {
+        beurten: vec![
+            alinea(0, "Goedemorgen, we beginnen met het speelveld."),
+            alinea(
+                20,
+                "Ik pak de bewonersbrief op, die gaat voor vrijdag de deur uit.",
+            ),
+            alinea(40, "Sanne bestelt het hek bij de gemeente."),
+        ],
+        soort: Vergadersoort::Ruimte,
+        anderen: Spoorstand::Ontbrak,
+        ..gesprek()
+    }
+}
+
+#[test]
+fn zonder_sprekers_gaan_de_regels_zonder_sprekerlabel_naar_het_model() {
+    let g = ruimte_zonder_sprekers();
+    let invoer = Invoer::van(&g, &Markeringen::default());
+    assert_eq!(invoer.labels, Sprekerlabels::Geen);
+    assert_eq!(
+        invoer.regels[0],
+        "[1] 00:00: Goedemorgen, we beginnen met het speelveld."
+    );
+    let alles = invoer.regels.join(
+        "
+",
+    );
+    assert!(!alles.contains("Jij"), "{alles}");
+    assert!(invoer.sprekers.iter().all(String::is_empty));
+}
+
+#[test]
+fn zonder_sprekers_vraagt_de_opdracht_alleen_een_wie_als_de_tekst_een_naam_noemt() {
+    for taal in [Taal::Nl, Taal::En] {
+        let met = opdracht(taal, Sprekerlabels::Alle);
+        let zonder = opdracht(taal, Sprekerlabels::Geen);
+        assert_ne!(met, zonder);
+        assert!(
+            !zonder.contains("[nummer] tijd spreker") && !zonder.contains("[number] time speaker"),
+            "{zonder}"
+        );
+        // Regel 4 van de opdracht met sprekers maakt wie "ik pak dat op" zegt de eigenaar.
+        assert!(!zonder.contains("is wie de naam van die spreker"));
+        assert!(!zonder.contains("wie is that speaker's name"));
+    }
+    assert!(opdracht(Taal::Nl, Sprekerlabels::Geen).contains("is wie dus leeg"));
+    assert!(opdracht(Taal::En, Sprekerlabels::Geen).contains("wie is therefore empty"));
+    // Met sprekers blijft het zoals het was.
+    assert!(opdracht(Taal::Nl, Sprekerlabels::Alle).contains("is wie de naam van die spreker"));
+    assert!(opdracht(Taal::En, Sprekerlabels::Alle).contains("wie is that speaker's name"));
+}
+
+#[test]
+fn een_alinea_die_niemand_aanwees_krijgt_ook_naast_sprekers_geen_label() {
+    // Alinea 2 is van Bram, de andere twee heeft niemand aangewezen.
+    let mut g = ruimte_zonder_sprekers();
+    g.geef_aan_nieuwe_spreker(1).unwrap();
+    g.geef_naam(1, "Bram").unwrap();
+    assert_eq!(
+        g.beurten.len(),
+        3,
+        "de rest is geen Spreker 1: niet samengevoegd"
+    );
+    let invoer = Invoer::van(&g, &Markeringen::default());
+    assert_eq!(invoer.labels, Sprekerlabels::Deels);
+    assert!(
+        invoer.regels[0].starts_with("[1] 00:00: "),
+        "{:?}",
+        invoer.regels
+    );
+    assert!(
+        invoer.regels[1].starts_with("[2] 00:20 Bram: "),
+        "{:?}",
+        invoer.regels
+    );
+    assert!(
+        invoer.regels[2].starts_with("[3] 00:40: "),
+        "{:?}",
+        invoer.regels
+    );
+    // De opdracht zegt wat er bij een regel zonder spreker met "wie" moet.
+    let nl = opdracht(Taal::Nl, Sprekerlabels::Deels);
+    assert!(nl.starts_with(OPDRACHT_NL) && nl.contains("8. Bij een regel zonder spreker"));
+    assert!(opdracht(Taal::En, Sprekerlabels::Deels).contains("8. For a line without a speaker"));
+}
+
+#[test]
+fn bij_alleen_ik_houdt_elke_regel_zijn_label_en_is_jij_de_eigenaar() {
+    let g = Gesprek {
+        soort: Vergadersoort::Alleen,
+        ..ruimte_zonder_sprekers()
+    };
+    let invoer = Invoer::van(&g, &Markeringen::default());
+    assert_eq!(invoer.labels, Sprekerlabels::Alle);
+    assert!(
+        invoer.regels[1].starts_with("[2] 00:20 Jij: "),
+        "{:?}",
+        invoer.regels
+    );
+    // "Wie: Jij" is hier juist: de gebruiker dicteerde zelf.
+    assert!(!notulen_met_wie(&g, "Jij").actiepunten[0].wie_niet_teruggevonden);
+}
+
+fn notulen_met_wie(g: &Gesprek, wie: &str) -> BewaardeNotulen {
+    let notulen: Notulen = serde_json::from_value(json!({
+        "samenvatting": "Kort.",
+        "besluiten": [],
+        "actiepunten": [
+            { "wat": "Bewonersbrief versturen", "wie": wie, "wanneer": "vrijdag",
+              "bron": { "beurt": 2, "citaat": "Ik pak de bewonersbrief op" } },
+        ],
+    }))
+    .unwrap();
+    controleer_notulen(notulen, &invoer(g), g, herkomst())
+}
+
+#[test]
+fn zonder_sprekers_is_ik_of_jij_geen_geldige_wie() {
+    let g = ruimte_zonder_sprekers();
+    // "Jij" en "ik" zijn niemand: ook niet als het woord in de tekst staat.
+    for wie in ["Jij", "ik", "De spreker"] {
+        let n = notulen_met_wie(&g, wie);
+        assert!(n.actiepunten[0].wie_niet_teruggevonden, "{wie}");
+    }
+    // Leeg is goed, en een naam die in de tekst staat ook.
+    assert!(!notulen_met_wie(&g, "").actiepunten[0].wie_niet_teruggevonden);
+    let sanne = Notulen {
+        samenvatting: String::new(),
+        besluiten: Vec::new(),
+        actiepunten: vec![Actiepunt {
+            wat: "Hek bestellen".into(),
+            wie: "Sanne".into(),
+            wanneer: String::new(),
+            bron: Bron {
+                beurt: 3,
+                citaat: "Sanne bestelt het hek bij de gemeente".into(),
+            },
+        }],
+    };
+    let n = controleer_notulen(sanne, &invoer(&g), &g, herkomst());
+    assert!(!n.actiepunten[0].wie_niet_teruggevonden);
+}
+
+#[test]
+fn met_sprekers_blijft_de_spreker_van_de_bronbeurt_een_geldige_wie() {
+    // Een spreker die je zelf aanwees telt weer als eigenaar van "ik pak het op".
+    let mut g = ruimte_zonder_sprekers();
+    g.geef_aan_nieuwe_spreker(1).unwrap();
+    g.geef_naam(1, "Bram").unwrap();
+    assert!(!notulen_met_wie(&g, "Bram").actiepunten[0].wie_niet_teruggevonden);
+    // De bronbeurt van een ander is een alinea zonder spreker: daar is "Bram" niet de eigenaar.
+    let ander = Notulen {
+        samenvatting: String::new(),
+        besluiten: Vec::new(),
+        actiepunten: vec![Actiepunt {
+            wat: "Hek bestellen".into(),
+            wie: "ik".into(),
+            wanneer: String::new(),
+            bron: Bron {
+                beurt: 3,
+                citaat: "Sanne bestelt het hek bij de gemeente".into(),
+            },
+        }],
+    };
+    let n = controleer_notulen(ander, &invoer(&g), &g, herkomst());
+    assert!(n.actiepunten[0].wie_niet_teruggevonden);
+    // Online blijft "Jij" een spreker.
+    let online = gesprek_met_twee_lukes();
+    assert!(!notulen_bij_twee_lukes(&online).actiepunten[1].wie_niet_teruggevonden);
 }

@@ -15,8 +15,8 @@
 //! Sprekerherkenning (4b-D, ADR 0018): staat het sprekermodel klaar, dan splitst
 //! [`schrijf_gesprek_uit`] online het spoor "Anderen" en in de ruimte het microfoonspoor in
 //! sprekers ([`sprekers::koppel`]). Een beurt heeft dan een [`Beurt::sprekernummer`] en heet
-//! "Spreker 1", "Spreker 2", ... tot de gebruiker hem een naam geeft (per spreker met
-//! [`Naambereik::Spreker`]). [`Gesprek::geef_aan_spreker`] en [`Gesprek::voeg_sprekers_samen`]
+//! "Spreker 1", "Spreker 2", ... tot de gebruiker hem een naam geeft ([`Gesprek::geef_naam`], voor
+//! de hele spreker). [`Gesprek::geef_aan_spreker`] en [`Gesprek::voeg_sprekers_samen`]
 //! herstellen wat het model verkeerd deed. Zonder sprekermodel, met de instelling uit, of met
 //! maar één gevonden spreker blijft alles zoals het was.
 
@@ -83,6 +83,54 @@ pub fn sprekernaam(nummer: u8) -> String {
     format!("Spreker {nummer}")
 }
 
+/// De standaardnamen van de sprekers in de taal van de app: "Jij", "Anderen" en "Spreker 1" in het
+/// Nederlands, "You", "Others" en "Speaker 1" in het Engels. Alleen voor wat de gebruiker leest of
+/// bewaart (scherm, Kopiëren, export); in het verslag zelf blijven de namen Nederlands, want daar
+/// kennen de namen en de herkenning ze aan (ADR 0007). De interface kent de taal en geeft de namen
+/// door, zodat ze niet in Rust nog eens vastliggen. Een naam die de gebruiker gaf, blijft zoals hij is.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Sprekerlabels {
+    /// De naam van de microfoonkant.
+    pub jij: String,
+    /// De naam van de systeemkant zonder herkende spreker.
+    pub anderen: String,
+    /// "Spreker 1" tot en met "Spreker [`MAX_SPREKERS`]": de plek is het nummer min één. Ontbreekt
+    /// een plek, dan geldt de Nederlandse naam.
+    pub sprekers: Vec<String>,
+}
+
+impl Default for Sprekerlabels {
+    /// Nederlands, zoals het verslag ze bewaart.
+    fn default() -> Self {
+        Self {
+            jij: Kant::Jij.naam().to_string(),
+            anderen: Kant::Anderen.naam().to_string(),
+            sprekers: (1..=MAX_SPREKERS).map(sprekernaam).collect(),
+        }
+    }
+}
+
+impl Sprekerlabels {
+    /// De naam van een kant zonder sprekernummer.
+    #[must_use]
+    pub fn kant(&self, kant: Kant) -> String {
+        match kant {
+            Kant::Jij => self.jij.clone(),
+            Kant::Anderen => self.anderen.clone(),
+        }
+    }
+
+    /// De naam van spreker `nummer` zonder eigen naam.
+    #[must_use]
+    pub fn spreker(&self, nummer: u8) -> String {
+        usize::from(nummer)
+            .checked_sub(1)
+            .and_then(|plek| self.sprekers.get(plek))
+            .cloned()
+            .unwrap_or_else(|| sprekernaam(nummer))
+    }
+}
+
 /// Eén beurt in het gesprek: een of meer uitingen van dezelfde kant (en spreker) achter elkaar.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Beurt {
@@ -118,8 +166,22 @@ impl Beurt {
     /// De naam zonder eigen naam: "Spreker 1", of de naam van de kant.
     #[must_use]
     pub fn standaardnaam(&self) -> String {
+        self.standaardnaam_met(&Sprekerlabels::default())
+    }
+
+    /// Zoals [`Beurt::spreker`], maar met de standaardnamen van `labels` (de taal van de app).
+    #[must_use]
+    pub fn spreker_met(&self, labels: &Sprekerlabels) -> String {
+        self.naam
+            .clone()
+            .unwrap_or_else(|| self.standaardnaam_met(labels))
+    }
+
+    /// Zoals [`Beurt::standaardnaam`], maar met de namen van `labels`.
+    #[must_use]
+    pub fn standaardnaam_met(&self, labels: &Sprekerlabels) -> String {
         self.sprekernummer
-            .map_or_else(|| self.kant.naam().to_string(), sprekernaam)
+            .map_or_else(|| labels.kant(self.kant), |n| labels.spreker(n))
     }
 }
 
@@ -290,19 +352,32 @@ pub struct Gesprek {
     pub soort: Vergadersoort,
 }
 
-/// Voor welke beurten een naam geldt.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Naambereik {
-    /// Alleen deze beurt.
-    Beurt,
-    /// Alle beurten van deze kant die nu dezelfde naam hebben als deze beurt. Een beurt
-    /// die eerder apart een naam kreeg, houdt die.
-    Kant,
-    /// Alle beurten van deze spreker (zelfde kant en sprekernummer) die nu dezelfde naam
-    /// hebben als deze beurt (4b-D). Een beurt die eerder apart een naam kreeg, houdt die.
-    /// Zonder sprekernummer werkt dit als [`Naambereik::Kant`] voor de beurten zonder nummer.
-    Spreker,
+/// Wat [`Gesprek::geef_naam`] deed.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Naamgeving {
+    /// Hoeveel beurten er veranderden.
+    pub veranderd: usize,
+    /// De sprekers die door de naam samengingen ("Spreker 1 en Spreker 2 zijn nu Noor"), als
+    /// sprekernummer; `None` is de kant zonder nummer ("Anderen"). Oplopend, de kant zonder nummer
+    /// als laatste. Leeg als er niets samenging.
+    pub samengevoegd: Vec<Option<u8>>,
+    /// De naam zoals hij nu in het verslag staat (bij samengaan de naam die de persoon al had);
+    /// `None` is de standaardnaam.
+    pub naam: Option<String>,
+    /// Het sprekernummer van de beurt na de naam, voor de standaardnaam ("Spreker 1").
+    pub nummer: Option<u8>,
+}
+
+/// Is dit de naam van een kant ("Jij", "Anderen")? Die kan geen eigen naam zijn.
+fn is_kantnaam(naam: &str) -> bool {
+    [Kant::Jij, Kant::Anderen]
+        .iter()
+        .any(|k| zelfde_naam(naam, k.naam()))
+}
+
+/// Een naam om te vergelijken: zonder verschil in hoofdletters (witruimte is al schoongemaakt).
+fn zelfde_naam(a: &str, b: &str) -> bool {
+    a.to_lowercase() == b.to_lowercase()
 }
 
 /// Zoveel tekens mag een naam hebben.
@@ -344,44 +419,147 @@ pub fn schone_verslagnaam(naam: &str) -> Option<String> {
 }
 
 impl Gesprek {
-    /// Geeft de spreker van beurt `index` een naam, voor alleen die beurt of voor alle beurten
-    /// van die kant met dezelfde naam (zie [`Naambereik`]). Een lege naam, of de naam van de
-    /// kant zelf ("Jij", "Anderen"), zet de naam terug. Geeft hoeveel beurten er veranderden.
-    ///
-    /// # Errors
-    ///
-    /// Geeft een [`Foutmelding`] bij een vergadering in de ruimte (daar zijn geen sprekers) of
-    /// als de beurt er niet is.
-    pub fn geef_naam(
-        &mut self,
-        index: usize,
-        naam: &str,
-        bereik: Naambereik,
-    ) -> Result<usize, Foutmelding> {
+    /// Beurt `index`, als die een spreker heeft die een naam kan krijgen.
+    fn beurt_met_label(&self, index: usize) -> Result<&Beurt, Foutmelding> {
         if !self.met_sprekers() {
             return Err(geen_sprekers());
         }
         let beurt = self.beurten.get(index).ok_or_else(geen_beurt)?;
+        if self.label(beurt).is_none() {
+            return Err(Foutmelding::nieuw(
+                "Wijs deze alinea eerst aan een spreker toe, daarna kun je die een naam geven.",
+                Vervolg::Geen,
+            ));
+        }
+        Ok(beurt)
+    }
+
+    /// Geeft de spreker van beurt `index` een naam, voor al zijn beurten (zoals Vibe: een naam
+    /// hoort bij een spreker, niet bij een regel). Met een sprekernummer zijn dat alle beurten
+    /// van die spreker; zonder nummer (online "Jij", of "Anderen" zonder herkende spreker) alle
+    /// beurten van die kant zonder nummer die nu zo heten. Een lege naam, of de standaardnaam
+    /// ("Jij", "Anderen", "Spreker 2"), zet de naam terug.
+    ///
+    /// Dezelfde naam is dezelfde persoon: heeft een andere spreker van dezelfde kant die naam al
+    /// (zonder verschil in hoofdletters of witruimte), dan gaan ze samen onder het laagste
+    /// nummer, en beurten van die kant zonder nummer met die naam horen daarna ook bij die
+    /// spreker. Naast elkaar liggende beurten gaan dan samen, zoals bij
+    /// [`Gesprek::voeg_sprekers_samen`].
+    ///
+    /// Ook de standaardnaam van een andere spreker ("Spreker 1", ook als die nu anders heet) is
+    /// die spreker. "Jij" en "Anderen" zijn geen eigen naam: alleen als standaardnaam van de
+    /// beurt zelf zetten ze terug.
+    ///
+    /// # Errors
+    ///
+    /// Geeft een [`Foutmelding`] bij een vergadering zonder sprekers (in de ruimte zonder
+    /// herkende sprekers, Alleen ik), als de beurt er niet is, of bij de naam "Jij" of "Anderen"
+    /// voor een andere spreker.
+    pub fn geef_naam(&mut self, index: usize, naam: &str) -> Result<Naamgeving, Foutmelding> {
+        let beurt = self.beurt_met_label(index)?;
         let kant = beurt.kant;
         let nummer = beurt.sprekernummer;
         let huidig = beurt.spreker();
         // De standaardnaam ("Anderen", "Spreker 2") intypen zet de naam terug.
-        let nieuw = schone_naam(naam).filter(|n| *n != beurt.standaardnaam());
-        let mut veranderd = 0;
-        for (i, b) in self.beurten.iter_mut().enumerate() {
-            let hoort_erbij = match bereik {
-                Naambereik::Beurt => i == index,
-                Naambereik::Kant => b.kant == kant && b.spreker() == huidig,
-                Naambereik::Spreker => {
-                    b.kant == kant && b.sprekernummer == nummer && b.spreker() == huidig
+        let nieuw = schone_naam(naam).filter(|n| !zelfde_naam(n, &beurt.standaardnaam()));
+        if nieuw.as_deref().is_some_and(is_kantnaam) {
+            return Err(Foutmelding::nieuw(
+                "\"Jij\" en \"Anderen\" kun je niet als naam geven. Kies een andere naam.",
+                Vervolg::Geen,
+            ));
+        }
+        let van_deze = |b: &Beurt| {
+            b.kant == kant
+                && match nummer {
+                    Some(_) => b.sprekernummer == nummer,
+                    None => b.sprekernummer.is_none() && b.spreker() == huidig,
                 }
-            };
-            if hoort_erbij && b.naam != nieuw {
-                b.naam.clone_from(&nieuw);
+        };
+        // Wie heeft die naam al? Andere sprekers met een nummer (hun naam, of "Spreker 3" als
+        // die is ingetypt), en beurten zonder nummer met die eigen naam.
+        // De naam zoals die persoon hem al heeft, blijft ("noor" intypen bij een tweede Noor
+        // houdt "Noor"; "Spreker 1" intypen bij Spreker 2 houdt de naam van Spreker 1, of geen).
+        let mut andere_nummers: Vec<u8> = Vec::new();
+        let mut zonder_nummer = false;
+        let mut bestaande_naam: Option<Option<String>> = None;
+        if let Some(nieuw) = &nieuw {
+            for m in self.sprekernummers() {
+                let naam_m = self.naam_van_spreker(kant, m);
+                let heeft_beurten = self
+                    .beurten
+                    .iter()
+                    .any(|b| b.kant == kant && b.sprekernummer == Some(m));
+                let heet_zo = zelfde_naam(&sprekernaam(m), nieuw)
+                    || naam_m.as_deref().is_some_and(|n| zelfde_naam(n, nieuw));
+                if Some(m) != nummer && heeft_beurten && heet_zo {
+                    andere_nummers.push(m);
+                    bestaande_naam.get_or_insert(naam_m);
+                }
+            }
+            for b in &self.beurten {
+                if b.kant == kant
+                    && b.sprekernummer.is_none()
+                    && !van_deze(b)
+                    && let Some(eigen) = b.naam.as_deref().filter(|n| zelfde_naam(n, nieuw))
+                {
+                    zonder_nummer = true;
+                    bestaande_naam.get_or_insert_with(|| Some(eigen.to_string()));
+                }
+            }
+        }
+        // Het nummer waaronder ze samengaan: het laagste. Zonder nummers blijft het zonder.
+        let doel = nummer
+            .into_iter()
+            .chain(andere_nummers.iter().copied())
+            .min();
+        let samen = |b: &Beurt| {
+            b.kant == kant
+                && (van_deze(b)
+                    || b.sprekernummer.is_some_and(|n| andere_nummers.contains(&n))
+                    || (zonder_nummer
+                        && b.sprekernummer.is_none()
+                        && b.naam
+                            .as_deref()
+                            .zip(nieuw.as_deref())
+                            .is_some_and(|(eigen, nieuw)| zelfde_naam(eigen, nieuw))))
+        };
+        // Met een nummer en de standaardnaam van dat nummer ("Spreker 1") is er geen eigen naam.
+        let doelnaam = bestaande_naam
+            .unwrap_or_else(|| nieuw.clone())
+            .filter(|n| doel.is_none_or(|d| !zelfde_naam(n, &sprekernaam(d))));
+        let mut veranderd = 0;
+        let mut verschoven = false;
+        for b in &mut self.beurten {
+            if !samen(b) {
+                continue;
+            }
+            let nieuw_nummer = doel.or(b.sprekernummer);
+            if b.naam != doelnaam || b.sprekernummer != nieuw_nummer {
+                verschoven |= b.sprekernummer != nieuw_nummer;
+                b.naam.clone_from(&doelnaam);
+                b.sprekernummer = nieuw_nummer;
                 veranderd += 1;
             }
         }
-        Ok(veranderd)
+        // Samengaan telt alleen als er twee sprekers echt één werden; twee beurten zonder nummer
+        // met dezelfde naam waren dat al.
+        let mut samengevoegd: Vec<Option<u8>> = Vec::new();
+        if !andere_nummers.is_empty() || (zonder_nummer && doel.is_some()) {
+            samengevoegd.extend(nummer.into_iter().chain(andere_nummers).map(Some));
+            samengevoegd.sort_unstable();
+            if nummer.is_none() || zonder_nummer {
+                samengevoegd.push(None);
+            }
+        }
+        if verschoven {
+            self.voeg_buren_samen();
+        }
+        Ok(Naamgeving {
+            veranderd,
+            samengevoegd,
+            naam: doelnaam,
+            nummer: doel,
+        })
     }
 
     /// Vervangt de tekst van beurt `index` door `tekst` (V-1: een regel verbeteren). Kopiëren en
@@ -483,16 +661,6 @@ impl Gesprek {
             return Ok(0);
         }
         let kant = beurt.kant;
-        // In de ruimte zonder sprekers (geen sprekermodel, of maar één spreker gevonden) zijn
-        // alle alinea's van één persoon. Krijgt er een een spreker, dan worden de andere
-        // Spreker 1, anders heten ze ineens "Jij".
-        if self.soort == Vergadersoort::Ruimte && self.sprekernummers().is_empty() {
-            for (i, b) in self.beurten.iter_mut().enumerate() {
-                if i != index && b.kant == kant {
-                    b.sprekernummer = Some(1);
-                }
-            }
-        }
         let naam = self.naam_van_spreker(kant, nummer);
         if let Some(beurt) = self.beurten.get_mut(index) {
             beurt.sprekernummer = Some(nummer);
@@ -556,12 +724,7 @@ impl Gesprek {
     ///
     /// Als [`Gesprek::geef_aan_spreker`], en als alle [`MAX_SPREKERS`] nummers bezet zijn.
     pub fn geef_aan_nieuwe_spreker(&mut self, index: usize) -> Result<u8, Foutmelding> {
-        let mut bezet = self.sprekernummers();
-        // In de ruimte zonder sprekers worden de andere alinea's Spreker 1 (zie
-        // `geef_aan_spreker`), dus de nieuwe spreker is 2.
-        if self.soort == Vergadersoort::Ruimte && bezet.is_empty() {
-            bezet.push(1);
-        }
+        let bezet = self.sprekernummers();
         let nummer = (1..=MAX_SPREKERS)
             .find(|n| !bezet.contains(n))
             .ok_or_else(|| {
@@ -603,30 +766,64 @@ impl Gesprek {
         self.beurten = voeg_samen(std::mem::take(&mut self.beurten));
     }
 
-    /// Het verslag als platte tekst, om te kopiëren: per beurt een alinea, met de spreker
-    /// ervoor ("Jij: ...") als er sprekers zijn, anders zonder.
+    /// Het label van een beurt zoals het model, het scherm en de export het gebruiken: de naam
+    /// van de spreker, of `None` voor een beurt zonder spreker. In de ruimte is dat een alinea
+    /// die niemand aanwees (geen sprekernummer en geen eigen naam): die heet niet "Jij", want dat
+    /// is niet waar. Online en bij Alleen ik heeft elke beurt een label.
     #[must_use]
-    pub fn als_tekst(&self) -> String {
-        self.als_tekst_met(str::to_string, str::to_string)
+    pub fn label(&self, beurt: &Beurt) -> Option<String> {
+        self.label_met(beurt, &Sprekerlabels::default())
     }
 
-    /// Zoals [`Gesprek::als_tekst`], maar elke tekst gaat eerst door `bewerk` en elke naam van een
-    /// spreker door `bewerk_naam` (bijvoorbeeld het vervangen van persoonsgegevens, V-2).
+    /// Zoals [`Gesprek::label`], maar met de standaardnamen van `labels` (de taal van de app).
+    #[must_use]
+    pub fn label_met(&self, beurt: &Beurt, labels: &Sprekerlabels) -> Option<String> {
+        let zonder_spreker = self.soort == Vergadersoort::Ruimte
+            && beurt.sprekernummer.is_none()
+            && beurt.naam.is_none();
+        (!zonder_spreker).then(|| beurt.spreker_met(labels))
+    }
+
+    /// Het label in een verslag of export: alleen als er sprekers in het verslag staan
+    /// ([`Gesprek::met_sprekers`]), en dan per beurt ([`Gesprek::label`]).
+    #[must_use]
+    pub fn verslaglabel(&self, beurt: &Beurt) -> Option<String> {
+        self.verslaglabel_met(beurt, &Sprekerlabels::default())
+    }
+
+    /// Zoals [`Gesprek::verslaglabel`], maar met de standaardnamen van `labels`.
+    #[must_use]
+    pub fn verslaglabel_met(&self, beurt: &Beurt, labels: &Sprekerlabels) -> Option<String> {
+        if self.met_sprekers() {
+            self.label_met(beurt, labels)
+        } else {
+            None
+        }
+    }
+
+    /// Het verslag als platte tekst, om te kopiëren: per beurt een alinea, met de spreker
+    /// ervoor ("Jij: ...") als er sprekers zijn, anders zonder; een alinea zonder spreker in de
+    /// ruimte staat zonder naam.
+    #[must_use]
+    pub fn als_tekst(&self) -> String {
+        self.als_tekst_met(&Sprekerlabels::default(), str::to_string, str::to_string)
+    }
+
+    /// Zoals [`Gesprek::als_tekst`], maar met de standaardnamen van `labels` (de taal van de app),
+    /// en elke tekst gaat eerst door `bewerk` en elke naam van een spreker door `bewerk_naam`
+    /// (bijvoorbeeld het vervangen van persoonsgegevens, V-2).
     #[must_use]
     pub fn als_tekst_met(
         &self,
+        labels: &Sprekerlabels,
         bewerk: impl Fn(&str) -> String,
         bewerk_naam: impl Fn(&str) -> String,
     ) -> String {
-        let met_sprekers = self.met_sprekers();
         self.beurten
             .iter()
-            .map(|b| {
-                if met_sprekers {
-                    format!("{}: {}", bewerk_naam(&b.spreker()), bewerk(&b.tekst))
-                } else {
-                    bewerk(&b.tekst)
-                }
+            .map(|b| match self.verslaglabel_met(b, labels) {
+                Some(naam) => format!("{}: {}", bewerk_naam(&naam), bewerk(&b.tekst)),
+                None => bewerk(&b.tekst),
             })
             .collect::<Vec<_>>()
             .join(
@@ -646,6 +843,66 @@ fn geen_beurt() -> Foutmelding {
         "Deze beurt staat niet (meer) in het verslag.",
         Vervolg::Geen,
     )
+}
+
+/// Waar elke beurt van `oud` in `nieuw` staat, na een wijziging aan de sprekers (een naam,
+/// samenvoegen, een beurt aan een andere spreker) die beurten alleen samenvoegt: per oude beurt
+/// de plek van de nieuwe beurt van dezelfde kant die zijn tijden omvat en zijn tekst bevat. Zo
+/// blijven de bronnen van de notulen kloppen. `None` als een beurt niet terug te vinden is,
+/// bijvoorbeeld na een verbeterde tekst of opnieuw uitschrijven.
+#[must_use]
+pub fn beurtkaart(oud: &Gesprek, nieuw: &Gesprek) -> Option<Vec<usize>> {
+    // Samenvoegen houdt de volgorde, dus de plek in `nieuw` loopt nooit terug.
+    let mut plek = 0;
+    let mut kaart = Vec::with_capacity(oud.beurten.len());
+    for b in &oud.beurten {
+        let past = |n: &Beurt| {
+            n.kant == b.kant
+                && n.start_ms <= b.start_ms
+                && b.eind_ms <= n.eind_ms
+                && n.tekst.contains(b.tekst.as_str())
+        };
+        while !past(nieuw.beurten.get(plek)?) {
+            plek += 1;
+        }
+        kaart.push(plek);
+    }
+    Some(kaart)
+}
+
+/// De namen die na een wijziging aan de sprekers anders heten: (oude naam, nieuwe naam), zoals
+/// [`Beurt::spreker`] ze geeft. Alleen als alle beurten met de oude naam nu dezelfde nieuwe naam
+/// hebben; verhuist er maar een beurt van Spreker 2, dan heet Spreker 2 nog steeds zo. Leeg als
+/// de beurten niet terug te vinden zijn ([`beurtkaart`]).
+#[must_use]
+pub fn naamwijzigingen(oud: &Gesprek, nieuw: &Gesprek) -> Vec<(String, String)> {
+    let Some(kaart) = beurtkaart(oud, nieuw) else {
+        return Vec::new();
+    };
+    // Per oude naam de nieuwe, of `None` als die niet voor alle beurten gelijk is.
+    let mut paren: Vec<(String, Option<String>)> = Vec::new();
+    for (b, plek) in oud.beurten.iter().zip(kaart) {
+        let van = b.spreker();
+        let naar = nieuw.beurten[plek].spreker();
+        // De naam van de andere kant ("Jij" bij Anderen) is nooit de nieuwe naam van iemand.
+        let andere_kant = match b.kant {
+            Kant::Jij => Kant::Anderen,
+            Kant::Anderen => Kant::Jij,
+        };
+        let naar = (!zelfde_naam(&naar, andere_kant.naam())).then_some(naar);
+        match paren.iter_mut().find(|(v, _)| *v == van) {
+            Some((_, n)) => {
+                if *n != naar {
+                    *n = None;
+                }
+            }
+            None => paren.push((van, naar)),
+        }
+    }
+    paren
+        .into_iter()
+        .filter_map(|(van, naar)| naar.filter(|n| *n != van).map(|n| (van, n)))
+        .collect()
 }
 
 /// Schrijft een afgesloten vergaderopname uit als gesprek: beide sporen via
@@ -1516,89 +1773,94 @@ mod tests {
         );
     }
 
+    /// Hoeveel beurten een naam veranderde.
+    fn noem(g: &mut Gesprek, index: usize, naam: &str) -> usize {
+        g.geef_naam(index, naam).unwrap().veranderd
+    }
+
     #[test]
-    fn een_naam_voor_alleen_deze_beurt() {
+    fn een_naam_geldt_voor_alle_beurten_van_die_kant() {
         let mut g = gesprek(Vergadersoort::Online);
         assert_eq!(
             sprekers(&g),
             vec!["Jij", "Anderen", "Jij", "Anderen", "Anderen"]
         );
-        let n = g
-            .geef_naam(1, "  Wethouder\tDe   Vries ", Naambereik::Beurt)
-            .unwrap();
-        assert_eq!(n, 1);
+        // Er is geen "alleen deze beurt" meer: de naam geldt voor alle beurten van Anderen.
+        assert_eq!(noem(&mut g, 1, "  Wethouder\tDe   Vries "), 3);
         assert_eq!(
             sprekers(&g),
-            vec!["Jij", "Wethouder De Vries", "Jij", "Anderen", "Anderen"]
+            vec![
+                "Jij",
+                "Wethouder De Vries",
+                "Jij",
+                "Wethouder De Vries",
+                "Wethouder De Vries"
+            ]
         );
+        // Hybride: Jij wordt de zaal, voor alle beurten van Jij.
+        assert_eq!(noem(&mut g, 0, "Zaal"), 2);
+        // Een andere kant wordt nooit geraakt, ook niet bij dezelfde naam, en gaat niet samen.
+        let n = g.geef_naam(0, "wethouder de vries").unwrap();
+        assert_eq!((n.veranderd, n.samengevoegd), (2, vec![]));
+        assert_eq!(g.beurten[0].kant, Kant::Jij);
+        assert_eq!(g.beurten[1].spreker(), "Wethouder De Vries");
     }
 
     #[test]
-    fn een_naam_voor_de_hele_kant_laat_een_aparte_naam_staan() {
+    fn een_oude_aparte_naam_gaat_samen_bij_dezelfde_naam() {
+        // Een verslag van voor deze stap kan een beurt met een eigen naam hebben.
         let mut g = gesprek(Vergadersoort::Online);
-        g.geef_naam(1, "Wethouder De Vries", Naambereik::Beurt)
-            .unwrap();
-        // Alle beurten van Anderen die nog "Anderen" heten.
-        let n = g.geef_naam(3, "Raad", Naambereik::Kant).unwrap();
-        assert_eq!(n, 2);
+        g.beurten[1].naam = Some("Wethouder".into());
+        // Alle beurten van Anderen die nu "Anderen" heten.
+        assert_eq!(noem(&mut g, 3, "Raad"), 2);
         assert_eq!(
             sprekers(&g),
-            vec!["Jij", "Wethouder De Vries", "Jij", "Raad", "Raad"]
+            vec!["Jij", "Wethouder", "Jij", "Raad", "Raad"]
         );
-        // Hybride: Jij wordt de zaal, voor alle beurten van Jij.
-        assert_eq!(g.geef_naam(0, "Zaal", Naambereik::Kant).unwrap(), 2);
-        assert_eq!(
-            sprekers(&g),
-            vec!["Zaal", "Wethouder De Vries", "Zaal", "Raad", "Raad"]
-        );
-        // Een andere kant wordt nooit geraakt, ook niet bij dezelfde naam.
-        assert_eq!(g.geef_naam(0, "Raad", Naambereik::Kant).unwrap(), 2);
-        assert_eq!(g.beurten[0].kant, Kant::Jij);
-        assert_eq!(g.geef_naam(3, "Anderen", Naambereik::Kant).unwrap(), 2);
-        assert_eq!(
-            sprekers(&g),
-            vec!["Raad", "Wethouder De Vries", "Raad", "Anderen", "Anderen"]
-        );
+        // De wethouder heet ook Raad: dan is het dezelfde persoon, met de naam zoals hij al was.
+        let n = g.geef_naam(1, "raad").unwrap();
+        assert_eq!((n.veranderd, n.samengevoegd), (1, vec![]));
+        assert_eq!(sprekers(&g), vec!["Jij", "Raad", "Jij", "Raad", "Raad"]);
     }
 
     #[test]
     fn een_lege_naam_of_de_naam_van_de_kant_zet_terug() {
         let mut g = gesprek(Vergadersoort::Online);
-        g.geef_naam(1, "Raad", Naambereik::Kant).unwrap();
-        assert_eq!(g.geef_naam(1, "   ", Naambereik::Kant).unwrap(), 3);
+        noem(&mut g, 1, "Raad");
+        assert_eq!(noem(&mut g, 1, "   "), 3);
         assert!(g.beurten.iter().all(|b| b.naam.is_none()));
-        g.geef_naam(0, "Zaal", Naambereik::Beurt).unwrap();
-        assert_eq!(g.geef_naam(0, "Jij", Naambereik::Beurt).unwrap(), 1);
+        noem(&mut g, 0, "Zaal");
+        // Ook zonder verschil in hoofdletters.
+        assert_eq!(noem(&mut g, 0, "jij"), 2);
         assert_eq!(g.beurten[0].naam, None);
         // Niets veranderd: nul.
-        assert_eq!(g.geef_naam(0, "", Naambereik::Beurt).unwrap(), 0);
+        assert_eq!(noem(&mut g, 0, ""), 0);
     }
 
     #[test]
     fn een_naam_is_begrensd_en_zonder_stuurtekens() {
         let mut g = gesprek(Vergadersoort::Online);
         let lang = "a".repeat(100);
-        g.geef_naam(0, &lang, Naambereik::Beurt).unwrap();
+        noem(&mut g, 0, &lang);
         assert_eq!(g.beurten[0].spreker().chars().count(), MAX_NAAM);
-        g.geef_naam(0, "Piet\u{7}\nJansen", Naambereik::Beurt)
-            .unwrap();
+        noem(&mut g, 0, "Piet\u{7}\nJansen");
         assert_eq!(g.beurten[0].spreker(), "Piet Jansen");
     }
 
     #[test]
     fn in_de_ruimte_of_een_onbekende_beurt_geeft_een_melding() {
         let mut g = gesprek(Vergadersoort::Ruimte);
-        assert!(g.geef_naam(0, "Piet", Naambereik::Beurt).is_err());
+        assert!(g.geef_naam(0, "Piet").is_err());
         let mut g = gesprek(Vergadersoort::Alleen);
-        assert!(g.geef_naam(0, "Piet", Naambereik::Beurt).is_err());
+        assert!(g.geef_naam(0, "Piet").is_err());
         let mut g = gesprek(Vergadersoort::Online);
-        assert!(g.geef_naam(99, "Piet", Naambereik::Beurt).is_err());
+        assert!(g.geef_naam(99, "Piet").is_err());
     }
 
     #[test]
     fn het_verslag_als_tekst_met_en_zonder_sprekers() {
         let mut g = gesprek(Vergadersoort::Online);
-        g.geef_naam(1, "Wethouder", Naambereik::Beurt).unwrap();
+        noem(&mut g, 1, "Wethouder");
         assert!(
             g.als_tekst()
                 .starts_with("Jij: hallo\n\nWethouder: goedemiddag\n\nJij: ja")
@@ -1607,6 +1869,66 @@ mod tests {
         assert!(g.als_tekst().starts_with("hallo\n\ngoedemiddag"));
         let g = gesprek(Vergadersoort::Alleen);
         assert!(g.als_tekst().starts_with("hallo\n\ngoedemiddag"));
+    }
+
+    /// De namen die de interface in het Engels doorgeeft.
+    fn engelse_labels() -> Sprekerlabels {
+        Sprekerlabels {
+            jij: "You".into(),
+            anderen: "Others".into(),
+            sprekers: (1..=MAX_SPREKERS).map(|n| format!("Speaker {n}")).collect(),
+        }
+    }
+
+    #[test]
+    fn kopie_en_export_gebruiken_de_sprekerlabels_van_de_app() {
+        let mut g = met_sprekers();
+        noem(&mut g, 2, "Wethouder");
+        let en = engelse_labels();
+        let tekst = g.als_tekst_met(&en, str::to_string, str::to_string);
+        // Geen Nederlands label meer, een eigen naam blijft zoals hij is.
+        for nl in ["Jij", "Anderen", "Spreker"] {
+            assert!(!tekst.contains(nl), "{tekst}");
+        }
+        assert!(tekst.starts_with(
+            "You: hallo
+
+Speaker 1: goedemiddag
+
+Wethouder: dag"
+        ));
+        assert!(tekst.contains("Speaker 3: nee"), "{tekst}");
+        // Zonder doorgegeven namen blijft het Nederlands, zoals het verslag het bewaart.
+        assert!(g.als_tekst().starts_with(
+            "Jij: hallo
+
+Spreker 1: goedemiddag"
+        ));
+        assert_eq!(Sprekerlabels::default().spreker(2), "Spreker 2");
+        // Ontbreekt een plek, dan geldt de Nederlandse naam.
+        let kort = Sprekerlabels {
+            sprekers: vec!["Speaker 1".into()],
+            ..engelse_labels()
+        };
+        assert_eq!(kort.spreker(1), "Speaker 1");
+        assert_eq!(kort.spreker(3), "Spreker 3");
+        // Het verslag zelf houdt zijn Nederlandse namen.
+        assert_eq!(g.beurten[1].spreker(), "Spreker 1");
+    }
+
+    #[test]
+    fn het_label_in_de_taal_van_de_app_volgt_dezelfde_regels() {
+        let en = engelse_labels();
+        // In de ruimte blijft een alinea zonder spreker zonder label, ook in het Engels.
+        let g = gesprek(Vergadersoort::Ruimte);
+        assert_eq!(g.label_met(&g.beurten[0], &en), None);
+        // Online heeft elke beurt een label, in de taal van de app.
+        let g = gesprek(Vergadersoort::Online);
+        assert_eq!(g.label_met(&g.beurten[0], &en).as_deref(), Some("You"));
+        assert_eq!(g.label_met(&g.beurten[1], &en).as_deref(), Some("Others"));
+        // Zonder sprekers in het verslag (Alleen ik) staat er geen label.
+        let g = gesprek(Vergadersoort::Alleen);
+        assert_eq!(g.verslaglabel_met(&g.beurten[0], &en), None);
     }
 
     // ---------- sprekers (4b-D) ----------
@@ -1676,8 +1998,7 @@ mod tests {
     #[test]
     fn een_naam_per_spreker_geldt_voor_al_zijn_beurten() {
         let mut g = met_sprekers();
-        let n = g.geef_naam(4, "Piet", Naambereik::Spreker).unwrap();
-        assert_eq!(n, 3);
+        assert_eq!(noem(&mut g, 4, "Piet"), 3);
         assert_eq!(
             sprekers(&g),
             vec![
@@ -1690,23 +2011,146 @@ mod tests {
                 "Piet"
             ]
         );
-        // Een beurt die apart een naam kreeg, houdt die.
+        // Een beurt die in een oud verslag apart een naam kreeg, gaat nu mee: de naam geldt
+        // voor de hele spreker.
         let mut g = met_sprekers();
-        g.geef_naam(6, "Voorzitter", Naambereik::Beurt).unwrap();
-        assert_eq!(g.geef_naam(1, "Piet", Naambereik::Spreker).unwrap(), 2);
-        assert_eq!(g.beurten[6].spreker(), "Voorzitter");
+        g.beurten[6].naam = Some("Voorzitter".into());
+        assert_eq!(noem(&mut g, 1, "Piet"), 3);
+        assert_eq!(g.beurten[6].spreker(), "Piet");
         // "Spreker 1" intypen zet terug.
-        assert_eq!(g.geef_naam(1, "Spreker 1", Naambereik::Spreker).unwrap(), 2);
+        assert_eq!(noem(&mut g, 1, "Spreker 1"), 3);
         assert_eq!(g.beurten[1].naam, None);
-        // Naambereik Kant raakt alleen beurten met dezelfde naam, dus niet de andere sprekers.
+        // Een andere spreker wordt niet geraakt.
         let mut g = met_sprekers();
-        assert_eq!(g.geef_naam(2, "Raad", Naambereik::Kant).unwrap(), 1);
+        assert_eq!(noem(&mut g, 2, "Raad"), 1);
+    }
+
+    #[test]
+    fn dezelfde_naam_is_dezelfde_persoon() {
+        // Het scenario van Bram: Jij wordt Bram, Spreker 1 en Spreker 2 zijn allebei Noor.
+        let mut g = met_sprekers();
+        noem(&mut g, 0, "Bram");
+        let n = g.geef_naam(1, "Noor").unwrap();
+        assert!(n.samengevoegd.is_empty());
+        let n = g.geef_naam(2, " NOOR ").unwrap();
+        assert_eq!(n.samengevoegd, vec![Some(1), Some(2)]);
+        // Samen onder het laagste nummer, met de naam zoals Noor hem al had, en de buren samen.
+        assert_eq!(
+            sprekers(&g),
+            vec!["Bram", "Noor", "Bram", "Noor", "Spreker 3", "Noor"]
+        );
+        assert_eq!(g.beurten[1].tekst, "goedemiddag dag");
+        assert_eq!(g.sprekernummers(), vec![1, 3]);
+        assert!(!g.als_tekst().contains("Jij") && !g.als_tekst().contains("Spreker 1"));
+        // De standaardnaam van een andere spreker intypen is ook die spreker, zonder eigen naam.
+        let mut g = met_sprekers();
+        let n = g.geef_naam(2, "spreker 1").unwrap();
+        assert_eq!(n.samengevoegd, vec![Some(1), Some(2)]);
+        assert_eq!(g.sprekernummers(), vec![1, 3]);
+        assert!(g.beurten.iter().all(|b| b.naam.is_none()));
+    }
+
+    #[test]
+    fn de_standaardnaam_van_een_andere_spreker_is_die_spreker_en_een_kantnaam_kan_niet() {
+        // Spreker 1 heet Noor; "Spreker 1" intypen bij Spreker 2 is toch Spreker 1.
+        let mut g = met_sprekers();
+        noem(&mut g, 1, "Noor");
+        let n = g.geef_naam(2, " spreker  1 ").unwrap();
+        assert_eq!(n.samengevoegd, vec![Some(1), Some(2)]);
+        assert_eq!((n.naam.as_deref(), n.nummer), (Some("Noor"), Some(1)));
+        assert!(
+            g.beurten
+                .iter()
+                .all(|b| b.spreker() != "Spreker 1" && b.spreker() != "spreker 1")
+        );
+        // De eigen standaardnaam zet terug, met de naam die er dan echt staat.
+        let n = g.geef_naam(1, "SPREKER 1").unwrap();
+        assert_eq!((n.naam, n.nummer), (None, Some(1)));
+        // "Jij" of "Anderen" als naam voor een spreker: een melding, niets veranderd.
+        let voor = sprekers(&g);
+        assert!(g.geef_naam(1, "jij").is_err());
+        assert!(g.geef_naam(1, "Anderen").is_err());
+        assert!(g.geef_naam(0, "anderen").is_err());
+        assert_eq!(sprekers(&g), voor);
+        // De eigen kantnaam zet Jij terug.
+        assert!(g.geef_naam(0, "Jij").is_ok());
+    }
+
+    #[test]
+    fn een_nieuwe_naam_is_nooit_de_naam_van_de_andere_kant() {
+        // Een oud verslag met een beurt van Jij die "Anderen" heette.
+        let oud = gesprek(Vergadersoort::Online);
+        let mut nieuw = oud.clone();
+        nieuw.beurten[0].naam = Some("Anderen".into());
+        nieuw.beurten[2].naam = Some("Anderen".into());
+        assert!(naamwijzigingen(&oud, &nieuw).is_empty());
+    }
+
+    #[test]
+    fn anderen_zonder_nummer_met_de_naam_van_een_spreker_horen_bij_die_spreker() {
+        let drie = |nummer: Option<u8>| Gesprek {
+            beurten: beurten_met_sprekers(
+                &[],
+                &[
+                    deel(Some(1), 0, 1000, "een"),
+                    deel(nummer, 5000, 6000, "twee"),
+                    deel(None, 10_000, 11_000, "drie"),
+                ],
+            ),
+            ..met_sprekers()
+        };
+        // "Anderen" (zonder nummer) heet Noor, en Spreker 1 heet al Noor.
+        let mut g = drie(None);
+        noem(&mut g, 0, "Noor");
+        let n = g.geef_naam(1, "Noor").unwrap();
+        assert_eq!(n.samengevoegd, vec![Some(1), None]);
+        assert!(g.beurten.iter().all(|b| b.sprekernummer == Some(1)));
+        assert_eq!(sprekers(&g), vec!["Noor", "Noor", "Noor"]);
+        // Andersom: beurten zonder nummer met een oude eigen naam gaan naar de spreker.
+        let mut g = drie(Some(2));
+        g.beurten[2].naam = Some("Noor".into());
+        let n = g.geef_naam(1, "noor").unwrap();
+        assert_eq!(n.samengevoegd, vec![Some(2), None]);
+        assert_eq!(g.beurten[2].sprekernummer, Some(2));
+        assert_eq!(sprekers(&g), vec!["Spreker 1", "Noor", "Noor"]);
+    }
+
+    #[test]
+    fn de_beurtkaart_volgt_samengevoegde_beurten() {
+        let oud = met_sprekers();
+        let mut nieuw = oud.clone();
+        // Zonder wijziging: elke beurt op zijn plek, en geen andere namen.
+        assert_eq!(beurtkaart(&oud, &nieuw), Some((0..7).collect()));
+        assert!(naamwijzigingen(&oud, &nieuw).is_empty());
+        noem(&mut nieuw, 1, "Noor");
+        noem(&mut nieuw, 2, "Noor");
+        // "dag" ging samen met "goedemiddag": beurt 2 staat nu in beurt 1.
+        assert_eq!(beurtkaart(&oud, &nieuw), Some(vec![0, 1, 1, 2, 3, 4, 5]));
+        assert_eq!(
+            naamwijzigingen(&oud, &nieuw),
+            vec![
+                ("Spreker 1".to_string(), "Noor".to_string()),
+                ("Spreker 2".to_string(), "Noor".to_string())
+            ]
+        );
+        // Een beurt van Spreker 1 verhuist: Spreker 1 heet daarna nog steeds zo.
+        let mut verhuisd = oud.clone();
+        verhuisd.geef_aan_spreker(6, 3).unwrap();
+        assert!(beurtkaart(&oud, &verhuisd).is_some());
+        assert_eq!(
+            naamwijzigingen(&oud, &verhuisd),
+            Vec::<(String, String)>::new()
+        );
+        // Een verbeterde tekst is niet terug te vinden.
+        let mut verbeterd = oud.clone();
+        verbeterd.zet_tekst(1, "iets anders").unwrap();
+        assert_eq!(beurtkaart(&oud, &verbeterd), None);
     }
 
     #[test]
     fn een_beurt_aan_een_andere_spreker_geven_voegt_hem_bij_zijn_buren() {
         let mut g = met_sprekers();
-        g.geef_naam(1, "Piet", Naambereik::Spreker).unwrap();
+        noem(&mut g, 1, "Piet");
         // "dag" (Spreker 2) was eigenlijk Piet: hij gaat samen met de beurt ervoor.
         assert_eq!(g.geef_aan_spreker(2, 1).unwrap(), 1);
         assert_eq!(
@@ -1759,7 +2203,7 @@ mod tests {
     }
 
     #[test]
-    fn in_de_ruimte_zonder_sprekers_worden_de_andere_alineas_spreker_1() {
+    fn in_de_ruimte_blijven_alineas_die_niemand_aanwees_zonder_spreker() {
         let mut g = Gesprek {
             beurten: alineas(&[
                 seg(0, 1000, "een"),
@@ -1769,11 +2213,39 @@ mod tests {
             ..gesprek(Vergadersoort::Ruimte)
         };
         assert!(!g.met_sprekers());
-        assert_eq!(g.geef_aan_nieuwe_spreker(1).unwrap(), 2);
-        assert_eq!(sprekers(&g), vec!["Spreker 1", "Spreker 2", "Spreker 1"]);
+        assert_eq!(g.geef_aan_nieuwe_spreker(1).unwrap(), 1);
+        assert!(g.met_sprekers());
+        // De andere alinea's zijn van niemand: geen "Jij" en geen "Spreker 1" in kopie, labels en
+        // export.
+        let labels: Vec<_> = g.beurten.iter().map(|b| g.label(b)).collect();
+        assert_eq!(labels, vec![None, Some("Spreker 1".to_string()), None]);
         assert_eq!(
             g.als_tekst(),
-            "Spreker 1: een\n\nSpreker 2: twee\n\nSpreker 1: drie"
+            "een
+
+Spreker 1: twee
+
+drie"
+        );
+        // Zo'n alinea kreeg geen naam: eerst aanwijzen. Een aangewezen alinea wel.
+        assert!(g.geef_naam(0, "Piet").is_err());
+        g.geef_naam(1, "Bram").unwrap();
+        assert_eq!(
+            g.als_tekst(),
+            "een
+
+Bram: twee
+
+drie"
+        );
+        g.geef_aan_spreker(2, 1).unwrap();
+        assert_eq!(
+            g.als_tekst(),
+            "een
+
+Bram: twee
+
+Bram: drie"
         );
         // Online blijven de andere beurten "Anderen": daar heeft dat een naam.
         let mut g = Gesprek {
@@ -1782,12 +2254,13 @@ mod tests {
         };
         assert_eq!(g.geef_aan_nieuwe_spreker(1).unwrap(), 1);
         assert_eq!(sprekers(&g), vec!["Anderen", "Spreker 1"]);
+        assert_eq!(g.label(&g.beurten[0]).as_deref(), Some("Anderen"));
     }
 
     #[test]
     fn samenvoegen_houdt_de_naam_van_de_bron_als_het_doel_er_geen_heeft() {
         let mut g = met_sprekers();
-        g.geef_naam(2, "Piet", Naambereik::Spreker).unwrap();
+        noem(&mut g, 2, "Piet");
         // Spreker 2 ("Piet") in de naamloze Spreker 1: alles heet daarna Piet.
         g.voeg_sprekers_samen(2, 1).unwrap();
         assert_eq!(
@@ -1800,9 +2273,9 @@ mod tests {
     #[test]
     fn de_naam_van_een_spreker_is_de_naam_die_het_vaakst_voorkomt() {
         let mut g = met_sprekers();
-        // Spreker 1 heet Piet, maar zijn eerste beurt kreeg apart "Voorzitter".
-        g.geef_naam(4, "Piet", Naambereik::Spreker).unwrap();
-        g.geef_naam(1, "Voorzitter", Naambereik::Beurt).unwrap();
+        // Spreker 1 heet Piet, maar zijn eerste beurt kreeg in een oud verslag apart "Voorzitter".
+        noem(&mut g, 4, "Piet");
+        g.beurten[1].naam = Some("Voorzitter".into());
         assert_eq!(
             g.naam_van_spreker(Kant::Anderen, 1).as_deref(),
             Some("Piet")
@@ -1819,7 +2292,7 @@ mod tests {
     #[test]
     fn twee_sprekers_samenvoegen() {
         let mut g = met_sprekers();
-        g.geef_naam(1, "Piet", Naambereik::Spreker).unwrap();
+        noem(&mut g, 1, "Piet");
         // Spreker 3 is ook Piet: zijn beurt krijgt de naam en gaat samen met de buren.
         assert_eq!(g.voeg_sprekers_samen(3, 1).unwrap(), 1);
         assert_eq!(
@@ -1855,7 +2328,7 @@ mod tests {
         assert_eq!(g.sprekerkant(), Some(Kant::Jij));
         assert_eq!(sprekers(&g), vec!["Spreker 1", "Spreker 2"]);
         assert_eq!(g.als_tekst(), "Spreker 1: een\n\nSpreker 2: twee drie");
-        g.geef_naam(1, "Anna", Naambereik::Spreker).unwrap();
+        noem(&mut g, 1, "Anna");
         assert_eq!(g.als_tekst(), "Spreker 1: een\n\nAnna: twee drie");
         // Spreker 1 aan Anna geven: alles één alinea, met haar naam.
         assert_eq!(g.geef_aan_spreker(0, 2).unwrap(), 1);
@@ -1894,10 +2367,10 @@ mod tests {
     #[test]
     fn opnieuw_houdt_sprekers_namen_en_de_verbeteringen_aan_sprekers() {
         let mut oud = met_sprekers();
-        // Namen per spreker, per beurt en per kant, en een verbeterde spreker.
-        oud.geef_naam(2, "Piet", Naambereik::Spreker).unwrap();
-        oud.geef_naam(1, "Voorzitter", Naambereik::Beurt).unwrap();
-        oud.geef_naam(0, "Zaal", Naambereik::Kant).unwrap();
+        // Namen per spreker, per kant en per beurt (uit een oud verslag), en een verbeterde spreker.
+        noem(&mut oud, 2, "Piet");
+        oud.beurten[1].naam = Some("Voorzitter".into());
+        noem(&mut oud, 0, "Zaal");
         // "nee" (Spreker 3) was eigenlijk Spreker 1: hij gaat samen met zijn buren.
         let nee = oud.beurten.iter().position(|b| b.tekst == "nee").unwrap();
         oud.geef_aan_spreker(nee, 1).unwrap();
@@ -1970,7 +2443,7 @@ mod tests {
             ]),
             ..gesprek(Vergadersoort::Ruimte)
         };
-        ruimte.geef_naam(1, "Anna", Naambereik::Spreker).unwrap();
+        ruimte.geef_naam(1, "Anna").unwrap();
         let nieuw = beurten_opnieuw(
             &ruimte,
             &[
@@ -2143,7 +2616,7 @@ mod tests {
     #[test]
     fn online_krijgt_een_uiting_in_een_gat_de_dichtstbijzijnde_spreker_met_zijn_naam() {
         let mut oud = met_sprekers();
-        oud.geef_naam(2, "Piet", Naambereik::Spreker).unwrap();
+        oud.geef_naam(2, "Piet").unwrap();
         // Tussen 4000 (einde van Piet) en 12000 sprak niemand van Anderen; de nieuwe uiting om
         // 6000 ligt meer dan een seconde van elke oude beurt.
         let nieuw = beurten_opnieuw(&oud, &[], &[seg(6000, 6500, "Nog iets.")]);

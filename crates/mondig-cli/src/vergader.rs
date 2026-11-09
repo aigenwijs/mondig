@@ -675,11 +675,11 @@ fn schrijf_uit(args: &UitschrijfArgs) -> Result<ExitCode, Melding> {
         Uitvoer::Beurten => {
             for beurt in &gesprek.beurten {
                 let tijd = tijd(Duration::from_millis(beurt.start_ms));
-                // In de ruimte zonder herkende sprekers en bij Alleen ik: alleen alinea's.
-                uit(&if gesprek.met_sprekers() {
-                    format!("[{tijd}] {}: {}", beurt.spreker(), beurt.tekst)
-                } else {
-                    format!("[{tijd}] {}", beurt.tekst)
+                // Zonder sprekers, bij Alleen ik en bij een alinea die in de ruimte niemand
+                // aanwees: alleen de alinea.
+                uit(&match gesprek.verslaglabel(beurt) {
+                    Some(naam) => format!("[{tijd}] {naam}: {}", beurt.tekst),
+                    None => format!("[{tijd}] {}", beurt.tekst),
                 })?;
             }
         }
@@ -722,7 +722,7 @@ fn json_van(map: &Path, model: &str, taal: &str, gesprek: &Gesprek) -> serde_jso
             "kant": b.kant,
             // Het nummer van de spreker (vanaf 1) als de sprekers herkend zijn, anders null.
             "sprekernummer": b.sprekernummer,
-            "spreker": gesprek.met_sprekers().then(|| b.spreker()),
+            "spreker": gesprek.verslaglabel(b),
             "start_ms": b.start_ms,
             "eind_ms": b.eind_ms,
             "tekst": b.tekst,

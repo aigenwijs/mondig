@@ -10,7 +10,8 @@
 //! enkele seconden hoeft de computer niet wakker te houden; de slaapstand komt pas na
 //! minuten zonder toetsaanslag, en een dictaat begint met een toetsaanslag.
 //!
-//! Op Windows werkt dit. Op macOS en Linux doet het voorlopig niets (Windows eerst).
+//! Op Windows met `SetThreadExecutionState`, op de Mac met een activiteit van `NSProcessInfo`
+//! (crate `mondig-mac`, mijlpaal M1). Op Linux doet het voorlopig niets.
 
 #[cfg(windows)]
 mod win32;
@@ -28,10 +29,10 @@ use tauri::{AppHandle, Manager};
 const RITME: Duration = Duration::from_secs(2);
 
 /// Een slot dat niets doet, voor platforms waar dit nog niet is gebouwd.
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 struct Niets;
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 impl Slot for Niets {
     fn pak(&mut self) -> io::Result<()> {
         Ok(())
@@ -45,7 +46,27 @@ fn platformslot() -> impl Slot {
     win32::Windows
 }
 
-#[cfg(not(windows))]
+/// Het slot van de Mac: een activiteit die de computer wakker houdt (niet het scherm).
+#[cfg(target_os = "macos")]
+struct Mac(mondig_mac::wakker::Activiteit);
+
+#[cfg(target_os = "macos")]
+impl Slot for Mac {
+    fn pak(&mut self) -> io::Result<()> {
+        self.0.pak();
+        Ok(())
+    }
+    fn laat_los(&mut self) {
+        self.0.laat_los();
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn platformslot() -> impl Slot {
+    Mac(mondig_mac::wakker::Activiteit::nieuw())
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn platformslot() -> impl Slot {
     Niets
 }

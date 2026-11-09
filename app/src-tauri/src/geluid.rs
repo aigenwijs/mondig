@@ -227,7 +227,10 @@ pub(crate) fn speel(app: &AppHandle, toon: Toon) {
     let wav = wav_van(toon, volume);
     #[cfg(windows)]
     win32::speel_af(wav);
-    #[cfg(not(windows))]
+    // Op de Mac met `NSSound`, ook asynchroon (crate `mondig-mac`).
+    #[cfg(target_os = "macos")]
+    mondig_mac::geluid::speel(wav);
+    #[cfg(not(any(windows, target_os = "macos")))]
     let _ = wav;
 }
 

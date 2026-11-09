@@ -42,13 +42,28 @@ export function modelRol(
 
 /**
  * Hoeveel sprekers er in het verslag staan, maar alleen als de sprekers herkend zijn; anders
- * `null`, want "Jij en Anderen" is geen telling van mensen.
+ * `null`, want "Jij en Anderen" is geen telling van mensen. Het telt de verschillende namen die het
+ * verslag toont (zonder verschil in hoofdletters). Een kaal "Anderen" (zonder nummer en zonder
+ * eigen naam) op een kant met herkende sprekers telt niet mee; een kant zonder nummers (online
+ * Jij) wel. Dezelfde telling als `aantal_sprekers` in Rust, op de namen zoals Rust ze geeft.
  */
 export function aantalSprekers(
-  beurten: readonly Pick<BeurtInfo, 'kant' | 'sprekernummer'>[]
+  beurten: readonly Pick<BeurtInfo, 'kant' | 'sprekernummer' | 'spreker' | 'eigenNaam'>[]
 ): number | null {
   if (!beurten.some((b) => b.sprekernummer !== null)) return null;
-  return new Set(beurten.map((b) => `${b.kant}:${String(b.sprekernummer ?? '')}`)).size;
+  const metNummers = new Set(beurten.filter((b) => b.sprekernummer !== null).map((b) => b.kant));
+  const naamVan = (b: (typeof beurten)[number]): string =>
+    b.spreker ??
+    (b.sprekernummer !== null
+      ? `Spreker ${String(b.sprekernummer)}`
+      : b.kant === 'jij'
+        ? 'Jij'
+        : 'Anderen');
+  return new Set(
+    beurten
+      .filter((b) => b.sprekernummer !== null || b.eigenNaam || !metNummers.has(b.kant))
+      .map((b) => naamVan(b).toLowerCase())
+  ).size;
 }
 
 /** Wat het klaar-moment laat zien. */

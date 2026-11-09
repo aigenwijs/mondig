@@ -13,6 +13,7 @@
     dictaatAnnuleer,
     dictaatStop,
     microfooninstellingOpen,
+    pilKlik,
     pilOpenMondig,
     pilStand,
     pilToon,
@@ -129,6 +130,11 @@
     if (pilType === 'verborgen' || pil !== null) void plaats();
   });
 
+  // Een klik op de pil: lukt het melden niet (buiten de app), dan is er niets terug te zetten.
+  function klik(): void {
+    pilKlik().catch(() => undefined);
+  }
+
   onMount(() => {
     document.documentElement.classList.add('pil-venster');
     let weg = false;
@@ -240,6 +246,10 @@
   function plakFoutTekst(uitkomst: PlakUitkomst): string {
     if (uitkomst === 'beheerrechten') return t().pilPlakBeheer;
     if (uitkomst === 'niet_gelezen') return t().pilPlakOnzeker;
+    if (uitkomst === 'geen_toegang') return t().pilPlakGeenToegang;
+    if (uitkomst === 'typen_onderbroken') return t().pilTypenOnderbroken;
+    if (uitkomst === 'typen_mislukt') return t().pilTypenMislukt;
+    if (uitkomst === 'geen_tekstveld') return t().pilGeenTekstveld;
     return t().pilPlakMislukt;
   }
 
@@ -286,6 +296,10 @@
 <svelte:head>
   <title>Mondig</title>
 </svelte:head>
+
+<!-- Op de Mac activeert een klik Mondig; bij het indrukken zet Rust het programma waar je typte
+     weer vooraan (de knop zelf werkt daarna gewoon). -->
+<svelte:window onpointerdown={klik} />
 
 <!-- 8 px doorzichtige rand rond de pil, voor de schaduw; het venster is precies deze maat. -->
 <div class="pil-donker fixed top-0 left-0 w-max p-2" bind:this={pil}>

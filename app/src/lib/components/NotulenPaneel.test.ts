@@ -30,9 +30,20 @@ const bron = (beurt: number | null, ms: number | null, gevonden = true) => ({
 function notulen(extra: Partial<NotulenInfo> = {}): NotulenInfo {
   return {
     samenvatting: 'Het gaat over de buurtbijeenkomst.',
+    samenvattingGetoond: 'Het gaat over de buurtbijeenkomst.',
     besluiten: [
-      { id: 1, tekst: 'De bijeenkomst is op donderdag.', bron: bron(1, 28_000) },
-      { id: 2, tekst: 'De gemeente betaalt de zaal.', bron: bron(null, null, false) }
+      {
+        id: 1,
+        tekst: 'De bijeenkomst is op donderdag.',
+        tekstGetoond: 'De bijeenkomst is op donderdag.',
+        bron: bron(1, 28_000)
+      },
+      {
+        id: 2,
+        tekst: 'De gemeente betaalt de zaal.',
+        tekstGetoond: 'De gemeente betaalt de zaal.',
+        bron: bron(null, null, false)
+      }
     ],
     actiepunten: [
       {
@@ -40,6 +51,9 @@ function notulen(extra: Partial<NotulenInfo> = {}): NotulenInfo {
         wat: 'Een uitnodiging sturen',
         wie: 'Jan',
         wanneer: '',
+        watGetoond: 'Een uitnodiging sturen',
+        wieGetoond: 'Jan',
+        wanneerGetoond: '',
         wieNietTeruggevonden: true,
         wanneerNietTeruggevonden: false,
         bron: bron(6, 63_000)
@@ -148,6 +162,42 @@ describe('het tabblad Notulen, klaar', () => {
     expect(tekst).toContain('Het model citeerde: een letterlijk citaat uit het verslag');
   });
 
+  it('toont de vervangen tekst, niet het echte gegeven, als Rust die als getoond geeft', () => {
+    const info = notulen({
+      samenvatting: 'Mijn BSN is 111222333.',
+      samenvattingGetoond: 'Mijn BSN is [BSN].',
+      besluiten: [
+        {
+          id: 1,
+          tekst: 'Bel 06 12345678.',
+          tekstGetoond: 'Bel [TELEFOON].',
+          bron: { ...bron(1, 28_000), citaat: 'Bel [TELEFOON].' }
+        }
+      ],
+      actiepunten: [
+        {
+          id: 1,
+          wanneer: '',
+          wanneerGetoond: '',
+          wieNietTeruggevonden: false,
+          wanneerNietTeruggevonden: false,
+          bron: bron(6, 63_000),
+          wat: 'Mail jan@example.com',
+          watGetoond: 'Mail [E-MAIL]',
+          wie: 'Anna',
+          wieGetoond: '[GEGEVEN]'
+        }
+      ]
+    });
+    const uit = html({ info, onleesbaar: false, maken: null });
+    for (const echt of ['111222333', '06 12345678', 'jan@example.com', 'Anna']) {
+      expect(uit).not.toContain(echt);
+    }
+    for (const getoond of ['[BSN]', '[TELEFOON]', '[E-MAIL]', '[GEGEVEN]']) {
+      expect(uit).toContain(getoond);
+    }
+  });
+
   it('markeert een niet teruggevonden punt en zet er geen bronknop bij', () => {
     expect(tekst).toContain('Niet teruggevonden in het verslag');
     expect(tekst).toContain('1 punt is niet teruggevonden in het verslag. Controleer dat punt.');
@@ -198,7 +248,14 @@ describe('waar de notulen gemaakt zijn', () => {
 describe('het tabblad Notulen, gemaakt bij de vorige versie van het verslag', () => {
   const vorige = notulen({
     vorigeVersie: true,
-    besluiten: [{ id: 1, tekst: 'De bijeenkomst is op donderdag.', bron: bron(null, null, true) }],
+    besluiten: [
+      {
+        id: 1,
+        tekst: 'De bijeenkomst is op donderdag.',
+        tekstGetoond: 'De bijeenkomst is op donderdag.',
+        bron: bron(null, null, true)
+      }
+    ],
     actiepunten: [],
     nietGevonden: 0
   });

@@ -12,7 +12,11 @@
   import MicrofoonRegel from '#lib/components/MicrofoonRegel.svelte';
   import { Button } from '#lib/components/ui/button/index.js';
   import { huidigeTaal, t } from '#lib';
-  import { dictaatAnnuleer, microfooninstellingOpen } from '#lib/commandos.js';
+  import {
+    dictaatAnnuleer,
+    microfooninstellingOpen,
+    toegankelijkheidOpen
+  } from '#lib/commandos.js';
   import { bijnaVol, formatDuur, isActief, klokTijd, plakSoort } from '#lib/dictaat.js';
   import type { PlakUitkomst, Weergave } from '#lib/dictaat.js';
   import { dictaatStand } from '#lib/dictaatstand.svelte.js';
@@ -169,6 +173,14 @@
     switch (uitkomst) {
       case 'geplakt':
         return t().plakGeplakt;
+      case 'getypt':
+        return t().plakGetypt;
+      case 'typen_onderbroken':
+        return t().plakTypenOnderbroken;
+      case 'typen_mislukt':
+        return t().plakTypenMislukt;
+      case 'geen_tekstveld':
+        return t().plakGeenTekstveld;
       case 'waarschijnlijk_geplakt':
         return t().plakWaarschijnlijk;
       case 'op_klembord':
@@ -187,6 +199,10 @@
         return t().plakMislukt;
       case 'in_mondig':
         return inProefveld ? t().plakInProefveld : t().plakInMondig;
+      case 'geen_toegang':
+        return t().plakGeenToegang;
+      case 'wachtwoordveld':
+        return t().plakWachtwoordveld;
     }
   }
 
@@ -371,9 +387,16 @@
         <CircleAlert size={16} class="mt-0.5 shrink-0" aria-hidden="true" />
         {plakMelding(plak)}
       </p>
-      <Button onclick={() => kopieer()} data-hoofdactie=""
-        ><Copy size={16} aria-hidden="true" />{t().kopieren}</Button
-      >
+      {#if plak === 'geen_toegang'}
+        <!-- De tekst staat al op het klembord; de knop lost het blijvend op. -->
+        <Button onclick={() => void toegankelijkheidOpen()} data-hoofdactie=""
+          >{t().toegankelijkheidOpenen}</Button
+        >
+      {:else}
+        <Button onclick={() => kopieer()} data-hoofdactie=""
+          ><Copy size={16} aria-hidden="true" />{t().kopieren}</Button
+        >
+      {/if}
     </div>
   {/if}
 

@@ -71,7 +71,8 @@ pub(crate) struct BronInfo {
     beurt: Option<usize>,
     /// De tijd van die beurt in milliseconden.
     ms: Option<u64>,
-    /// Het citaat dat het model gaf, voor de uitleg bij de bronknop.
+    /// Het citaat dat het model gaf, voor de uitleg bij de bronknop. Het is alleen om te lezen en
+    /// staat er al vervangen in als "Persoonsgegevens vervangen" aan staat.
     citaat: String,
 }
 
@@ -81,7 +82,11 @@ pub(crate) struct BronInfo {
 pub(crate) struct BesluitInfo {
     /// Het vaste nummer van het punt (ook na weghalen van een ander punt).
     id: u32,
+    /// De echte tekst: daarmee begint het bewerken.
     tekst: String,
+    /// De tekst zoals hij op het scherm staat: met "Persoonsgegevens vervangen" aan met
+    /// `[BSN]` enzovoort, net als in Kopiëren en Opslaan.
+    tekst_getoond: String,
     bron: BronInfo,
 }
 
@@ -94,6 +99,10 @@ pub(crate) struct ActiepuntInfo {
     wat: String,
     wie: String,
     wanneer: String,
+    /// Zoals `BesluitInfo::tekst_getoond`: wat, wie en wanneer zoals ze op het scherm staan.
+    wat_getoond: String,
+    wie_getoond: String,
+    wanneer_getoond: String,
     wie_niet_teruggevonden: bool,
     wanneer_niet_teruggevonden: bool,
     bron: BronInfo,
@@ -104,6 +113,8 @@ pub(crate) struct ActiepuntInfo {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct NotulenInfo {
     samenvatting: String,
+    /// Zoals `BesluitInfo::tekst_getoond`.
+    samenvatting_getoond: String,
     besluiten: Vec<BesluitInfo>,
     actiepunten: Vec<ActiepuntInfo>,
     /// `mistral` of `ollama`.
@@ -133,7 +144,7 @@ pub(crate) struct NotulenStand {
 impl NotulenStand {
     pub(super) fn van(v: &Verslag) -> Self {
         let info = match &v.notulen {
-            Some(OpgeslagenNotulen::Leesbaar(n)) => Some(notulen_info(n, &v.gesprek)),
+            Some(OpgeslagenNotulen::Leesbaar(n)) => Some(notulen_info(n, &v.gesprek, &v.persoon)),
             _ => None,
         };
         Self {
@@ -147,7 +158,13 @@ impl NotulenStand {
     }
 }
 
-fn bron_info(bron: &Bron, controle: Controle, gesprek: &Gesprek, vorige: bool) -> BronInfo {
+fn bron_info(
+    bron: &Bron,
+    controle: Controle,
+    gesprek: &Gesprek,
+    persoon: &Markeringen,
+    vorige: bool,
+) -> BronInfo {
     let beurt = match controle {
         Controle::Gevonden { beurt } if !vorige && beurt >= 1 && beurt <= gesprek.beurten.len() => {
             Some(beurt - 1)
@@ -160,23 +177,31 @@ fn bron_info(bron: &Bron, controle: Controle, gesprek: &Gesprek, vorige: bool) -
         ms: beurt
             .and_then(|i| gesprek.beurten.get(i))
             .map(|b| b.start_ms),
-        citaat: bron.citaat.clone(),
+        citaat: persoon.voor_uitvoer(&bron.citaat),
     }
 }
 
-/// De notulen zoals de interface ze toont.
-pub(super) fn notulen_info(n: &BewaardeNotulen, gesprek: &Gesprek) -> NotulenInfo {
+/// De notulen zoals de interface ze toont. Met "Persoonsgegevens vervangen" aan krijgt het scherm
+/// dezelfde vervangingen als Kopiëren en Opslaan (`BewaardeNotulen::als_blok`), net als het
+/// verslag; de echte tekst blijft erbij, want bewerken begint daarmee.
+pub(super) fn notulen_info(
+    n: &BewaardeNotulen,
+    gesprek: &Gesprek,
+    persoon: &Markeringen,
+) -> NotulenInfo {
     let vorige = n.bij_vorige_versie(gesprek);
     let (gevonden, niet_gevonden) = n.telling();
     NotulenInfo {
         samenvatting: n.samenvatting.clone(),
+        samenvatting_getoond: persoon.voor_uitvoer(&n.samenvatting),
         besluiten: n
             .besluiten
             .iter()
             .map(|b| BesluitInfo {
                 id: b.id,
                 tekst: b.punt.tekst.clone(),
-                bron: bron_info(&b.punt.bron, b.controle, gesprek, vorige),
+                tekst_getoond: persoon.voor_uitvoer(&b.punt.tekst),
+                bron: bron_info(&b.punt.bron, b.controle, gesprek, persoon, vorige),
             })
             .collect(),
         actiepunten: n
@@ -187,9 +212,12 @@ pub(super) fn notulen_info(n: &BewaardeNotulen, gesprek: &Gesprek) -> NotulenInf
                 wat: a.punt.wat.clone(),
                 wie: a.punt.wie.clone(),
                 wanneer: a.punt.wanneer.clone(),
+                wat_getoond: persoon.voor_uitvoer(&a.punt.wat),
+                wie_getoond: persoon.voor_naam(&a.punt.wie),
+                wanneer_getoond: persoon.voor_uitvoer(&a.punt.wanneer),
                 wie_niet_teruggevonden: a.wie_niet_teruggevonden,
                 wanneer_niet_teruggevonden: a.wanneer_niet_teruggevonden,
-                bron: bron_info(&a.punt.bron, a.controle, gesprek, vorige),
+                bron: bron_info(&a.punt.bron, a.controle, gesprek, persoon, vorige),
             })
             .collect(),
         aanbieder: n.aanbieder.clone(),
@@ -291,6 +319,9 @@ impl Binnen {
         match uitslag {
             Ok(notulen) => {
                 v.notulen = Some(OpgeslagenNotulen::Leesbaar(notulen));
+                // Nieuwe notulen: "Ongedaan maken" van een naam zou ze anders terugzetten. Bij
+                // mislukken of stoppen blijft het ongedaan maken staan.
+                v.stap_terug = None;
                 self.fout = None;
                 (true, self.plan_bewaren(false))
             }
@@ -807,6 +838,69 @@ mod tests {
     }
 
     #[test]
+    fn met_vervangen_aan_toont_het_scherm_hetzelfde_als_kopieren_en_opslaan() {
+        let mut v = verslag_met_notulen();
+        // Een BSN in de samenvatting en in het citaat, een eigen markering in een besluit, in het
+        // wat van een actiepunt en in de wie.
+        if let Some(OpgeslagenNotulen::Leesbaar(n)) = &mut v.notulen {
+            n.samenvatting = "Over de bijeenkomst, BSN 111222333.".into();
+            n.besluiten[0].punt.bron.citaat = "Mijn BSN is 111222333.".into();
+        }
+        v.persoon.markeer("donderdag").unwrap();
+        v.persoon.markeer("uitnodiging").unwrap();
+        v.persoon.markeer("Anna").unwrap();
+
+        // Vervangen uit: het scherm toont de echte tekst.
+        let uit = NotulenStand::van(&v).info.expect("notulen");
+        assert_eq!(uit.samenvatting_getoond, uit.samenvatting);
+        assert_eq!(uit.besluiten[0].tekst_getoond, uit.besluiten[0].tekst);
+        assert_eq!(uit.actiepunten[0].wie_getoond, "Anna");
+
+        // Vervangen aan: op het scherm staat nergens meer het echte gegeven.
+        v.persoon.zet_vervangen(true);
+        let info = NotulenStand::van(&v).info.expect("notulen");
+        assert_eq!(info.samenvatting_getoond, "Over de bijeenkomst, BSN [BSN].");
+        assert_eq!(
+            info.besluiten[0].tekst_getoond,
+            "De bijeenkomst is op [GEGEVEN]."
+        );
+        assert_eq!(info.actiepunten[0].wat_getoond, "De [GEGEVEN] doorsturen");
+        assert_eq!(info.actiepunten[0].wie_getoond, "[GEGEVEN]");
+        assert_eq!(info.actiepunten[0].wanneer_getoond, "vrijdag");
+        assert_eq!(info.besluiten[0].bron.citaat, "Mijn BSN is [BSN].");
+        // De echte tekst blijft in de stand: bewerken begint daarmee.
+        assert_eq!(info.besluiten[0].tekst, "De bijeenkomst is op donderdag.");
+        assert_eq!(info.actiepunten[0].wie, "Anna");
+        // Wat het scherm toont, staat ook zo in Kopiëren en Opslaan.
+        let n = leesbaar_in(&v);
+        let kopie = blok_als_tekst(&n.als_blok(&v.gesprek, &v.persoon));
+        for getoond in [
+            info.samenvatting_getoond.as_str(),
+            info.besluiten[0].tekst_getoond.as_str(),
+            info.actiepunten[0].wat_getoond.as_str(),
+        ] {
+            assert!(kopie.contains(getoond), "{getoond} ontbreekt in {kopie}");
+        }
+        assert!(kopie.contains("[GEGEVEN]"), "{kopie}");
+        assert!(
+            !kopie.contains("111222333") && !kopie.contains("Anna"),
+            "{kopie}"
+        );
+        // En het is te serialiseren zonder het echte BSN in de getoonde velden.
+        let json = serde_json::to_value(&info).unwrap();
+        assert!(
+            !json["samenvattingGetoond"]
+                .to_string()
+                .contains("111222333")
+        );
+        assert!(
+            !json["besluiten"][0]["bron"]["citaat"]
+                .to_string()
+                .contains("111222333")
+        );
+    }
+
+    #[test]
     fn na_een_andere_versie_van_het_verslag_zijn_de_bronnen_niet_klikbaar() {
         let mut v = verslag_met_notulen();
         v.gesprek.beurten[0].eind_ms += 500;
@@ -933,6 +1027,27 @@ mod tests {
         let v = verslag_in(&binnen);
         assert!(v.notulen_maken.is_none());
         assert!(NotulenStand::van(v).info.is_some());
+    }
+
+    #[test]
+    fn ongedaan_maken_blijft_tot_er_echt_nieuwe_notulen_staan() {
+        let g = gesprek();
+        let nieuw = notulen(&g);
+        let mut v = Verslag::leeg(TaakId(1), std::path::PathBuf::from("map"), g);
+        super::super::wijzig_sprekers(&mut v, |g| super::super::noem(g, 1, "Noor")).unwrap();
+        assert!(v.stap_terug.is_some());
+        let mut binnen = binnen_met(v);
+        // Mislukt of gestopt: de stap blijft.
+        let (id, _, _) = begin(&mut binnen).expect("begin");
+        binnen.klaar_notulen(id, Err(NotulenFout::GeenTekst));
+        assert!(verslag_in(&binnen).stap_terug.is_some());
+        begin(&mut binnen).expect("begin");
+        assert!(binnen.stop_notulen());
+        assert!(verslag_in(&binnen).stap_terug.is_some());
+        // Gelukt: ongedaan maken zou de nieuwe notulen weggooien, dus de stap vervalt.
+        let (id, _, _) = begin(&mut binnen).expect("begin");
+        binnen.klaar_notulen(id, Ok(nieuw));
+        assert!(verslag_in(&binnen).stap_terug.is_none());
     }
 
     #[test]

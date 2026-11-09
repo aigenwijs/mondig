@@ -1,0 +1,63 @@
+[package]
+name = "mondig-mac"
+description = "Mondig op de Mac: plakken, toegankelijkheid, de pil, het geluidje en wakker houden (mijlpaal M1)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Een eigen crate, zodat de Mac-code op Windows te controleren is met
+# `cargo clippy -p mondig-mac --target aarch64-apple-darwin`, zonder de hele app (met de
+# C++-engine) voor de Mac te bouwen. Op andere platforms bevat hij alleen de gedeelde typen en
+# de zuivere beslissingen, zodat de tests overal draaien.
+# Allemaal versies die Tauri en wry al in de boom hebben (Cargo.lock), onder MIT, Apache-2.0 of
+# Zlib.
+[target.'cfg(target_os = "macos")'.dependencies]
+dispatch2 = "0.3.1"
+objc2 = "0.6.5"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "libc",
+  "objc2-core-foundation",
+  "NSApplication",
+  "NSEvent",
+  "NSGraphics",
+  "NSPasteboard",
+  "NSPasteboardItem",
+  "NSResponder",
+  "NSRunningApplication",
+  "NSScreen",
+  "NSSound",
+  "NSWindow",
+  "NSWorkspace",
+] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "CFCGTypes",
+] }
+objc2-core-graphics = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "CGEvent",
+  "CGEventSource",
+  "CGEventTypes",
+  "CGRemoteOperation",
+] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "objc2-core-foundation",
+  "NSArray",
+  "NSData",
+  "NSDictionary",
+  "NSEnumerator",
+  "NSGeometry",
+  "NSObject",
+  "NSProcessInfo",
+  "NSString",
+  "NSURL",
+  "NSValue",
+] }
+
+[lints]
+workspace = true

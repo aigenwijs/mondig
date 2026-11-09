@@ -26,6 +26,7 @@ mod snelheid;
 mod sneltoets;
 mod systeemvak;
 mod taal;
+mod toegankelijkheid;
 mod venster;
 mod vergadering;
 mod versie;
@@ -441,9 +442,12 @@ pub fn run() -> tauri::Result<()> {
             pil::pil_toon,
             pil::pil_verberg,
             pil::pil_open_mondig,
+            pil::pil_klik,
             pil::pil_positie_instelling,
             pil::pil_positie_zet,
             plakken::klembord_zet,
+            toegankelijkheid::toegankelijkheid_stand,
+            toegankelijkheid::toegankelijkheid_open,
             versie::versie_info,
             versie::werkproces_bouw,
             versie::model_vermeldingen,
@@ -502,6 +506,7 @@ pub fn run() -> tauri::Result<()> {
             vergadering::vergadering_voeg_sprekers_samen,
             vergadering::vergadering_opslaan,
             vergadering::vergadering_kopieer,
+            vergadering::vergadering_zet_labels,
             vergadering::vergadering_audio_bewaren,
             vergadering::vergadering_sluiten,
             vergadering::vergadering_verslag_openen,
@@ -511,6 +516,7 @@ pub fn run() -> tauri::Result<()> {
             vergadering::vergadering_opnieuw_start,
             vergadering::vergadering_opnieuw_stoppen,
             vergadering::vergadering_vorige_terugzetten,
+            vergadering::vergadering_stap_terug,
             vergadering::notulen_maken::vergadering_notulen_maken,
             vergadering::notulen_maken::vergadering_notulen_stoppen,
             vergadering::notulen_maken::vergadering_notulen_punt_aanpassen,

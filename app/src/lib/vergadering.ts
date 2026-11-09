@@ -25,10 +25,33 @@ export const SOORTEN: readonly Vergadersoort[] = ['online', 'ruimte', 'alleen'];
 export type Kant = 'jij' | 'anderen';
 
 /**
- * Voor welke beurten een naam geldt: alleen deze, alle beurten van die kant met dezelfde naam,
- * of alle beurten van die spreker (4b-D, als de sprekers herkend zijn).
+ * De laatste wijziging aan de sprekers (een naam, samenvoegen, een beurt aan een andere spreker),
+ * zolang die met "Ongedaan maken" terug kan (Rust: `Sprekerstap`).
  */
-export type Naambereik = 'beurt' | 'kant' | 'spreker';
+export interface Sprekerstap {
+  /** Een nummer per stap: een wijziging die niets deed, laat de oude stap (en zijn nummer) staan. */
+  volgnummer: number;
+  /** De kant waar het gebeurde. */
+  kant: Kant;
+  /**
+   * De sprekers die door een naam samengingen, als nummer; `null` is de kant zonder nummer
+   * ("Anderen"). Leeg als er niets samenging.
+   */
+  samengevoegd: (number | null)[];
+  /** Bij een naam: de naam zoals hij nu in het verslag staat; `null` is de standaardnaam. */
+  naam: string | null;
+  /** Bij een naam: het sprekernummer daarna, voor de standaardnaam ("Terug naar Spreker 2"). */
+  nummer: number | null;
+}
+
+/**
+ * De stap die een wijziging maakte: de nieuwe `sprekerstap` als Rust echt een nieuwe stap maakte
+ * (een ander volgnummer dan `voor`), anders `null`. Zo zet een wijziging die niets deed (Opslaan
+ * zonder andere naam) geen melding neer die bij een oudere stap hoort.
+ */
+export function nieuweStap(voor: number | null, na: Sprekerstap | null): Sprekerstap | null {
+  return na !== null && na.volgnummer !== voor ? na : null;
+}
 
 /** Het niveau per spoor tijdens de opname, van 0 (stilte) tot 1. */
 export interface Niveaus {
@@ -123,6 +146,12 @@ export interface BeurtInfo {
   sprekernummer: number | null;
   /** "Jij", "Anderen", "Spreker 1" of een gegeven naam; `null` in de ruimte zonder sprekers. */
   spreker: string | null;
+  /**
+   * `spreker` zoals hij op het scherm staat: met Vervangen aan en een gemarkeerd gegeven in de
+   * naam staat hier `[GEGEVEN]` enzovoort, zoals in Kopiëren en Opslaan. Naam geven begint met
+   * de echte `spreker`.
+   */
+  sprekerGetoond: string | null;
   /** Heeft de gebruiker deze beurt een eigen naam gegeven? */
   eigenNaam: boolean;
   startMs: number;
@@ -193,6 +222,11 @@ export type StandToestand =
       persoon: PersoonStand;
       /** De naam die de gebruiker het verslag gaf; `null`: het scherm maakt de titel zelf. */
       naam: string | null;
+      /**
+       * `naam` zoals de kop hem toont: met Vervangen aan en een gemarkeerd gegeven erin staat hier
+       * `[GEGEVEN]` enzovoort, zoals in de bestandsnaam en de export. Naam wijzigen begint met `naam`.
+       */
+      naamGetoond: string | null;
       /** Wanneer Mondig het verslag vanzelf wist (milliseconden sinds 1970); `null` als dat niet bekend is. */
       wistMs: number | null;
       /** Kon Mondig de laatste wijzigingen niet bewaren? Dan weigert Sluiten, tenzij je toch sluit. */
@@ -214,8 +248,10 @@ export type StandToestand =
       opnieuw: OpnieuwStand | null;
       /** Wat er na het laatste opnieuw uitschrijven veranderde. */
       naOpnieuw: NaOpnieuw | null;
-      /** Kan "Vorige versie terugzetten" nog (tot het verslag sluit)? */
+      /** Kan "Vorige versie terugzetten" nog (tot het verslag sluit of opnieuw wordt uitgeschreven)? */
       vorigeVersie: boolean;
+      /** De laatste wijziging aan de sprekers, zolang die ongedaan kan worden gemaakt. */
+      sprekerstap: Sprekerstap | null;
       /** De notulen van dit verslag en het maken ervan (T3, ADR 0026). */
       notulen: NotulenStand;
     };
@@ -307,13 +343,18 @@ export function vergaderingHerstel(id: string): Promise<VergaderingStand> {
   return invoke<VergaderingStand>('vergadering_herstel', { id });
 }
 
-/** Geeft de spreker van een beurt een naam; een lege naam zet terug naar "Jij" of "Anderen". */
-export function vergaderingNaam(
-  index: number,
-  naam: string,
-  bereik: Naambereik
-): Promise<VergaderingStand> {
-  return invoke<VergaderingStand>('vergadering_naam', { index, naam, bereik });
+/**
+ * Geeft de spreker van een beurt een naam, voor al zijn beurten; een lege naam zet terug naar
+ * "Jij", "Anderen" of "Spreker 1". Heeft een andere spreker van die kant dezelfde naam, dan gaan
+ * ze samen (`sprekerstap.samengevoegd` in de nieuwe stand).
+ */
+export function vergaderingNaam(index: number, naam: string): Promise<VergaderingStand> {
+  return invoke<VergaderingStand>('vergadering_naam', { index, naam });
+}
+
+/** Maakt de laatste wijziging aan de sprekers ongedaan (een naam, samenvoegen, een andere spreker). */
+export function vergaderingStapTerug(): Promise<VergaderingStand> {
+  return invoke<VergaderingStand>('vergadering_stap_terug');
 }
 
 /**
@@ -379,6 +420,34 @@ export function vergaderingOpslaan(
 /** Zet het verslag als tekst op het klembord. */
 export function vergaderingKopieer(): Promise<void> {
   return invoke<undefined>('vergadering_kopieer');
+}
+
+/**
+ * De standaardnamen van de sprekers in de taal van de app, zoals Rust ze nodig heeft voor Kopiëren
+ * en Opslaan (`Sprekerlabels` in mondig-core): "Jij"/"You", "Anderen"/"Others" en per nummer
+ * "Spreker 1"/"Speaker 1". Een naam die de gebruiker gaf, blijft zoals hij is.
+ */
+export interface Sprekerlabels {
+  jij: string;
+  anderen: string;
+  /** Plek 0 is spreker 1, tot en met `MAX_SPREKERS`. */
+  sprekers: string[];
+}
+
+/** Alle standaardnamen in de taal van `t`, voor `vergaderingZetLabels`. */
+export function sprekerlabels(
+  t: Pick<Berichten, 'sprekerJij' | 'sprekerAnderen' | 'vergaderSpreker'>
+): Sprekerlabels {
+  return {
+    jij: t.sprekerJij,
+    anderen: t.sprekerAnderen,
+    sprekers: Array.from({ length: MAX_SPREKERS }, (_, plek) => t.vergaderSpreker(plek + 1))
+  };
+}
+
+/** Geeft Rust de standaardnamen van de sprekers in de taal van de app, voor Kopiëren en Opslaan. */
+export function vergaderingZetLabels(labels: Sprekerlabels): Promise<void> {
+  return invoke<undefined>('vergadering_zet_labels', { labels });
 }
 
 /** Bewaart de opname als één WAV-bestand. Geeft de bestandsnaam, of `null` bij annuleren. */
@@ -566,15 +635,30 @@ export function sprekersVan(
 }
 
 /**
- * Kan deze beurt aan een spreker gegeven worden? Alleen in een verslag met herkende sprekers, en
- * alleen op de kant waarvan de sprekers herkend zijn: online heeft "Jij" geen sprekers.
+ * Kan deze beurt aan een spreker gegeven worden? Alleen op de kant waarvan de sprekers herkend
+ * worden: online heeft "Jij" geen sprekers. Online alleen in een verslag met herkende sprekers; in
+ * de ruimte ook zonder, want daar maakt de gebruiker zelf de eerste spreker (Rust:
+ * `Gesprek::geef_aan_nieuwe_spreker`). Zonder sprekers staat er geen labelkolom ([`toontLabels`]),
+ * en bij aanwijzen verschijnt de knop "Spreker aanwijzen".
  */
 export function kanAanSpreker(
   soort: Vergadersoort,
   beurten: readonly BeurtInfo[],
   beurt: Pick<BeurtInfo, 'kant'>
 ): boolean {
-  return heeftSprekers(beurten) && beurt.kant === sprekerKant(soort);
+  return (soort === 'ruimte' || heeftSprekers(beurten)) && beurt.kant === sprekerKant(soort);
+}
+
+/**
+ * Is dit een alinea in de ruimte die niemand aanwees? Zo'n alinea heeft geen spreker en geen
+ * naam (Rust: `Gesprek::label` geeft `None`): de labelkolom toont "+ Spreker" in plaats van "Jij",
+ * en zoeken, kopie, export en notulen noemen er geen naam bij.
+ */
+export function zonderSpreker(
+  soort: Vergadersoort,
+  beurt: Pick<BeurtInfo, 'sprekernummer' | 'eigenNaam'>
+): boolean {
+  return soort === 'ruimte' && beurt.sprekernummer === null && !beurt.eigenNaam;
 }
 
 /** Neemt deze soort ook het geluid van de computer op? Alleen online. */
@@ -706,6 +790,62 @@ export function beurtNaam(
   if (beurt.eigenNaam && beurt.spreker !== null && beurt.spreker !== '') return beurt.spreker;
   if (beurt.sprekernummer != null) return t.vergaderSpreker(beurt.sprekernummer);
   return kantNaam(beurt.kant, t);
+}
+
+/**
+ * Wat er op het label van een beurt staat: zoals `beurtNaam`, maar een eigen naam met een gemarkeerd
+ * gegeven erin staat er vervangen (`[GEGEVEN]`) als "Persoonsgegevens vervangen" aan staat, zoals
+ * Kopiëren en Opslaan hem geven.
+ */
+export function beurtNaamGetoond(
+  beurt: Pick<BeurtInfo, 'kant' | 'spreker' | 'sprekerGetoond' | 'eigenNaam'> &
+    Partial<Pick<BeurtInfo, 'sprekernummer'>>,
+  t: Pick<Berichten, 'sprekerJij' | 'sprekerAnderen' | 'vergaderSpreker'>
+): string {
+  return beurt.eigenNaam && beurt.sprekerGetoond != null && beurt.sprekerGetoond !== ''
+    ? beurt.sprekerGetoond
+    : beurtNaam(beurt, t);
+}
+
+/**
+ * De naam van een beurt zonder eigen naam: "Spreker 2" als de sprekers herkend zijn, anders "Jij"
+ * of "Anderen". Wat er na leegmaken staat.
+ */
+export function standaardNaam(
+  beurt: Pick<BeurtInfo, 'kant' | 'sprekernummer'>,
+  t: Pick<Berichten, 'sprekerJij' | 'sprekerAnderen' | 'vergaderSpreker'>
+): string {
+  return beurt.sprekernummer !== null
+    ? t.vergaderSpreker(beurt.sprekernummer)
+    : kantNaam(beurt.kant, t);
+}
+
+/**
+ * Wat de melding (en de schermlezer) zegt na een naam, uit wat Rust teruggaf: "Spreker 1 en
+ * Spreker 2 zijn nu Noor" als er sprekers samengingen, "Terug naar Spreker 2" na leegmaken (de naam
+ * die er dan echt staat), anders "Naam gegeven: Noor", met de naam zoals hij in het verslag staat.
+ */
+export function naamMelding(
+  stap: Pick<Sprekerstap, 'kant' | 'samengevoegd' | 'naam' | 'nummer'>,
+  t: Pick<
+    Berichten,
+    | 'sprekerJij'
+    | 'sprekerAnderen'
+    | 'vergaderSpreker'
+    | 'vergaderNaamTerug'
+    | 'vergaderNaamGegeven'
+    | 'vergaderZijnNu'
+  >
+): string {
+  const standaard = standaardNaam({ kant: stap.kant, sprekernummer: stap.nummer }, t);
+  if (stap.samengevoegd.length >= 2) {
+    const namen = stap.samengevoegd.map((nummer) =>
+      standaardNaam({ kant: stap.kant, sprekernummer: nummer }, t)
+    );
+    return t.vergaderZijnNu(namen, stap.naam ?? standaard);
+  }
+  if (stap.naam === null) return t.vergaderNaamTerug(standaard);
+  return t.vergaderNaamGegeven(stap.naam);
 }
 
 /** De naam waarmee het invoerveld begint: de eigen naam, of leeg bij de standaardnaam. */

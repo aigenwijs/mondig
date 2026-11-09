@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { en } from './i18n/en';
 import { nl } from './i18n/nl';
-import { eersteKeuze, keuzeRegel, rolTekst, voortgangTekst } from './opnieuw';
-import type { OpnieuwKeuze } from './vergadering';
+import { eersteKeuze, keuzeRegel, opnieuwGeslaagd, rolTekst, voortgangTekst } from './opnieuw';
+import type { OpnieuwKeuze, StandToestand } from './vergadering';
 
 const nauwkeurig: OpnieuwKeuze = {
   modelId: 'canary',
@@ -56,5 +56,26 @@ describe('opnieuw uitschrijven: de hulpjes', () => {
       'Opnieuw uitschrijven met het nauwkeurige model… 100%.'
     );
     expect(voortgangTekst(null, null, null, nl)).toBe('Opnieuw uitschrijven…');
+  });
+});
+
+describe('opnieuw uitschrijven geslaagd', () => {
+  const verslag = (opnieuw: unknown, naOpnieuw: unknown) =>
+    ({ type: 'verslag', opnieuw, naOpnieuw }) as unknown as StandToestand;
+  const loopt = verslag({ voortgang: 10 }, null);
+  const klaar = verslag(null, { rol: null, veranderd: 1, verdwenen: 0 });
+
+  it('telt alleen een opnieuw uitschrijven dat liep en met een melding eindigde', () => {
+    expect(opnieuwGeslaagd(loopt, klaar)).toBe(true);
+  });
+
+  it('telt stoppen niet: zonder melding is het verslag niet veranderd', () => {
+    expect(opnieuwGeslaagd(loopt, verslag(null, null))).toBe(false);
+  });
+
+  it('telt een stand zonder opnieuw uitschrijven ervoor niet', () => {
+    expect(opnieuwGeslaagd(klaar, klaar)).toBe(false);
+    expect(opnieuwGeslaagd(undefined, klaar)).toBe(false);
+    expect(opnieuwGeslaagd({ type: 'klaar' } as unknown as StandToestand, klaar)).toBe(false);
   });
 });

@@ -12,6 +12,8 @@
   import { startDictatenStand } from '#lib/dictatenstand.svelte.js';
   import { modellenStand, startModellenStand } from '#lib/modellenstand.svelte.js';
   import { sprekers } from '#lib/sprekers.svelte.js';
+  import { sprekerlabels, vergaderingZetLabels } from '#lib/vergadering.js';
+  import { t } from '#lib';
   import { luisterNaarNavigatie } from '#lib/gebeurtenissen.js';
   import { bekendeRoute } from '#lib/navigatie.js';
   import type { LayoutProps } from './$types';
@@ -36,6 +38,15 @@
   // waar de gebruiker om vroeg. Dat blijft kloppen als hij intussen naar een ander scherm ging.
   $effect(() => {
     void sprekers.volg();
+  });
+
+  // Kopiëren en Opslaan gebruiken de sprekernamen in de taal van de app ("You", "Others", "Speaker
+  // 1"). Rust kent die taal niet, dus de interface geeft ze door, bij het starten en bij een
+  // taalwissel. De pil heeft geen verslag en slaat dit over.
+  $effect(() => {
+    if (isPil) return;
+    const labels = sprekerlabels(t());
+    void vergaderingZetLabels(labels).catch(() => undefined);
   });
 
   onMount(() => {

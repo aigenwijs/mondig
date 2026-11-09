@@ -50,18 +50,28 @@ pub struct Samenvatting {
 }
 
 /// Hoeveel sprekers een gesprek heeft, als ze herkend zijn; anders `None`, want "Jij en Anderen"
-/// is geen telling van mensen. Dezelfde telling als `aantalSprekers` in de interface.
+/// is geen telling van mensen. Het telt de verschillende namen die het verslag toont (zonder
+/// verschil in hoofdletters). Een kaal "Anderen" (zonder nummer en zonder eigen naam) op een kant
+/// met herkende sprekers telt niet mee; een kant zonder nummers (online Jij) wel. Dezelfde
+/// telling als `aantalSprekers` in de interface.
 #[must_use]
 pub fn aantal_sprekers(gesprek: &Gesprek) -> Option<usize> {
     if !gesprek.beurten.iter().any(|b| b.sprekernummer.is_some()) {
         return None;
     }
-    let sprekers: BTreeSet<(bool, Option<u8>)> = gesprek
+    let met_nummers = |kant: Kant| {
+        gesprek
+            .beurten
+            .iter()
+            .any(|b| b.kant == kant && b.sprekernummer.is_some())
+    };
+    let namen: BTreeSet<String> = gesprek
         .beurten
         .iter()
-        .map(|b| (b.kant == Kant::Anderen, b.sprekernummer))
+        .filter(|b| b.sprekernummer.is_some() || b.naam.is_some() || !met_nummers(b.kant))
+        .map(|b| b.spreker().to_lowercase())
         .collect();
-    Some(sprekers.len())
+    Some(namen.len())
 }
 
 /// Een verslag zoals het op schijf komt, door verwijzing: schrijven kost zo geen kopie van de
@@ -372,6 +382,26 @@ mod tests {
                 sprekers: Some(2),
             }
         );
+        // Anderen zonder nummer is geen extra spreker.
+        let mut zonder = g.clone();
+        zonder.beurten.push(Beurt {
+            sprekernummer: None,
+            naam: None,
+            ..g.beurten[1].clone()
+        });
+        assert_eq!(aantal_sprekers(&zonder), Some(2));
+        // Zonder nummer maar met een eigen naam ("Jan") is wel een spreker; dezelfde naam als
+        // een andere spreker niet nog eens.
+        zonder.beurten.push(Beurt {
+            naam: Some("Jan".to_string()),
+            ..zonder.beurten[2].clone()
+        });
+        assert_eq!(aantal_sprekers(&zonder), Some(3));
+        zonder.beurten.push(Beurt {
+            naam: Some("wethouder".to_string()),
+            ..zonder.beurten[2].clone()
+        });
+        assert_eq!(aantal_sprekers(&zonder), Some(3));
         // De samenvatting staat vooraan, direct na de versie.
         let tekst = fs::read_to_string(map.path().join(BESTAND)).unwrap();
         assert!(

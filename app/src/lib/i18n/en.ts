@@ -86,15 +86,33 @@ export const en = {
   plakVorigKlembordKwijt: 'Your previous clipboard could not be saved.',
   plakVorigKlembordOnvolledig: 'Your previous clipboard could not be saved completely.',
   plakOpKlembord: 'The text is on the clipboard. Paste it with Ctrl+V.',
+  plakGetypt: 'The text is where you were typing.',
+  plakTypenOnderbroken:
+    'Mondig stopped typing halfway, because you switched windows, held down a key or moved into a password field. The beginning is already there; the rest, which was not typed yet, is on the clipboard, so you can paste it yourself.',
+  plakGeenTekstveld:
+    'Mondig found no text field to type into. The text is on the clipboard, so you can paste it yourself; it replaced what you copied before.',
+  plakTypenMislukt:
+    'Pasting and typing did not work in this window. The text is on the clipboard, so you can paste it yourself.',
   plakBeheerrechten:
-    'Mondig cannot paste into this window, because it runs as administrator. Copy the text and paste it yourself.',
+    'Mondig cannot paste or type into this window, because it runs as administrator. The text is on the clipboard: paste it with Ctrl+V. It replaced what you copied before.',
   plakToetsen:
     'Mondig did not paste, because a key was still held down. Copy the text and paste it yourself.',
   plakGeenVenster: 'There was no window to paste into. Copy the text and paste it yourself.',
   plakNietGelezen:
     "Mondig is not sure the text was pasted. If it isn't there, copy it and paste it yourself.",
   plakMislukt: 'Pasting did not work. Copy the text and paste it yourself.',
-  plakNietGeplakt: 'Mondig could not paste into this window. The text is ready under Copy.',
+  plakNietGeplakt:
+    'Mondig could not paste or type into this window, perhaps because it runs as administrator. The text is on the clipboard, so you can paste it yourself; it replaced what you copied before.',
+  plakGeenToegang:
+    'Mondig may not paste yet, because macOS first asks for your permission. The text is on the clipboard: paste it with ⌘V.',
+  plakWachtwoordveld:
+    'Mondig could not paste, probably because secure input was on (for example in a password field). The text is on the clipboard: paste it with ⌘V.',
+  toegankelijkheidOpenen: 'Open Accessibility',
+  toegangKop: 'Allow Mondig to paste',
+  toegangTekst:
+    'To paste the text where you are typing, Mondig needs permission to send keystrokes. Turn Mondig on in System Settings, under Privacy & Security, Accessibility. Until then, Mondig puts the text on the clipboard.',
+  toegangOpnieuw:
+    'Is Mondig already on there and still not pasting? That happens after a new version of Mondig. Remove Mondig from the list with the minus button and add it again with the plus button.',
   modelAanvullenKop: 'The speech model is not complete yet',
   modelAanvullenTekst: (grootte: string): string =>
     `${grootte} still to download. After that, Mondig is ready to dictate.`,
@@ -391,8 +409,12 @@ export const en = {
   pilVerdacht: 'Hardly any speech heard, check the text',
   pilRest: (seconden: number): string => `${String(seconden)} s left, then dictation stops`,
   pilPlakMislukt: 'Pasting did not work in this window',
-  pilPlakBeheer: 'This window runs as administrator, paste the text yourself',
+  pilPlakBeheer: 'This window runs as administrator, the text is on the clipboard',
+  pilTypenOnderbroken: 'Stopped typing, the rest is on the clipboard',
+  pilGeenTekstveld: 'No text field found, the text is on the clipboard',
+  pilTypenMislukt: 'Pasting and typing did not work, the text is on the clipboard',
   pilPlakOnzeker: 'Not sure the text was pasted',
+  pilPlakGeenToegang: 'Mondig may not paste yet, the text is on the clipboard',
   pilGekopieerd: 'Copied, paste with Ctrl+V',
   plakInMondig: 'The text is below, because Mondig was in front when it was ready.',
   pilInMondig: 'The text is in Mondig',
@@ -657,12 +679,7 @@ export const en = {
   vergaderBeurtenLabel: 'The report',
   vergaderNaamAria: (naam: string): string => `${naam}, change name`,
   vergaderNaamGeven: (kant: string): string => `Name for ${kant}`,
-  vergaderNaamKop: 'Name',
   vergaderNaamVoorbeeld: 'For example Councillor De Vries',
-  vergaderNaamLeeg: (kant: string): string => `Leave the field empty to go back to ${kant}.`,
-  vergaderNaamBereikLabel: 'For which turns',
-  vergaderNaamBeurt: 'Only this turn',
-  vergaderNaamKant: (kant: string): string => `All turns of ${kant}`,
   vergaderSpreker: (nummer: number): string => `Speaker ${String(nummer)}`,
   vergaderNaamOpslaan: 'Save',
   vergaderNaamGegeven: (naam: string): string => `Name set: ${naam}.`,
@@ -670,11 +687,16 @@ export const en = {
   // Recognising speakers (4b-D, phase D-2)
   vergaderNaamSprekerKop: 'Name of this speaker',
   vergaderNaamSprekerHulp: (standaard: string): string =>
-    `Applies to all turns of this speaker. Leave the field empty to go back to ${standaard}.`,
+    `Applies to all turns of this speaker. If another speaker has the same name, they are merged. Leave the field empty to go back to ${standaard}.`,
   vergaderBeurtVanKop: 'This turn is by',
   vergaderBeurtVanAria: (naam: string): string => `Give this turn to ${naam}`,
   vergaderNieuweSpreker: 'New speaker',
   vergaderPlusSpreker: '+ Speaker',
+  vergaderSprekerAanwijzen: 'Assign speaker',
+  vergaderSprekerAanwijzenAria: (tijd: string): string =>
+    `Assign a speaker to the paragraph at ${tijd}`,
+  vergaderSprekerAanwijzenHulp:
+    'Choose who this paragraph belongs to, or make a new speaker. You can give a speaker a name afterwards.',
   vergaderSamenvoegenKop: 'Is this the same person?',
   vergaderSamenvoegenHulp: (naam: string): string =>
     `Merge ${naam} with another speaker. All turns of ${naam} then become that speaker's.`,
@@ -683,6 +705,13 @@ export const en = {
   vergaderNieuweSprekerGegeven: 'The turn now belongs to a new speaker.',
   vergaderSamengevoegd: (van: string, naar: string): string =>
     `${van} and ${naar} have been merged.`,
+  vergaderZijnNu: (namen: string[], naam: string): string => {
+    const laatste = namen.at(-1) ?? '';
+    const lijst = namen.length > 1 ? `${namen.slice(0, -1).join(', ')} and ${laatste}` : laatste;
+    return `${lijst} are now ${naam}.`;
+  },
+  vergaderOngedaanMaken: 'Undo',
+  vergaderOngedaanGemaakt: 'Undone.',
   vergaderSprekersHerkennen: 'Recognising speakers…',
   vergaderSprekersSchermlezer: 'Mondig is now recognising the speakers.',
   sprekersKop: 'Recognise speakers',
@@ -1148,6 +1177,10 @@ export const en = {
       ? '1 marking is no longer in the text; check the report.'
       : `${String(aantal)} markings are no longer in the text; check the report.`,
   opnieuwTerugzetten: 'Restore previous version',
+  opnieuwTerugzettenKop: 'Restore the previous version?',
+  opnieuwTerugzettenTekst:
+    'The report goes back to how it was before the new transcription. Names and corrected text you changed since then go back too. Your markings of personal data stay.',
+  opnieuwTerugzettenBevestig: 'Yes, restore',
   opnieuwTeruggezet: 'The previous version is back.',
   opnieuwVeranderdAria: 'changed when written out again',
   persoonZelfKop: 'Mark something yourself',

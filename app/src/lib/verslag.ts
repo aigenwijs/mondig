@@ -16,6 +16,8 @@ export interface VerslagRegel {
   markeringen?: Markering[];
   /** Veranderd bij het laatste opnieuw uitschrijven (N-C4): de regel wordt even gemarkeerd. */
   veranderd?: boolean;
+  /** De naam van de spreker zoals het label hem toont; zoeken vindt de regel ook daarop. */
+  naam?: string | undefined;
 }
 
 /** De soorten persoonsgegevens die Mondig markeert; `handmatig` is wat de gebruiker zelf markeerde. */
@@ -112,6 +114,8 @@ export interface Treffer {
   regel: number;
   van: number;
   tot: number;
+  /** Een treffer in de naam van de spreker, niet in de tekst (`van` en `tot` zijn dan 0). */
+  naam?: true;
 }
 
 function ontsnap(tekst: string): string {
@@ -120,15 +124,26 @@ function ontsnap(tekst: string): string {
 
 /**
  * Alle treffers van `zoek` in de teksten, hoofdletterongevoelig, in volgorde van het verslag.
- * Leeg zoeken geeft geen treffers. Treffers in één regel overlappen niet.
+ * Leeg zoeken geeft geen treffers. Treffers in één regel overlappen niet. Met `namen` (per regel
+ * de naam van de spreker) telt een naam die het gezochte bevat als één treffer, vóór die in de
+ * tekst van de regel: zo vind je alle beurten van Noor.
  */
-export function vindTreffers(teksten: readonly string[], zoek: string): Treffer[] {
+export function vindTreffers(
+  teksten: readonly string[],
+  zoek: string,
+  namen: readonly (string | undefined)[] = []
+): Treffer[] {
   if (zoek === '') return [];
   // De vlag u vouwt hoofdletters per teken (geen andere lengte), dus de plekken kloppen met
   // de oorspronkelijke tekst.
   const patroon = new RegExp(ontsnap(zoek), 'giu');
+  const inNaam = new RegExp(ontsnap(zoek), 'iu');
   const treffers: Treffer[] = [];
   teksten.forEach((tekst, regel) => {
+    const naam = namen[regel];
+    if (naam !== undefined && inNaam.test(naam)) {
+      treffers.push({ regel, van: 0, tot: 0, naam: true });
+    }
     for (const treffer of tekst.matchAll(patroon)) {
       treffers.push({ regel, van: treffer.index, tot: treffer.index + treffer[0].length });
     }
@@ -171,7 +186,7 @@ export function deelTekst(
   for (let i = 0; i + 1 < punten.length; i += 1) {
     const van = punten[i] ?? 0;
     const tot = punten[i + 1] ?? tekst.length;
-    const treffer = treffersVanRegel.findIndex((t) => t.van <= van && t.tot >= tot);
+    const treffer = treffersVanRegel.findIndex((t) => !t.naam && t.van <= van && t.tot >= tot);
     const markering = markeringen.find((m) => m.van <= van && m.tot >= tot);
     delen.push({
       tekst: tekst.slice(van, tot),
@@ -257,6 +272,44 @@ export function neemtSpatieOver(doel: unknown): boolean {
   return (
     doel.closest('[role="button"], [role="switch"], [role="checkbox"], [role="radio"]') !== null
   );
+}
+
+/** Wat een toets in het venster doet voor de lijst: het zoekveld openen of afspelen/pauzeren. */
+export type LijstToets = 'zoeken' | 'afspelen' | null;
+
+/**
+ * Bepaalt wat een toets doet voor de verslaglijst. Een lijst die niet in beeld is (het verslag
+ * blijft geladen terwijl het tabblad Notulen open staat) doet niets: anders start spatie
+ * onzichtbaar geluid en opent Ctrl+F (⌘F op de Mac) een zoekveld dat niemand ziet. Spatie speelt
+ * alleen als er geluid is en nooit in een tekstveld of op een knop.
+ */
+export function lijstToets(
+  toets: {
+    key: string;
+    ctrlKey: boolean;
+    metaKey: boolean;
+    altKey: boolean;
+    shiftKey: boolean;
+    target: unknown;
+  },
+  opties: { actief: boolean; heeftGeluid: boolean }
+): LijstToets {
+  if (!opties.actief) return null;
+  if ((toets.ctrlKey || toets.metaKey) && !toets.altKey && toets.key.toLowerCase() === 'f') {
+    return 'zoeken';
+  }
+  if (
+    toets.key === ' ' &&
+    !toets.ctrlKey &&
+    !toets.metaKey &&
+    !toets.altKey &&
+    !toets.shiftKey &&
+    opties.heeftGeluid &&
+    !neemtSpatieOver(toets.target)
+  ) {
+    return 'afspelen';
+  }
+  return null;
 }
 
 /** De bewaarde afspeelsnelheid. Bij een fout de gewone snelheid. */

@@ -28,15 +28,34 @@
 //!   (learn.microsoft.com/windows/win32/api/winuser/nf-winuser-sendinput). Daarom kijken we
 //!   vooraf het niveau van het doelprogramma na. Ctrl gaat na 100 ms los via een timer,
 //!   zodat de klembordthread intussen leesverzoeken kan beantwoorden.
+//! - **Typen als terugval.** Komt er geen leesbewijs binnen `GRENS_TYPEN`, dan kijkt de
+//!   klembordthread eerst of het doel reageert (`IsHungAppWindow`, `SendMessageTimeout` met
+//!   `WM_NULL`) en of er een bewerkbaar tekstveld de focus heeft (UI Automation, aangevuld met
+//!   de systeemcaret uit `GetGUIThreadInfo`). Zo ja, dan trekt hij de belofte in met het
+//!   klembord open ([`trek_in`]): zolang wij het open hebben, kan geen ander programma lezen,
+//!   dus wat dan in de signalen staat, is alles. Het klembord blijft leeg tot het typen klaar
+//!   is. Hij typt met `SendInput` en `KEYEVENTF_UNICODE`: elke UTF-16-eenheid als eigen
+//!   gebeurtenis (een surrogaatpaar dus als twee), zonder virtuele toetscode, zodat de
+//!   toetsenbordindeling er niet toe doet
+//!   (learn.microsoft.com/windows/win32/api/winuser/ns-winuser-keybdinput, `KEYEVENTF_UNICODE`;
+//!   learn.microsoft.com/windows/win32/api/uiautomationclient, `IUIAutomation::GetFocusedElement`;
+//!   geraadpleegd 9-11-2026). Het typen loopt op de klembordthread; tussen de blokken handelt
+//!   hij verzonden berichten af, zodat een ander programma dat intussen kopieert niet hoeft te
+//!   wachten.
+//! - **Wie las er?** Bij `WM_RENDERFORMAT` heeft de lezer het klembord open
+//!   (`GetOpenClipboardWindow`). Alleen een lezing door het proces van het doel telt als
+//!   leesbewijs; las een ander programma (een klembordbeheerder), dan staat de tekst wel echt op
+//!   het klembord en typt Mondig niet.
 
 #![expect(
     unsafe_code,
-    reason = "klembord, toetsinvoer en procestokens kunnen alleen via de Win32-API"
+    reason = "klembord, toetsinvoer, procestokens en UI Automation kunnen alleen via de Win32-API"
 )]
 
 use std::cell::{Cell, RefCell};
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU8, Ordering as AtomicOrdering};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{
@@ -50,10 +69,13 @@ use windows::Win32::Security::{
     GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, TOKEN_MANDATORY_LABEL,
     TOKEN_QUERY, TokenIntegrityLevel,
 };
+use windows::Win32::System::Com::{
+    CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
+};
 use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData,
-    GetClipboardFormatNameW, GetClipboardOwner, GetClipboardSequenceNumber, OpenClipboard,
-    RegisterClipboardFormatW, SetClipboardData,
+    GetClipboardFormatNameW, GetClipboardOwner, GetClipboardSequenceNumber, GetOpenClipboardWindow,
+    OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Memory::{
@@ -67,24 +89,31 @@ use windows::Win32::System::Threading::{
     GetCurrentProcess, GetCurrentProcessId, OpenProcess, OpenProcessToken,
     PROCESS_QUERY_LIMITED_INFORMATION,
 };
+use windows::Win32::UI::Accessibility::{
+    CUIAutomation, IUIAutomation, IUIAutomationValuePattern, UIA_DocumentControlTypeId,
+    UIA_EditControlTypeId, UIA_TextPatternId, UIA_ValuePatternId,
+};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBD_EVENT_FLAGS, KEYBDINPUT,
-    KEYEVENTF_KEYUP, MAPVK_VK_TO_VSC, MapVirtualKeyW, SendInput, VIRTUAL_KEY, VK_CONTROL, VK_LWIN,
-    VK_MENU, VK_RWIN, VK_SHIFT, VK_V,
+    KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, MAPVK_VK_TO_VSC, MapVirtualKeyW, SendInput, VIRTUAL_KEY,
+    VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT, VK_V,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CopyImage, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-    GetForegroundWindow, GetMessageW, GetWindowThreadProcessId, HWND_MESSAGE, IMAGE_BITMAP,
-    KillTimer, LR_CREATEDIBSECTION, MSG, PostMessageW, PostQuitMessage, RegisterClassW, SetTimer,
-    WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP, WM_DESTROYCLIPBOARD, WM_RENDERALLFORMATS,
+    CopyImage, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GUITHREADINFO,
+    GetForegroundWindow, GetGUIThreadInfo, GetMessageW, GetWindowThreadProcessId, HWND_MESSAGE,
+    IMAGE_BITMAP, IsHungAppWindow, KillTimer, LR_CREATEDIBSECTION, MSG, PM_NOREMOVE, PeekMessageW,
+    PostMessageW, PostQuitMessage, RegisterClassW, SMTO_ABORTIFHUNG, SendMessageTimeoutW, SetTimer,
+    WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP, WM_DESTROYCLIPBOARD, WM_NULL, WM_RENDERALLFORMATS,
     WM_RENDERFORMAT, WM_TIMER, WNDCLASSW,
 };
-use windows::core::{PCWSTR, w};
+use windows::core::{Interface, PCWSTR, w};
 
 use super::{
-    Afloop, Afronding, Afweging, HERPOGING_STAP, Herpogingstap, Integriteit, PlakUitkomst, Plan,
-    Transactiestand, Voorgrond, VorigKlembord, afronding, afweging, herpogingstap, kies_plan,
-    merkbaar, met_spatie, nog_van_ons, te_bewaren, vorig_na_terugzetten, wacht_op_losse_modifiers,
+    Afloop, Afronding, Afweging, Focusbeeld, HERPOGING_STAP, Herpogingstap, Integriteit,
+    PlakUitkomst, Plan, Stopreden, Transactiestand, Typafloop, Typbesluit, Uiarol, Voorgrond,
+    VorigKlembord, afronding, afweging, herpogingstap, is_tekstveld, kies_plan, lezer_is_doel,
+    merkbaar, met_spatie, nog_van_ons, rest_van, te_bewaren, typ_in_blokken, typbesluit,
+    typstukken, uitkomst_na_typen, vorig_na_terugzetten, wacht_op_losse_modifiers,
 };
 
 const KLASSE: PCWSTR = w!("MondigKlembord");
@@ -116,6 +145,16 @@ const BEWAAR_WACHT: Duration = Duration::from_millis(400);
 const ANTWOORD_WACHT: Duration = Duration::from_secs(3);
 /// Het niveau "midden" (`SECURITY_MANDATORY_MEDIUM_RID`): een gewoon programma.
 const INTEGRITEIT_MIDDEN: u32 = 0x2000;
+/// Zoveel UTF-16-eenheden typen we per `SendInput` (64 gebeurtenissen). Grote reeksen in één
+/// keer raken in sommige programma's (Electron, sessies op afstand) deels kwijt.
+const TYPBLOK: usize = 32;
+/// De pauze tussen twee blokken, zodat het doel de vorige invoer verwerkt. Tweehonderd
+/// tekens kosten zo ongeveer vijftig milliseconden.
+const TYPPAUZE: Duration = Duration::from_millis(8);
+/// Zo lang mag het doel over een `WM_NULL` doen; anders reageert het niet.
+const REACTIE_WACHT_MS: u32 = 150;
+/// Zo lang wacht de klembordthread hooguit op UI Automation.
+const TEKSTVELD_WACHT: Duration = Duration::from_millis(500);
 
 /// Een fout bij een Windows-aanroep. De tekst is alleen voor ontwikkelaars, nooit de inhoud
 /// van het klembord.
@@ -420,6 +459,14 @@ pub(super) fn zet_terug(
         sluit();
         return Err(KlembordFout("leegmaken"));
     }
+    let volledig = zet_items(bewaard);
+    sluit();
+    Ok(volledig)
+}
+
+/// Zet de bewaarde formaten op het (open en leeggemaakte) klembord. Geeft aan of elk
+/// formaat terugkwam.
+fn zet_items(bewaard: &mut [Bewaard]) -> bool {
     let uitsluiten = uitsluit_formaten();
     let mut volledig = true;
     // SAFETY: het klembord is open; een GDI-handle gaat bij succes naar het klembord.
@@ -456,8 +503,7 @@ pub(super) fn zet_terug(
     if !bewaard.is_empty() {
         zet_uitsluiten();
     }
-    sluit();
-    Ok(volledig)
+    volledig
 }
 
 /// Het oude klembord, zoals het bewaard is.
@@ -503,6 +549,8 @@ enum Opdracht {
     ZetBlijvend {
         tekst: String,
         antwoord: Sender<bool>,
+        /// Of de vrager nog wacht (zie [`neem_op`] en [`geef_op`]).
+        staat: Arc<AtomicU8>,
     },
     /// De app sluit af.
     Afsluiten { antwoord: Sender<()> },
@@ -558,10 +606,15 @@ fn stuur(opdracht: Opdracht) -> Result<(), Opdracht> {
 struct Signalen {
     /// De tekst van de belofte die nu op het klembord staat, of stond.
     tekst: Option<Vec<u16>>,
+    /// Lezingen door het doel (zie [`lezer_is_doel`]).
     leesbewijzen: Vec<Instant>,
+    /// Las een ander programma dan het doel de tekst?
+    andere_lezer: bool,
     eigendom_kwijt: bool,
     /// Het volgnummer van het klembord na onze laatste eigen wijziging.
     volgnummer: u32,
+    /// Het proces van het venster dat bij Ctrl+V vooraan stond, als dat bekend is.
+    doel_proces: Option<u32>,
 }
 
 /// De lopende plakactie.
@@ -573,6 +626,11 @@ struct Transactie {
     aangeraakt: bool,
     /// Lukte het publiceren niet?
     publicatie_mislukt: bool,
+    /// De tekst, om te typen als het leesbewijs uitblijft.
+    tekst: String,
+    /// Het venster dat bij Ctrl+V vooraan stond. Staat er tijdens het typen een ander
+    /// venster vooraan, dan stopt het typen.
+    doel: isize,
     melder: Melder,
 }
 
@@ -661,8 +719,15 @@ unsafe extern "system" fn vensterproc(
 ) -> LRESULT {
     match bericht {
         WM_RENDERFORMAT => {
+            // Wie leest? Het venster dat het klembord nu open heeft. Alleen het doel zelf
+            // levert een leesbewijs; Ditto of het klembord van een ander programma niet.
+            let lezer = lezend_proces();
             let tekst = SIGNALEN.with_borrow_mut(|s| {
-                s.leesbewijzen.push(Instant::now());
+                if lezer_is_doel(lezer, s.doel_proces) {
+                    s.leesbewijzen.push(Instant::now());
+                } else {
+                    s.andere_lezer = true;
+                }
                 s.tekst.clone()
             });
             if wparam.0 == usize::from(CF_UNICODETEXT.0)
@@ -680,14 +745,16 @@ unsafe extern "system" fn vensterproc(
         WM_TIMER if wparam.0 == TIMER_CTRL => laat_ctrl_los(venster),
         WM_TIMER if wparam.0 == TIMER_HERPOGING => probeer_opnieuw(venster),
         WM_TIMER if wparam.0 == TIMER_WACHT => {
-            let klaar = LOPEND.with_borrow_mut(|lopend| {
-                lopend.as_mut().is_some_and(|t| {
+            let besluit = LOPEND.with_borrow_mut(|lopend| {
+                lopend.as_mut().map(|t| {
                     werk_stand_bij(&mut t.stand);
-                    afweging(&t.stand, Instant::now()) == Afweging::Afronden
+                    afweging(&t.stand, Instant::now())
                 })
             });
-            if klaar {
-                rond_af(venster);
+            match besluit {
+                Some(Afweging::Afronden) => rond_af(venster),
+                Some(Afweging::Typen) => typ_terugval(venster),
+                Some(Afweging::Wachten) | None => {}
             }
         }
         WM_MONDIG_OPDRACHT => verwerk_opdrachten(venster),
@@ -701,8 +768,34 @@ unsafe extern "system" fn vensterproc(
 fn werk_stand_bij(stand: &mut Transactiestand) {
     SIGNALEN.with_borrow(|s| {
         stand.leesbewijzen.clone_from(&s.leesbewijzen);
+        stand.andere_lezer = s.andere_lezer;
         stand.eigendom_kwijt = s.eigendom_kwijt;
     });
+}
+
+/// Het proces van het venster dat het klembord nu open heeft (de lezer bij `WM_RENDERFORMAT`),
+/// of `None` als het zonder venster geopend is.
+fn lezend_proces() -> Option<u32> {
+    // SAFETY: geen voorwaarden; het proces wordt alleen gelezen.
+    unsafe {
+        let venster = GetOpenClipboardWindow().ok()?;
+        let mut proces = 0u32;
+        GetWindowThreadProcessId(venster, Some(&raw mut proces));
+        (proces != 0).then_some(proces)
+    }
+}
+
+/// Het proces achter een venster, of `None`.
+fn proces_van(venster: isize) -> Option<u32> {
+    let mut proces = 0u32;
+    // SAFETY: een venstergreep als getal; een ongeldige greep geeft proces 0.
+    unsafe {
+        GetWindowThreadProcessId(
+            HWND(venster as *mut core::ffi::c_void),
+            Some(&raw mut proces),
+        );
+    }
+    (proces != 0).then_some(proces)
 }
 
 /// Zet de tekst gewoon op het (open) klembord en onthoudt het volgnummer.
@@ -739,6 +832,12 @@ fn verwerk_opdrachten(venster: HWND) {
         else {
             return;
         };
+        // De lopende plakactie wordt afgebroken: geen tijd meer om te lezen of te typen.
+        LOPEND.with_borrow_mut(|lopend| {
+            if let Some(t) = lopend.as_mut() {
+                t.stand.afgebroken = true;
+            }
+        });
         rond_af(venster);
         // Een openstaande herpoging eerst nog één keer, met langer volhouden.
         let overgebleven = rond_herpoging_af(venster);
@@ -749,12 +848,19 @@ fn verwerk_opdrachten(venster: HWND) {
                 toetsen,
                 melder,
             } => plak(venster, &tekst, doel_onzeker, toetsen, melder, overgebleven),
-            Opdracht::ZetBlijvend { tekst, antwoord } => {
+            Opdracht::ZetBlijvend {
+                tekst,
+                antwoord,
+                staat,
+            } => {
                 // De gebruiker kopieert zelf: dat wint van een oud klembord dat niet terug kon.
                 if let Some(herpoging) = overgebleven {
                     meld_kwijt(&herpoging);
                 }
-                let _ = antwoord.send(zet_blijvend_hier(venster, &tekst));
+                // Gaf de vrager het al op (hij meldde "mislukt"), dan ook niet meer uitvoeren.
+                if neem_op(&staat) {
+                    let _ = antwoord.send(zet_blijvend_hier(venster, &tekst));
+                }
             }
             Opdracht::Afsluiten { antwoord } => {
                 if let Some(herpoging) = overgebleven {
@@ -824,18 +930,26 @@ fn plak(
     // vorige klembord van ons was): de signalen beginnen pas hier.
     // SAFETY: geen voorwaarden.
     let nummer = unsafe { GetClipboardSequenceNumber() };
+    let doel = voorgrondvenster();
     SIGNALEN.with_borrow_mut(|s| {
         s.leesbewijzen.clear();
+        s.andere_lezer = false;
         s.eigendom_kwijt = false;
         s.volgnummer = nummer;
+        // Zonder toetsen (de tests) leest de test zelf: dan is het doel onbekend.
+        s.doel_proces = if toetsen { proces_van(doel) } else { None };
     });
     let mut transactie = Transactie {
         stand: Transactiestand::nieuw(Instant::now(), doel_onzeker),
         bewaard,
         aangeraakt: true,
         publicatie_mislukt: false,
+        tekst: tekst.to_string(),
+        doel,
         melder,
     };
+    // Zonder toetsen (de tests) ook niet typen.
+    transactie.stand.typen_mag = toetsen;
     if let Err(fout) = gepubliceerd {
         transactie.aangeraakt = fout.aangeraakt;
         transactie.publicatie_mislukt = true;
@@ -889,7 +1003,15 @@ fn rond_af(venster: HWND) {
         uitkomst,
         vorig_klembord: VorigKlembord::Bewaard,
     };
-    match afronding(transactie.aangeraakt, transactie.bewaard.is_some(), van_ons) {
+    // Kwam de tekst bij een onzeker doel niet aan (waarschijnlijk UIPI, dat ook typen
+    // tegenhoudt), dan blijft hij op het klembord: de laatste terugval. Niet als een volgende
+    // opdracht de plakactie afbrak; dan was er geen tijd om te lezen.
+    let tekst_laten = uitkomst == PlakUitkomst::NietGeplakt && !transactie.stand.afgebroken;
+    match afronding(
+        transactie.aangeraakt,
+        transactie.bewaard.is_some() && !tekst_laten,
+        van_ons,
+    ) {
         Afronding::Niets => {}
         Afronding::Terugzetten => {
             if let Some(mut kopie) = transactie.bewaard.take() {
@@ -908,6 +1030,278 @@ fn rond_af(venster: HWND) {
             afloop.vorig_klembord = VorigKlembord::Kwijt;
         }
     }
+    (transactie.melder)(afloop);
+}
+
+/// Hoe het intrekken van de belofte afliep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Intrekking {
+    /// De belofte is weg en het klembord is leeg; het oude klembord zit nog in de transactie.
+    Ingetrokken,
+    /// Nog niet: het klembord was even bezet (misschien leest het doel net), of er kwam toch
+    /// een lezing. Bij de volgende tik opnieuw kijken.
+    NogNiet,
+    /// De gebruiker kopieerde intussen zelf iets: dat wint.
+    NietVanOns,
+}
+
+/// Trekt de belofte in en laat het klembord leeg, in één keer met het klembord open. Zolang
+/// wij het klembord open hebben, kan geen ander programma lezen (`GetClipboardData` vraagt een
+/// open klembord), en een lezing die eerder begon, hield het klembord zelf open, zodat
+/// `OpenClipboard` hier mislukt. Wat er na het openen in de signalen staat, is dus alles:
+/// zonder lezing kan het dictaat na deze stap niet meer geplakt worden, en een laat plakken
+/// krijgt niets (ook niet het oude klembord, dat iets gevoeligs kan bevatten).
+fn trek_in(venster: HWND, transactie: &mut Transactie) -> Intrekking {
+    // Eén poging: lukt het niet, dan pakt de berichtenlus intussen een leesverzoek op.
+    if open(Some(venster), 1).is_err() {
+        return Intrekking::NogNiet;
+    }
+    werk_stand_bij(&mut transactie.stand);
+    if !klembord_van_ons() {
+        sluit();
+        return Intrekking::NietVanOns;
+    }
+    let stand = &transactie.stand;
+    // SAFETY: het klembord is open.
+    if stand.laatste_leesbewijs().is_some()
+        || stand.al_gerenderd()
+        || unsafe { EmptyClipboard() }.is_err()
+    {
+        sluit();
+        return Intrekking::NogNiet;
+    }
+    sluit();
+    // Geen belofte meer van ons: niets meer te renderen. Ons eigen leegmaken stuurde
+    // `WM_DESTROYCLIPBOARD`; het lege klembord is nu van ons, met een nieuw volgnummer.
+    // SAFETY: geen voorwaarden.
+    let nummer = unsafe { GetClipboardSequenceNumber() };
+    SIGNALEN.with_borrow_mut(|s| {
+        s.tekst = None;
+        s.eigendom_kwijt = false;
+        s.volgnummer = nummer;
+    });
+    Intrekking::Ingetrokken
+}
+
+/// Handelt berichten af die andere threads ons sturen (`WM_DESTROYCLIPBOARD` als de gebruiker
+/// tijdens het typen kopieert), zonder de wachtrij met opdrachten en timers aan te raken. Zo
+/// hoeft een ander programma niet op het typen te wachten.
+fn verwerk_verzonden_berichten() {
+    let mut bericht = MSG::default();
+    // SAFETY: `PeekMessageW` met `PM_NOREMOVE` levert eerst de verzonden berichten af en laat
+    // geplaatste berichten in de rij.
+    unsafe {
+        let _ = PeekMessageW(&raw mut bericht, None, 0, 0, PM_NOREMOVE);
+    }
+}
+
+/// Reageert het venster? Een `WM_NULL` met een korte time-out; een programma dat hangt,
+/// leest misschien alsnog, dus dan typt Mondig niet. Tijdens het wachten beantwoordt deze
+/// thread verzonden berichten (geen `SMTO_BLOCK`), dus ook een leesverzoek van het doel.
+fn reageert(doel: isize) -> bool {
+    let venster = HWND(doel as *mut core::ffi::c_void);
+    // SAFETY: een venstergreep als getal; een ongeldige greep geeft alleen een fout.
+    unsafe {
+        if IsHungAppWindow(venster).as_bool() {
+            return false;
+        }
+        SendMessageTimeoutW(
+            venster,
+            WM_NULL,
+            WPARAM(0),
+            LPARAM(0),
+            SMTO_ABORTIFHUNG,
+            REACTIE_WACHT_MS,
+            None,
+        )
+        .0 != 0
+    }
+}
+
+/// Heeft een bewerkbaar tekstveld de focus (zie [`is_tekstveld`])? UI Automation op een
+/// hulpthread met een tijdslimiet, zodat een programma dat traag antwoordt de klembordthread
+/// niet ophoudt. `None` bij een fout of time-out.
+fn tekstveld(doel: isize) -> Option<bool> {
+    let caret = heeft_caret(doel);
+    let (zender, ontvanger) = mpsc::channel();
+    std::thread::Builder::new()
+        .name("mondig-tekstveld".into())
+        .spawn(move || {
+            let _ = zender.send(focusbeeld(caret));
+        })
+        .ok()?;
+    ontvanger
+        .recv_timeout(TEKSTVELD_WACHT)
+        .ok()
+        .flatten()
+        .map(is_tekstveld)
+}
+
+/// Heeft de thread van het venster een systeemcaret (`GetGUIThreadInfo`, `hwndCaret`)?
+fn heeft_caret(doel: isize) -> bool {
+    let venster = HWND(doel as *mut core::ffi::c_void);
+    // SAFETY: de structuur heeft de juiste grootte; een ongeldige greep geeft thread 0.
+    unsafe {
+        let thread = GetWindowThreadProcessId(venster, None);
+        let mut info = GUITHREADINFO {
+            cbSize: u32::try_from(std::mem::size_of::<GUITHREADINFO>()).unwrap_or(0),
+            ..Default::default()
+        };
+        thread != 0
+            && GetGUIThreadInfo(thread, &raw mut info).is_ok()
+            && !info.hwndCaret.is_invalid()
+    }
+}
+
+/// Wat UI Automation over het element met de focus zegt. Alleen op een eigen thread: die
+/// krijgt een eigen COM-omgeving (MTA).
+fn focusbeeld(caret: bool) -> Option<Focusbeeld> {
+    // SAFETY: COM wordt op deze thread geopend en aan het eind gesloten; de interfaces worden
+    // vrijgegeven voordat COM sluit (ze vallen eerder uit beeld).
+    unsafe {
+        if CoInitializeEx(None, COINIT_MULTITHREADED).is_err() {
+            return None;
+        }
+        let beeld = (|| {
+            let automatisering: IUIAutomation =
+                CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
+            let element = automatisering.GetFocusedElement().ok()?;
+            let soort = element.CurrentControlType().ok()?;
+            let rol = if soort == UIA_EditControlTypeId {
+                Uiarol::Invoer
+            } else if soort == UIA_DocumentControlTypeId {
+                Uiarol::Document
+            } else {
+                Uiarol::Anders
+            };
+            let waarde_alleen_lezen = element
+                .GetCurrentPattern(UIA_ValuePatternId)
+                .ok()
+                .and_then(|patroon| patroon.cast::<IUIAutomationValuePattern>().ok())
+                .and_then(|waarde| waarde.CurrentIsReadOnly().ok())
+                .map(windows::core::BOOL::as_bool);
+            let tekstpatroon = element.GetCurrentPattern(UIA_TextPatternId).is_ok();
+            Some(Focusbeeld {
+                rol,
+                waarde_alleen_lezen,
+                tekstpatroon,
+                caret,
+            })
+        })();
+        CoUninitialize();
+        beeld
+    }
+}
+
+/// Geen leesbewijs binnen de grens. Reageert het doel niet, dan wacht Mondig tot de gewone
+/// grens. Heeft er geen tekstveld de focus, dan blijft de tekst op het klembord. Anders: de
+/// belofte intrekken, typen met een leeg klembord, en daarna het oude klembord terug of, als
+/// het typen stopte, de rest op het klembord.
+fn typ_terugval(venster: HWND) {
+    let Some(mut transactie) = LOPEND.with_borrow_mut(Option::take) else {
+        return;
+    };
+    let doel = transactie.doel;
+    let reageert = reageert(doel);
+    let besluit = typbesluit(reageert, reageert.then(|| tekstveld(doel)).flatten());
+    // Tijdens het vragen kan het doel toch gelezen hebben (zie `reageert`).
+    werk_stand_bij(&mut transactie.stand);
+    if transactie.stand.laatste_leesbewijs().is_some() || besluit == Typbesluit::Wachten {
+        // Gewoon plakken, of het doel hangt: niet meer typen, wachten tot de gewone grens.
+        transactie.stand.typen_mag = false;
+        LOPEND.with_borrow_mut(|l| *l = Some(transactie));
+        return;
+    }
+    if besluit == Typbesluit::Klembord {
+        // Geen tekstveld: getypte letters zouden sneltoetsen worden.
+        rond_af_zonder_tekstveld(venster, &transactie);
+        return;
+    }
+    match trek_in(venster, &mut transactie) {
+        Intrekking::Ingetrokken => {}
+        Intrekking::NogNiet => {
+            // De wachttimer loopt door; de afweging beslist bij de volgende tik opnieuw.
+            LOPEND.with_borrow_mut(|l| *l = Some(transactie));
+            return;
+        }
+        Intrekking::NietVanOns => {
+            LOPEND.with_borrow_mut(|l| *l = Some(transactie));
+            rond_af(venster);
+            return;
+        }
+    }
+    // SAFETY: het venster is van deze thread.
+    unsafe {
+        let _ = KillTimer(Some(venster), TIMER_WACHT);
+    }
+    laat_ctrl_los(venster);
+    let stukken = typstukken(&transactie.tekst, TYPBLOK);
+    let afloop = typ_in_blokken(
+        &stukken,
+        || {
+            if !wacht_op_losse_modifiers(modifier_ingedrukt) {
+                Some(Stopreden::Toetsen)
+            } else if voorgrondvenster() != doel {
+                Some(Stopreden::AnderVenster)
+            } else {
+                None
+            }
+        },
+        stuur_stuk,
+        || {
+            std::thread::sleep(TYPPAUZE);
+            verwerk_verzonden_berichten();
+        },
+    );
+    verwerk_verzonden_berichten();
+    let mut afloop_ui = Afloop {
+        uitkomst: uitkomst_na_typen(afloop),
+        vorig_klembord: VorigKlembord::Bewaard,
+    };
+    if !klembord_van_ons() {
+        // De gebruiker kopieerde tijdens het typen: dat wint, er gaat niets overheen.
+    } else if let Typafloop::Gestopt { bij, .. } = afloop {
+        // De rest op het klembord, zodat de gebruiker hem zelf plakt; dat vervangt het oude
+        // klembord. Brak `SendInput` midden in een blok af, dan staat het begin van dat blok
+        // ook in de rest: liever iets dubbel dan iets kwijt.
+        if zet_blijvend_hier(venster, &rest_van(&stukken[bij..])) {
+            afloop_ui.vorig_klembord = VorigKlembord::Kwijt;
+        } else {
+            afloop_ui.uitkomst = PlakUitkomst::Mislukt;
+        }
+    } else if let Some(mut kopie) = transactie.bewaard.take() {
+        if let Ok(volledig) = zet_terug(venster, &mut kopie.items, OPENEN_POGINGEN) {
+            afloop_ui.vorig_klembord = vorig_na_terugzetten(kopie.volledig, volledig);
+        } else {
+            // Een ander programma houdt het klembord vast: later opnieuw, zoals bij plakken.
+            afloop_ui.vorig_klembord = vorig_na_terugzetten(kopie.volledig, true);
+            start_herpoging(venster, kopie, afloop_ui, transactie.melder.clone());
+        }
+    } else {
+        // Het oude klembord was niet bewaard: het blijft leeg.
+        afloop_ui.vorig_klembord = VorigKlembord::Kwijt;
+    }
+    (transactie.melder)(afloop_ui);
+}
+
+/// Er kwam geen leesbewijs en er had geen tekstveld de focus: de tekst blijft op het klembord
+/// (de belofte wordt echte tekst, buiten de geschiedenis). Kopieerde de gebruiker intussen
+/// zelf, dan blijft dat staan.
+fn rond_af_zonder_tekstveld(venster: HWND, transactie: &Transactie) {
+    // SAFETY: het venster is van deze thread.
+    unsafe {
+        let _ = KillTimer(Some(venster), TIMER_WACHT);
+    }
+    laat_ctrl_los(venster);
+    let afloop = if klembord_van_ons() {
+        render_belofte(venster);
+        Afloop {
+            uitkomst: PlakUitkomst::GeenTekstveld,
+            vorig_klembord: VorigKlembord::Kwijt,
+        }
+    } else {
+        PlakUitkomst::NietGelezen.into()
+    };
     (transactie.melder)(afloop);
 }
 
@@ -1039,14 +1433,59 @@ fn zet_blijvend_hier(venster: HWND, tekst: &str) -> bool {
 
 /// Zet tekst meteen en blijvend op het klembord, buiten de geschiedenis. Een lopende
 /// plakactie wordt eerst afgerond.
+///
+/// Typt de klembordthread nog (dat kan langer duren dan [`ANTWOORD_WACHT`]), dan is het
+/// antwoord altijd eerlijk: geeft deze kant het op, dan voert de klembordthread de opdracht
+/// ook niet meer uit; was hij er al mee bezig, dan wacht deze kant op de echte uitslag.
 pub(crate) fn zet_blijvend(tekst: &str) -> bool {
     let (antwoord, wacht) = mpsc::channel();
-    stuur(Opdracht::ZetBlijvend {
+    let staat = Arc::new(AtomicU8::new(OPDRACHT_WACHT));
+    if stuur(Opdracht::ZetBlijvend {
         tekst: tekst.to_string(),
         antwoord,
+        staat: Arc::clone(&staat),
     })
-    .is_ok()
-        && wacht.recv_timeout(ANTWOORD_WACHT).unwrap_or(false)
+    .is_err()
+    {
+        return false;
+    }
+    match wacht.recv_timeout(ANTWOORD_WACHT) {
+        Ok(gelukt) => gelukt,
+        Err(_) if geef_op(&staat) => false,
+        // Al bezig: het antwoord komt zo (openen en schrijven duurt hooguit enkele tienden).
+        Err(_) => wacht.recv().unwrap_or(false),
+    }
+}
+
+/// De opdracht wacht nog in de rij.
+const OPDRACHT_WACHT: u8 = 0;
+/// De klembordthread voert hem uit.
+const OPDRACHT_BEZIG: u8 = 1;
+/// De vrager gaf het op en meldde "mislukt".
+const OPDRACHT_OPGEGEVEN: u8 = 2;
+
+/// De klembordthread neemt de opdracht op, als de vrager nog wacht.
+fn neem_op(staat: &AtomicU8) -> bool {
+    staat
+        .compare_exchange(
+            OPDRACHT_WACHT,
+            OPDRACHT_BEZIG,
+            AtomicOrdering::SeqCst,
+            AtomicOrdering::SeqCst,
+        )
+        .is_ok()
+}
+
+/// De vrager geeft het op, als de klembordthread er nog niet aan begon.
+fn geef_op(staat: &AtomicU8) -> bool {
+    staat
+        .compare_exchange(
+            OPDRACHT_WACHT,
+            OPDRACHT_OPGEGEVEN,
+            AtomicOrdering::SeqCst,
+            AtomicOrdering::SeqCst,
+        )
+        .is_ok()
 }
 
 /// Bij afsluiten: de lopende plakactie afronden en de klembordthread stoppen. Start de
@@ -1089,14 +1528,17 @@ pub(super) fn na_dictaat(
         // de pil op "Bezig met uitschrijven" staan.
         Plan::Overslaan => meld(PlakUitkomst::InMondig.into()),
         Plan::Niet(uitkomst) => meld(uitkomst.into()),
-        Plan::AlleenKlembord => meld(
-            if zet_blijvend(&tekst) {
-                PlakUitkomst::OpKlembord
-            } else {
-                PlakUitkomst::Mislukt
+        Plan::Klembord(uitkomst) => meld(if !zet_blijvend(&tekst) {
+            PlakUitkomst::Mislukt.into()
+        } else if uitkomst == PlakUitkomst::Beheerrechten {
+            // Het dictaat vervangt het klembord: niet "bewaard" melden.
+            Afloop {
+                uitkomst,
+                vorig_klembord: VorigKlembord::Kwijt,
             }
-            .into(),
-        ),
+        } else {
+            uitkomst.into()
+        }),
         Plan::Plakken { doel_onzeker } => {
             let opdracht = Opdracht::Plak {
                 tekst,
@@ -1161,6 +1603,52 @@ fn stuur_ctrl_v_neer() -> Result<(), KlembordFout> {
     } else {
         Err(KlembordFout("invoer"))
     }
+}
+
+/// Eén gebeurtenis met een UTF-16-eenheid als teken: geen virtuele toets (`wVk` 0), de
+/// eenheid in `wScan` en `KEYEVENTF_UNICODE`. Windows maakt er `VK_PACKET` van en geeft het
+/// teken door zonder naar de toetsenbordindeling te kijken.
+fn unicode_toets(eenheid: u16, los: bool) -> INPUT {
+    let vlaggen = if los {
+        KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
+    } else {
+        KEYEVENTF_UNICODE
+    };
+    INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: VIRTUAL_KEY(0),
+                wScan: eenheid,
+                dwFlags: vlaggen,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    }
+}
+
+/// De gebeurtenissen voor een blok: per UTF-16-eenheid neer en los (een surrogaatpaar dus als
+/// twee tekens achter elkaar, zoals Windows dat verwacht). Geen enkele echte toets: ook
+/// regeleindes zijn in [`typstukken`] al spaties geworden.
+fn invoer_voor(stuk: &str) -> Vec<INPUT> {
+    stuk.encode_utf16()
+        .flat_map(|eenheid| [unicode_toets(eenheid, false), unicode_toets(eenheid, true)])
+        .collect()
+}
+
+/// Typt één blok in het venster met de focus. `false` als Windows niet alles aannam.
+fn stuur_stuk(stuk: &str) -> bool {
+    let invoer = invoer_voor(stuk);
+    // SAFETY: geldige INPUT-structuren met de juiste grootte.
+    let verstuurd = unsafe { SendInput(&invoer, invoergrootte()) };
+    verstuurd as usize == invoer.len()
+}
+
+/// Het venster vooraan als getal, om te vergelijken (0 als er geen is).
+fn voorgrondvenster() -> isize {
+    // SAFETY: geen voorwaarden.
+    unsafe { GetForegroundWindow() }.0 as isize
 }
 
 /// Laat Ctrl los als Mondig hem neer heeft gezet. Altijd, ook bij afronden of afsluiten,
@@ -1360,6 +1848,215 @@ mod tests {
             matches!(b, Bewaard::Bytes { formaat, data }
                 if *formaat == cf_dib() && data.len() == lengte)
         })
+    }
+
+    /// (wVk, wScan, losgelaten, unicode) van elke gebeurtenis.
+    fn ontleed(invoer: &[INPUT]) -> Vec<(u16, u16, bool, bool)> {
+        invoer
+            .iter()
+            .map(|i| {
+                // SAFETY: alle gebeurtenissen hier zijn toetsgebeurtenissen.
+                let ki = unsafe { i.Anonymous.ki };
+                (
+                    ki.wVk.0,
+                    ki.wScan,
+                    ki.dwFlags.contains(KEYEVENTF_KEYUP),
+                    ki.dwFlags.contains(KEYEVENTF_UNICODE),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn tekens_gaan_als_unicode_zonder_toetscode() {
+        // "é" en "z" zitten op AZERTY en QWERTZ op andere toetsen; als teken maakt dat niet uit.
+        let invoer = ontleed(&invoer_voor("éz"));
+        assert_eq!(
+            invoer,
+            vec![
+                (0, 0xE9, false, true),
+                (0, 0xE9, true, true),
+                (0, u16::from(b'z'), false, true),
+                (0, u16::from(b'z'), true, true),
+            ]
+        );
+    }
+
+    #[test]
+    fn een_surrogaatpaar_als_twee_gebeurtenissen() {
+        let invoer = ontleed(&invoer_voor("\u{1F600}"));
+        assert_eq!(
+            invoer,
+            vec![
+                (0, 0xD83D, false, true),
+                (0, 0xD83D, true, true),
+                (0, 0xDE00, false, true),
+                (0, 0xDE00, true, true),
+            ]
+        );
+    }
+
+    #[test]
+    fn geen_enter_of_tab_in_de_typroute() {
+        // Een regeleinde en een tab worden een spatie; er gaat geen enkele echte toets mee.
+        let stukken = typstukken("Een\r\nTwee\tdrie", TYPBLOK);
+        let invoer: Vec<_> = stukken
+            .iter()
+            .flat_map(|s| ontleed(&invoer_voor(s)))
+            .collect();
+        assert!(
+            invoer
+                .iter()
+                .all(|(vk, _, _, unicode)| *vk == 0 && *unicode)
+        );
+        assert!(
+            !invoer
+                .iter()
+                .any(|(_, teken, _, _)| *teken == 0x0D || *teken == 0x09)
+        );
+    }
+
+    #[test]
+    fn een_blok_past_in_een_aanroep() {
+        // Een vol blok is 64 gebeurtenissen; zo blijft één `SendInput` klein.
+        let stukken = typstukken(&"a".repeat(100), TYPBLOK);
+        assert!(stukken.iter().all(|s| invoer_voor(s).len() <= 2 * TYPBLOK));
+    }
+
+    /// Vraagt UI Automation naar het element met de focus op deze pc (alleen het soort, geen
+    /// inhoud) en of het venster vooraan reageert. Drukt geen toetsen in. Handmatig draaien:
+    /// `cargo test -p mondig tekstveld_ronde -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "leest het venster met de focus op deze pc"]
+    #[expect(
+        clippy::print_stdout,
+        reason = "de handmatige test toont wat Windows meldt"
+    )]
+    fn tekstveld_ronde() {
+        let doel = voorgrondvenster();
+        let beeld = focusbeeld(heeft_caret(doel));
+        println!(
+            "reageert {}, beeld {beeld:?}, tekstveld {:?}",
+            reageert(doel),
+            tekstveld(doel)
+        );
+        assert!(beeld.is_some(), "UI Automation gaf antwoord");
+    }
+    #[test]
+    fn kopieren_eindigt_nooit_als_mislukt_terwijl_het_later_toch_gebeurt() {
+        // De klembordthread begon eerst: de vrager kan het niet meer opgeven en wacht.
+        let staat = AtomicU8::new(OPDRACHT_WACHT);
+        assert!(neem_op(&staat));
+        assert!(!geef_op(&staat));
+        // De vrager gaf het eerst op ("mislukt"): de klembordthread voert hem niet meer uit.
+        let staat = AtomicU8::new(OPDRACHT_WACHT);
+        assert!(geef_op(&staat));
+        assert!(!neem_op(&staat));
+    }
+
+    /// Een plakactie op deze thread met `venster` als eigenaar, zoals `plak` hem klaarzet,
+    /// maar zonder Ctrl+V.
+    fn klaargezet(venster: HWND, tekst: &str) -> Transactie {
+        let bewaard = bewaar(Some(venster), BEWAAR_BUDGET)
+            .ok()
+            .map(|(items, volledig)| Kopie { items, volledig });
+        SIGNALEN.with_borrow_mut(|s| s.tekst = Some(breed(tekst)));
+        assert!(publiceer(venster).is_ok(), "publiceren");
+        // SAFETY: geen voorwaarden.
+        let nummer = unsafe { GetClipboardSequenceNumber() };
+        SIGNALEN.with_borrow_mut(|s| {
+            s.leesbewijzen.clear();
+            s.eigendom_kwijt = false;
+            s.volgnummer = nummer;
+        });
+        let mut stand = Transactiestand::nieuw(Instant::now(), false);
+        stand.ingevoegd = Some(Instant::now());
+        Transactie {
+            stand,
+            bewaard,
+            aangeraakt: true,
+            publicatie_mislukt: false,
+            tekst: tekst.to_string(),
+            doel: 0,
+            melder: std::sync::Arc::new(|_| {}),
+        }
+    }
+
+    /// Integratietest voor het intrekken vóór het typen, met het echte klembord: zonder
+    /// lezing is de belofte daarna weg en leest een laat plakken niets, niet het dictaat en
+    /// niet het oude klembord; met een lezing ervoor trekt Mondig niets in (dan was het gewoon plakken).
+    /// Drukt geen toetsen in. Handmatig draaien:
+    /// `cargo test -p mondig intrekken_ronde -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "gebruikt het echte klembord van deze pc"]
+    fn intrekken_ronde() {
+        let venster = maak_venster().expect("venster");
+        let (gebruiker, _) = bewaar(Some(venster), Duration::from_secs(5)).expect("bewaren");
+        zet_als_ander(
+            venster,
+            u32::from(CF_UNICODETEXT.0),
+            &u16_als_bytes(&breed("Oud klembord")),
+        );
+
+        // 1. Geen lezing: intrekken lukt, en een late lezing krijgt niets: niet het dictaat en
+        // niet het oude klembord. Dat komt pas na het typen terug.
+        let mut transactie = klaargezet(venster, "Dictaat ");
+        assert_eq!(trek_in(venster, &mut transactie), Intrekking::Ingetrokken);
+        assert_eq!(lees_tekst(venster), None);
+        assert!(klembord_van_ons(), "het lege klembord is van Mondig");
+        let mut kopie = transactie
+            .bewaard
+            .take()
+            .expect("het oude klembord is bewaard");
+        assert_eq!(
+            zet_terug(venster, &mut kopie.items, OPENEN_POGINGEN).ok(),
+            Some(true)
+        );
+        assert_eq!(lees_tekst(venster).as_deref(), Some("Oud klembord"));
+        assert!(
+            SIGNALEN.with_borrow(|s| s.leesbewijzen.is_empty()),
+            "de late lezing vroeg niets meer aan Mondig"
+        );
+
+        // 2. Het doel las net vóór het besluit: niets intrekken, de belofte blijft staan.
+        let mut transactie = klaargezet(venster, "Tweede dictaat ");
+        assert_eq!(lees_tekst(venster).as_deref(), Some("Tweede dictaat "));
+        assert_eq!(trek_in(venster, &mut transactie), Intrekking::NogNiet);
+        assert_eq!(lees_tekst(venster).as_deref(), Some("Tweede dictaat "));
+
+        // 3. De gebruiker kopieerde intussen zelf: dat wint.
+        let mut transactie = klaargezet(venster, "Derde dictaat ");
+        zet_als_ander(
+            venster,
+            u32::from(CF_UNICODETEXT.0),
+            &u16_als_bytes(&breed("Zelf gekopieerd")),
+        );
+        assert_eq!(trek_in(venster, &mut transactie), Intrekking::NietVanOns);
+        assert_eq!(lees_tekst(venster).as_deref(), Some("Zelf gekopieerd"));
+
+        // 4. Een ander proces dan het doel leest (hier deze test, met een verzonnen doel): geen
+        // leesbewijs, maar de tekst staat nu echt op het klembord, dus niet intrekken of typen.
+        let mut transactie = klaargezet(venster, "Vierde dictaat ");
+        SIGNALEN.with_borrow_mut(|s| s.doel_proces = Some(u32::MAX));
+        assert_eq!(lees_tekst(venster).as_deref(), Some("Vierde dictaat "));
+        assert!(SIGNALEN.with_borrow(|s| s.leesbewijzen.is_empty() && s.andere_lezer));
+        assert_eq!(trek_in(venster, &mut transactie), Intrekking::NogNiet);
+        assert_eq!(
+            transactie.stand.uitkomst(),
+            PlakUitkomst::WaarschijnlijkGeplakt
+        );
+        SIGNALEN.with_borrow_mut(|s| {
+            s.doel_proces = None;
+            s.andere_lezer = false;
+        });
+
+        // Het klembord van de gebruiker terug.
+        let mut gebruiker = gebruiker;
+        zet_terug(venster, &mut gebruiker, TERUGZET_POGINGEN).expect("terugzetten");
+        // SAFETY: het testvenster is van deze thread.
+        unsafe {
+            let _ = DestroyWindow(venster);
+        }
     }
 
     /// Integratietest met alleen het klembord, via de klembordthread: zetten met delayed

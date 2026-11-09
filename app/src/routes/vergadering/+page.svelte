@@ -73,7 +73,7 @@
   } from '#lib/verslagkop.js';
   import type { VerslagRegel } from '#lib/verslag.js';
   import { bewaarTotTekst, standaardTitel, verslagTitel } from '#lib/verslagtitel.js';
-  import { eersteKeuze } from '#lib/opnieuw.js';
+  import { eersteKeuze, opnieuwGeslaagd } from '#lib/opnieuw.js';
   import { luisterNaarTaken } from '#lib/gebeurtenissen.js';
   import { METER_STREEPJES_LANG, streepjesAan, testgeluidSpeel } from '#lib/meter.js';
   import {
@@ -98,16 +98,19 @@
     dagVan,
     duurMinuten,
     isNieuwer,
+    beurtNaamGetoond,
     kanAanSpreker,
-    kantNaam,
     klokTijd,
     luisterNaarNiveau,
     luisterNaarStand,
     luisterNaarStartGevraagd,
     metSysteemgeluid,
+    naamMelding,
+    nieuweStap,
     opnamesVanSoort,
     schermVan,
     sprekersVan,
+    zonderSpreker,
     toontLabels,
     vergaderingAfspeelapparaten,
     vergaderingAudioBewaren,
@@ -128,6 +131,7 @@
     vergaderingStand,
     vergaderingStart,
     vergaderingStartGevraagd,
+    vergaderingStapTerug,
     vergaderingStop,
     vergaderingUitschrijven,
     vergaderingVoegSprekersSamen,
@@ -142,12 +146,12 @@
     wistBinnenkort,
     zichtbareOpnames,
     type AfspeelInfo,
-    type Kant,
+    type BeurtInfo,
     type OpnieuwKeuzes,
-    type Naambereik,
     type Niveaus,
     type OpnameInfo,
     type SprekerInfo,
+    type Sprekerstap,
     type VergaderingStand,
     type VerslagInfo,
     type Vergadersoort
@@ -257,6 +261,8 @@
   let bewerkNaam = $state<string | null>(null);
   // Staat de vraag "Verslag wissen?" open voor het verslag dat nu open is?
   let verslagWisVraag = $state(false);
+  // De vraag voor "Vorige versie terugzetten": terugzetten zet ook je latere wijzigingen terug.
+  let vorigeVraag = $state(false);
   // De bewaartermijn in dagen, voor de regel onder "Eerder opgenomen".
   let bewaarDagen = $state<number | null>(null);
   // Het klaar-moment direct na het uitschrijven (N-C1) en wanneer het scherm het uitschrijven zag
@@ -264,6 +270,9 @@
   let klaarMoment = $state<KlaarGegevens | null>(null);
   let uitschrijfStart: number | null = null;
   let verslagTaak = -1;
+  // De melding na een wijziging aan de sprekers, met "Ongedaan maken" zolang Rust die stap nog
+  // heeft (`sprekerstap`); een andere wijziging laat hem daar vervallen, en dan ook hier.
+  let stapZin = $state<string | null>(null);
   let verslagLijst = $state<{ wachtOpBewaren: () => Promise<void> } | undefined>();
 
   // Voor de schermlezer.
@@ -325,6 +334,7 @@
     if (wissel) {
       weggooi = null;
       verslagWisVraag = false;
+      vorigeVraag = false;
       bewerkNaam = null;
       schermFout = null;
     }
@@ -341,11 +351,16 @@
       bestaatAl = null;
       echoToon = true;
       verslagWisVraag = false;
+      vorigeVraag = false;
       bewerkNaam = null;
       audioBezig = false;
       tab = 'verslag';
       oplicht = null;
+      stapZin = null;
     }
+    // Na een geslaagd opnieuw uitschrijven staat er andere tekst: het bestand dat eerder is
+    // opgeslagen heeft de oude, dus "Openen" mag er niet meer naar wijzen.
+    if (opnieuwGeslaagd(vorig?.toestand, nu)) opgeslagen = null;
     // Nieuwe notulen horen niet bij een bestand dat al is opgeslagen: dan is "Opgeslagen als..."
     // niet meer waar.
     if (
@@ -714,20 +729,41 @@
     ]);
   }
 
-  /** Geeft een beurt (of alle beurten met die naam) een naam. Geeft de melding bij een fout. */
-  async function geefNaam(
-    index: number,
-    kant: Kant,
-    naam: string,
-    bereik: Naambereik
-  ): Promise<string | null> {
-    const fout = await wijzigVerslag(() => vergaderingNaam(index, naam, bereik));
-    if (fout === null) {
-      meld(
-        naam === '' ? t().vergaderNaamTerug(kantNaam(kant, t())) : t().vergaderNaamGegeven(naam)
-      );
-    }
+  /**
+   * Geeft de spreker van een beurt een naam, voor al zijn beurten. Geeft de melding bij een fout.
+   * De melding noemt wat er echt gebeurde: sprekers die samengingen, of na leegmaken de naam die er
+   * nu staat ("Spreker 2", niet "Anderen").
+   */
+  async function geefNaam(beurt: BeurtInfo, naam: string): Promise<string | null> {
+    const voor = stapNummer();
+    const fout = await wijzigVerslag(() => vergaderingNaam(beurt.index, naam));
+    const stap = nieuweStap(voor, huidigeStap());
+    if (fout === null && stap) toonStap(naamMelding(stap, t()));
     return fout;
+  }
+
+  /** De stap aan de sprekers die Rust nu heeft, of `null`. */
+  function huidigeStap(): Sprekerstap | null {
+    return toestand.type === 'verslag' ? toestand.sprekerstap : null;
+  }
+
+  function stapNummer(): number | null {
+    return huidigeStap()?.volgnummer ?? null;
+  }
+
+  function toonStap(zin: string): void {
+    stapZin = zin;
+    meld(zin);
+  }
+
+  async function zetStapTerug(): Promise<void> {
+    const fout = await wijzigVerslag(() => vergaderingStapTerug());
+    if (fout === null) {
+      stapZin = null;
+      meld(t().vergaderOngedaanGemaakt);
+    } else {
+      verslagFout = fout;
+    }
   }
 
   /** Verbetert de tekst van een beurt. Geeft de melding bij een fout. */
@@ -743,11 +779,29 @@
   /** Geeft een beurt aan een andere of nieuwe spreker (`null`). Geeft de melding bij een fout. */
   async function geefAanSpreker(index: number, nummer: number | null): Promise<string | null> {
     const naam = huidigeSprekers().find((s) => s.nummer === nummer)?.naam ?? null;
+    const voor = stapNummer();
+    const start =
+      toestand.type === 'verslag' ? toestand.beurten.find((b) => b.index === index) : null;
     const fout = await wijzigVerslag(() => vergaderingGeefAanSpreker(index, nummer));
-    if (fout === null) {
-      meld(naam === null ? t().vergaderNieuweSprekerGegeven : t().vergaderBeurtGegeven(naam));
+    if (fout === null && nieuweStap(voor, huidigeStap())) {
+      toonStap(naam === null ? t().vergaderNieuweSprekerGegeven : t().vergaderBeurtGegeven(naam));
     }
+    // De knop "Spreker aanwijzen" verdwijnt zodra de alinea een spreker heeft: de focus gaat naar
+    // het nieuwe label van die alinea, niet naar boven in het scherm.
+    if (fout === null && start) void focusLabelBij(start.startMs);
     return fout;
+  }
+
+  /** Zet de focus op het label van de alinea die `startMs` omvat (na aanwijzen kan ze samengaan). */
+  async function focusLabelBij(startMs: number): Promise<void> {
+    await tick();
+    if (toestand.type !== 'verslag') return;
+    const nu = toestand.beurten.find((b) => b.startMs <= startMs && startMs < b.eindMs);
+    if (!nu) return;
+    // Na het sluiten van de popover zet Bits de focus nog even terug; daarna pas de onze.
+    window.setTimeout(() => {
+      document.querySelector<HTMLElement>(`[data-label-beurt="${String(nu.index)}"]`)?.focus();
+    }, 0);
   }
 
   /** Voegt twee sprekers samen: alle beurten van `van` worden van `naar`. */
@@ -756,8 +810,9 @@
     const naam = (nummer: number): string =>
       sprekers.find((s) => s.nummer === nummer)?.naam ?? t().vergaderSpreker(nummer);
     const zin = t().vergaderSamengevoegd(naam(van), naam(naar));
+    const voor = stapNummer();
     const fout = await wijzigVerslag(() => vergaderingVoegSprekersSamen(van, naar));
-    if (fout === null) meld(zin);
+    if (fout === null && nieuweStap(voor, huidigeStap())) toonStap(zin);
     return fout;
   }
 
@@ -806,7 +861,20 @@
     if (ok) verslagMelding = t().opnieuwGestopt;
   }
 
+  /**
+   * De regel voor "Vorige versie terugzetten": ze blijft beschikbaar tot er opnieuw wordt
+   * uitgeschreven of het verslag sluit, wat je ook wijzigt. Terugzetten zet het hele gesprek terug
+   * zoals het was, dus ook je namen en verbeterde tekst van sindsdien; daarom eerst een vraag.
+   */
+  async function vraagVorigeTerug(): Promise<void> {
+    wisMeldingen();
+    vorigeVraag = true;
+    await tick();
+    document.getElementById('vorige-annuleer')?.focus();
+  }
+
   async function zetVorigeTerug(): Promise<void> {
+    vorigeVraag = false;
     const fout = await wijzigVerslag(() => vergaderingVorigeTerugzetten());
     if (fout === null) verslagMelding = t().opnieuwTeruggezet;
     else verslagFout = fout;
@@ -1641,7 +1709,7 @@
          gegevensregel, en daaronder de werkbalk, de persoonsgegevens en de tekst zelf. -->
     {@const labels = toontLabels(toestand.soort, toestand.beurten)}
     {@const sprekers = sprekersVan(toestand.beurten, t())}
-    {@const titel = verslagTitel(toestand, t(), locale)}
+    {@const titel = verslagTitel({ ...toestand, naam: toestand.naamGetoond }, t(), locale)}
     {@const aantal = aantalSprekers(toestand.beurten)}
     {@const rol = toestand.modelRol ?? modelRol(toestand.model, modellenStand.overzicht)}
     {@const bewaarZin = bewaarTotTekst(toestand.wistMs, nuMs, t(), locale)}
@@ -1849,7 +1917,39 @@
     {#if toestand.opnieuw}
       <OpnieuwVoortgang stand={toestand.opnieuw} {bezig} stop={stopOpnieuw} />
     {:else if toestand.naOpnieuw && toestand.vorigeVersie}
-      <OpnieuwMelding na={toestand.naOpnieuw} {bezig} terug={zetVorigeTerug} />
+      <OpnieuwMelding na={toestand.naOpnieuw} {bezig} terug={vraagVorigeTerug} />
+      {#if vorigeVraag}
+        <div
+          class="{vlak} flex flex-col gap-2.5 px-4 py-3.5"
+          role="alertdialog"
+          aria-labelledby="vorige-kop"
+          aria-describedby="vorige-uitleg"
+        >
+          <b id="vorige-kop" class="font-semibold">{t().opnieuwTerugzettenKop}</b>
+          <span id="vorige-uitleg" class="text-gedempt">{t().opnieuwTerugzettenTekst}</span>
+          <div class="flex flex-wrap gap-2">
+            <Button variant="tweede" aria-disabled={bezig} onclick={zetVorigeTerug}
+              >{t().opnieuwTerugzettenBevestig}</Button
+            >
+            <Button id="vorige-annuleer" variant="spook" onclick={() => (vorigeVraag = false)}
+              >{t().annuleren}</Button
+            >
+          </div>
+        </div>
+      {/if}
+    {/if}
+
+    <!-- Na een naam, samenvoegen of een andere spreker: wat er gebeurde, met Ongedaan maken. -->
+    {#if toestand.sprekerstap && stapZin}
+      <div
+        class="flex flex-wrap items-center gap-2.5 rounded-groot border border-lijn bg-vlak py-2.5 pr-3 pl-3.5"
+        role="status"
+      >
+        <span class="min-w-0 flex-1 text-klein" data-testid="sprekerstap">{stapZin}</span>
+        <Button variant="spook" aria-disabled={bezig} onclick={() => void zetStapTerug()}
+          >{t().vergaderOngedaanMaken}</Button
+        >
+      </div>
     {/if}
 
     <!-- Wat er net gebeurde: kopiëren, bezig, opgeslagen, de vraag, of een fout. -->
@@ -1950,7 +2050,9 @@
             eindMs: b.eindMs,
             tekst: b.tekst,
             markeringen: b.markeringen,
-            veranderd: b.veranderd
+            veranderd: b.veranderd,
+            // Een alinea zonder spreker heeft geen naam: zoeken vindt er geen "Jij" in.
+            naam: labels && !zonderSpreker(soort, b) ? beurtNaamGetoond(b, t()) : undefined
           }))}
           {labels}
           lijstLabel={t().vergaderBeurtenLabel}
@@ -1962,18 +2064,40 @@
           haalAudio={toestand.audioAanwezig ? vergaderingAudioStuk : null}
           geenGeluid={t().verslagGeenGeluidOpname}
           opgelicht={oplicht}
+          inBeeld={tab === 'verslag'}
         >
           {#snippet label(regel: VerslagRegel)}
             {@const beurt = beurten.find((b) => b.index === regel.sleutel)}
-            {#if beurt}
+            {#if beurt && zonderSpreker(soort, beurt)}
+              <SprekerNaam
+                {beurt}
+                {sprekers}
+                aanwijzen="kolom"
+                kanAanSpreker
+                geef={(naam: string) => geefNaam(beurt, naam)}
+                wijsToe={(nummer: number | null) => geefAanSpreker(beurt.index, nummer)}
+              />
+            {:else if beurt}
               <SprekerNaam
                 {beurt}
                 {sprekers}
                 kanAanSpreker={kanAanSpreker(soort, beurten, beurt)}
-                geef={(naam: string, bereik: Naambereik) =>
-                  geefNaam(beurt.index, beurt.kant, naam, bereik)}
+                geef={(naam: string) => geefNaam(beurt, naam)}
                 wijsToe={(nummer: number | null) => geefAanSpreker(beurt.index, nummer)}
                 voegSamen={(naar: number) => voegSamen(beurt.sprekernummer ?? naar, naar)}
+              />
+            {/if}
+          {/snippet}
+          {#snippet aanwijs(regel: VerslagRegel)}
+            {@const beurt = beurten.find((b) => b.index === regel.sleutel)}
+            {#if beurt && kanAanSpreker(soort, beurten, beurt)}
+              <SprekerNaam
+                {beurt}
+                {sprekers}
+                aanwijzen="rij"
+                kanAanSpreker
+                geef={(naam: string) => geefNaam(beurt, naam)}
+                wijsToe={(nummer: number | null) => geefAanSpreker(beurt.index, nummer)}
               />
             {/if}
           {/snippet}

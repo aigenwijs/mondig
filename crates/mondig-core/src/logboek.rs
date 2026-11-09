@@ -223,6 +223,14 @@ pub enum Gebeurtenis {
         /// Een vaste code, bijvoorbeeld `andere_klasse`.
         reden: &'static str,
     },
+    /// Een dictaat is afgeleverd in een ander programma, of niet: langs welke route en met welke
+    /// uitkomst. Nooit de tekst zelf.
+    DictaatAfgeleverd {
+        /// `plakken`, `typen`, `klembord` of `geen`.
+        route: &'static str,
+        /// De uitkomst zoals de interface hem kent, bijvoorbeeld `getypt`.
+        uitkomst: &'static str,
+    },
 }
 
 impl Gebeurtenis {
@@ -319,6 +327,13 @@ impl Gebeurtenis {
             Self::SleephaakNiet { reden } => {
                 ("sleephaak_niet", vec![("reden", Waarde::Code(reden))])
             }
+            Self::DictaatAfgeleverd { route, uitkomst } => (
+                "dictaat_afgeleverd",
+                vec![
+                    ("route", Waarde::Code(route)),
+                    ("uitkomst", Waarde::Code(uitkomst)),
+                ],
+            ),
         }
     }
 
@@ -526,6 +541,10 @@ mod tests {
             },
             Gebeurtenis::SleephaakNiet {
                 reden: "andere_klasse",
+            },
+            Gebeurtenis::DictaatAfgeleverd {
+                route: "typen",
+                uitkomst: "getypt",
             },
         ]
     }

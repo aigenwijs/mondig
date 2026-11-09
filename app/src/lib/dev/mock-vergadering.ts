@@ -61,7 +61,9 @@ import type { BewaarUitslag } from '../bewaren';
 import { maakTestWav } from './mock-audio';
 import {
   mockMarkeringen,
+  mockNaam,
   mockPersoonStand,
+  mockUitvoer,
   nieuwMockPersoon,
   pasMockPersoonToe,
   type MockPersoon
@@ -69,6 +71,7 @@ import {
 import { ONBEKEND } from './mock-bestanden';
 import { NOTULEN_BEZIG, maakNotulenMock } from './mock-notulen';
 import { aantalSprekers } from '../verslagkop';
+import type { NotulenInfo } from '../notulen';
 import type { Foutmelding, Gebeurtenis } from '../taak';
 import type {
   AfspeelInfo,
@@ -76,10 +79,10 @@ import type {
   Kant,
   Modelrol,
   NaOpnieuw,
-  Naambereik,
   OpnameInfo,
   OpnieuwKeuzes,
   OpnieuwStand,
+  Sprekerstap,
   StandToestand,
   VergaderingStand,
   VerslagInfo,
@@ -136,6 +139,7 @@ function beurt(
     kant,
     sprekernummer: null,
     spreker: kant === 'jij' ? 'Jij' : 'Anderen',
+    sprekerGetoond: kant === 'jij' ? 'Jij' : 'Anderen',
     eigenNaam: false,
     startMs,
     eindMs,
@@ -199,6 +203,7 @@ function onlineBeurten(): BeurtInfo[] {
   ];
 }
 
+// Meer dan MAX_PAUZE_MS tussen de alinea's, anders voegt Rust ze al samen.
 function ruimteBeurten(): BeurtInfo[] {
   const zonder = (b: BeurtInfo): BeurtInfo => ({ ...b, spreker: null });
   return [
@@ -215,8 +220,8 @@ function ruimteBeurten(): BeurtInfo[] {
       beurt(
         1,
         'jij',
-        11000,
-        33000,
+        14000,
+        36000,
         'Het voorstel is om de bijeenkomst op een donderdagavond te houden, dan kunnen de meeste bewoners komen. De wijkschool heeft een aula met plek voor zo\u2019n tachtig mensen.'
       )
     ),
@@ -224,8 +229,8 @@ function ruimteBeurten(): BeurtInfo[] {
       beurt(
         2,
         'jij',
-        34000,
-        57000,
+        40000,
+        63000,
         'Dan nodigen we de omwonenden uit met een brief, en we hangen een bericht op in het buurthuis. De speeltuinvereniging vragen we apart, want zij kennen de kinderen en de ouders het best.'
       )
     ),
@@ -233,8 +238,8 @@ function ruimteBeurten(): BeurtInfo[] {
       beurt(
         3,
         'jij',
-        58000,
-        80000,
+        67000,
+        89000,
         'Goed. Ik stuur hen deze week een uitnodiging en laat het weten als ze kunnen. Dan kijken we volgende week naar het programma van de avond.'
       )
     )
@@ -308,8 +313,14 @@ function beurtenVoor(soort: Vergadersoort, metSprekers = false): BeurtInfo[] {
   return notitieBeurten();
 }
 
-/** Voegt opeenvolgende beurten van dezelfde kant, spreker en naam samen en telt opnieuw. */
-function voegBurenSamen(beurten: BeurtInfo[]): BeurtInfo[] {
+/** Zoveel pauze mag er hooguit tussen twee beurten die samengaan (Rust: `MAX_PAUZE`). */
+const MAX_PAUZE_MS = 3000;
+
+/**
+ * Voegt opeenvolgende beurten van dezelfde kant, spreker en naam samen, met hooguit
+ * MAX_PAUZE_MS ertussen zoals Rust, en telt opnieuw.
+ */
+export function voegBurenSamen(beurten: BeurtInfo[]): BeurtInfo[] {
   const uit: BeurtInfo[] = [];
   for (const b of beurten) {
     const vorige = uit[uit.length - 1];
@@ -317,10 +328,12 @@ function voegBurenSamen(beurten: BeurtInfo[]): BeurtInfo[] {
       vorige?.kant === b.kant &&
       vorige.sprekernummer === b.sprekernummer &&
       vorige.spreker === b.spreker &&
-      vorige.eigenNaam === b.eigenNaam
+      vorige.eigenNaam === b.eigenNaam &&
+      b.startMs - vorige.eindMs <= MAX_PAUZE_MS
     ) {
       uit[uit.length - 1] = {
         ...vorige,
+        startMs: Math.min(vorige.startMs, b.startMs),
         eindMs: Math.max(vorige.eindMs, b.eindMs),
         tekst: `${vorige.tekst} ${b.tekst}`
       };
@@ -329,6 +342,13 @@ function voegBurenSamen(beurten: BeurtInfo[]): BeurtInfo[] {
     }
   }
   return uit.map((b, index) => ({ ...b, index }));
+}
+
+/** De stand van voor een wijziging aan de sprekers, voor "Ongedaan maken". */
+interface Momentopname {
+  beurten: BeurtInfo[];
+  notulen: NotulenInfo | null;
+  veranderd: Set<number>;
 }
 
 /** Een bewaard verslag in de mock: wat Rust in verslag.json zet. */
@@ -387,6 +407,14 @@ export function maakVergaderMock(
     verbeterd: number[];
   } | null = null;
   let veranderd = new Set<number>();
+  // De laatste wijziging aan de sprekers, voor "Ongedaan maken": de beurten van ervoor. Elke
+  // andere wijziging laat hem vervallen, zoals in Rust.
+  let stapTerug:
+    | (Momentopname & {
+        info: Sprekerstap;
+      })
+    | null = null;
+  let stapTeller = 0;
   // Zijn de sprekers herkend in de verslagen die deze mock maakt?
   const metSprekers =
     opties.has('sprekers') ||
@@ -412,8 +440,12 @@ export function maakVergaderMock(
           ...t,
           beurten: t.beurten.map((b) => ({
             ...b,
-            markeringen: mockMarkeringen(b.tekst, persoon)
+            markeringen: mockMarkeringen(b.tekst, persoon),
+            // Zoals Rust: de naam zoals Kopiëren en Opslaan hem geven.
+            sprekerGetoond: b.spreker === null ? null : mockNaam(b.spreker, persoon)
           })),
+          // Zoals Rust: de titel zoals de kop hem toont.
+          naamGetoond: t.naam === null ? null : mockNaam(t.naam, persoon),
           persoon: mockPersoonStand(persoon)
         }
       : t;
@@ -429,6 +461,7 @@ export function maakVergaderMock(
           opnieuw: opnieuw === null ? null : { ...opnieuw },
           naOpnieuw: naOpnieuw === null ? null : { ...naOpnieuw },
           vorigeVersie: vorige !== null,
+          sprekerstap: stapTerug === null ? null : structuredClone(stapTerug.info),
           notulen: notulen.stand(),
           beurten: t.beurten.map((b) => ({ ...b, veranderd: veranderd.has(b.index) }))
         }
@@ -461,7 +494,13 @@ export function maakVergaderMock(
     },
     () => beurten,
     stand,
-    () => persoon.vervangen
+    () => persoon.vervangen,
+    () => {
+      stapTerug = null;
+    },
+    () => (toestand.type === 'verslag' ? toestand.soort : laatsteSoort),
+    (tekst) => mockUitvoer(tekst, persoon),
+    (naam) => mockNaam(naam, persoon)
   );
   const zet = (nieuw: StandToestand): void => {
     toestand = nieuw;
@@ -524,6 +563,7 @@ export function maakVergaderMock(
     audioAanwezig: !opties.has('geenaudio') && !opties.has('gewist'),
     persoon: { vervangen: false, eigen: [] },
     naam: verslagNaam,
+    naamGetoond: verslagNaam,
     wistMs: wistOp(begin),
     bewarenMislukt: opties.has('bewaarfout'),
     modelId,
@@ -536,6 +576,7 @@ export function maakVergaderMock(
     opnieuw: null,
     naOpnieuw: null,
     vorigeVersie: false,
+    sprekerstap: null,
     notulen: { info: null, onleesbaar: false, maken: null }
   });
 
@@ -549,6 +590,7 @@ export function maakVergaderMock(
     vorige = null;
     veranderd = new Set();
     verbeterd.clear();
+    stapTerug = null;
   };
 
   /**
@@ -588,6 +630,25 @@ export function maakVergaderMock(
     if (opnieuw !== null) throw OPNIEUW_BEZIG;
     if (notulen.bezig()) throw NOTULEN_BEZIG;
     veranderd = new Set();
+  };
+
+  /** Wat een wijziging aan de sprekers bewaart om ongedaan te maken, zoals `StapTerug` in Rust. */
+  const momentopname = (): Momentopname => ({
+    beurten: structuredClone(beurten),
+    notulen: notulen.bewaar(),
+    veranderd: new Set(veranderd)
+  });
+
+  /**
+   * Na een wijziging aan de sprekers: als er iets veranderde, de stap om ongedaan te maken, en
+   * zoals Rust gaan de notulen mee. De vorige versie en haar melding blijven staan: die vervallen
+   * alleen bij een nieuw uitschrijven of het sluiten van het verslag.
+   */
+  const onthoudStap = (voor: Momentopname, info: Omit<Sprekerstap, 'volgnummer'>): void => {
+    if (JSON.stringify(voor.beurten) === JSON.stringify(beurten)) return;
+    stapTeller += 1;
+    stapTerug = { ...voor, info: { ...info, volgnummer: stapTeller } };
+    notulen.volg(voor.beurten, beurten);
   };
 
   const startUitschrijven = (
@@ -975,7 +1036,7 @@ export function maakVergaderMock(
     ];
   };
 
-  return (cmd, args) => {
+  const handel = (cmd: string, args: InvokeArgs | undefined): unknown => {
     const notulenAntwoord = notulen.handel(cmd, args);
     if (notulenAntwoord !== ONBEKEND) return notulenAntwoord;
     switch (cmd) {
@@ -1109,35 +1170,108 @@ export function maakVergaderMock(
         return stand();
       }
       case 'vergadering_naam': {
+        // Zoals `Gesprek::geef_naam`: de naam geldt voor de hele spreker, en dezelfde naam op
+        // dezelfde kant is dezelfde persoon.
         const index = Number(argUit(args, 'index'));
         const naamArg = argUit(args, 'naam');
-        const naam = typeof naamArg === 'string' ? naamArg.trim() : '';
-        const bereik = argUit(args, 'bereik') as Naambereik;
+        const schoon =
+          typeof naamArg === 'string' ? naamArg.split(/\s+/).filter(Boolean).join(' ') : '';
         const doel = beurten.find((b) => b.index === index);
         if (!doel || toestand.type !== 'verslag') {
           throw { melding: 'Er is geen verslag open.', vervolg: 'geen' } satisfies Foutmelding;
         }
+        // In de ruimte heeft een alinea die niemand aanwees geen spreker om een naam te geven.
+        if (toestand.soort === 'ruimte' && doel.sprekernummer === null && !doel.eigenNaam) {
+          throw {
+            melding:
+              'Wijs deze alinea eerst aan een spreker toe, daarna kun je die een naam geven.',
+            vervolg: 'geen'
+          } satisfies Foutmelding;
+        }
+        const voor = momentopname();
         weigerTijdensOpnieuw();
-        const huidig = doel.spreker;
-        const standaard =
-          doel.sprekernummer === null
-            ? doel.kant === 'jij'
-              ? 'Jij'
-              : 'Anderen'
-            : `Spreker ${String(doel.sprekernummer)}`;
-        beurten = beurten.map((b) =>
-          (
-            bereik === 'beurt'
-              ? b.index === index
-              : bereik === 'spreker'
-                ? b.kant === doel.kant &&
-                  b.sprekernummer === doel.sprekernummer &&
-                  b.spreker === huidig
-                : b.kant === doel.kant && b.spreker === huidig
-          )
-            ? { ...b, spreker: naam === '' ? standaard : naam, eigenNaam: naam !== '' }
-            : b
-        );
+        const gelijk = (a: string | null, b: string | null): boolean =>
+          a !== null && b !== null && a.toLowerCase() === b.toLowerCase();
+        const standaardVan = (nummer: number | null): string =>
+          nummer === null ? (doel.kant === 'jij' ? 'Jij' : 'Anderen') : `Spreker ${String(nummer)}`;
+        const nieuw =
+          schoon === '' || gelijk(schoon, standaardVan(doel.sprekernummer)) ? null : schoon;
+        if (gelijk(nieuw, 'Jij') || gelijk(nieuw, 'Anderen')) {
+          throw {
+            melding: '"Jij" en "Anderen" kun je niet als naam geven. Kies een andere naam.',
+            vervolg: 'geen'
+          } satisfies Foutmelding;
+        }
+        const vanDeze = (b: BeurtInfo): boolean =>
+          b.kant === doel.kant &&
+          (doel.sprekernummer !== null
+            ? b.sprekernummer === doel.sprekernummer
+            : b.sprekernummer === null && b.spreker === doel.spreker);
+        const andere: number[] = [];
+        let zonder = false;
+        // De naam die die persoon al had (`null`: geen eigen naam); `undefined` zolang er niemand
+        // met die naam is. Ook "Spreker 1" is Spreker 1, ook als die nu anders heet.
+        let bestaand: string | null | undefined = undefined;
+        for (const b of beurten) {
+          if (nieuw === null || b.kant !== doel.kant || vanDeze(b)) continue;
+          if (b.sprekernummer !== null) {
+            if (!gelijk(b.spreker, nieuw) && !gelijk(standaardVan(b.sprekernummer), nieuw)) {
+              continue;
+            }
+            if (!andere.includes(b.sprekernummer)) andere.push(b.sprekernummer);
+          } else if (b.eigenNaam && gelijk(b.spreker, nieuw)) {
+            zonder = true;
+          } else {
+            continue;
+          }
+          bestaand ??= b.eigenNaam ? b.spreker : null;
+        }
+        const nummers = [doel.sprekernummer, ...andere].filter((n): n is number => n !== null);
+        const doelNummer = nummers.length > 0 ? Math.min(...nummers) : null;
+        let doelNaam = bestaand === undefined ? nieuw : bestaand;
+        if (doelNummer !== null && gelijk(doelNaam, standaardVan(doelNummer))) doelNaam = null;
+        const hoortErbij = (b: BeurtInfo): boolean =>
+          b.kant === doel.kant &&
+          (vanDeze(b) ||
+            (b.sprekernummer !== null && andere.includes(b.sprekernummer)) ||
+            (zonder && b.sprekernummer === null && b.eigenNaam && gelijk(b.spreker, nieuw)));
+        beurten = beurten.map((b) => {
+          if (!hoortErbij(b)) return b;
+          const nummer = doelNummer ?? b.sprekernummer;
+          return {
+            ...b,
+            sprekernummer: nummer,
+            spreker: doelNaam ?? standaardVan(nummer),
+            eigenNaam: doelNaam !== null
+          };
+        });
+        // Kreeg een beurt een ander nummer, dan gaan buren van dezelfde spreker samen.
+        if (beurten.some((b, i) => b.sprekernummer !== voor.beurten[i]?.sprekernummer)) {
+          beurten = voegBurenSamen(beurten);
+        }
+        const samengevoegd: (number | null)[] = [];
+        if (andere.length > 0 || (zonder && doelNummer !== null)) {
+          samengevoegd.push(...nummers.sort((a, b) => a - b));
+          if (doel.sprekernummer === null || zonder) samengevoegd.push(null);
+        }
+        onthoudStap(voor, { kant: doel.kant, samengevoegd, naam: doelNaam, nummer: doelNummer });
+        toestand = { ...toestand, beurten: structuredClone(beurten) };
+        return stand();
+      }
+      case 'vergadering_stap_terug': {
+        if (opnieuw !== null) throw OPNIEUW_BEZIG;
+        if (notulen.bezig()) throw NOTULEN_BEZIG;
+        if (stapTerug === null || toestand.type !== 'verslag') {
+          throw {
+            melding: 'Er is niets meer om ongedaan te maken.',
+            vervolg: 'geen'
+          } satisfies Foutmelding;
+        }
+        // Zoals Rust: ook de notulen en de vlaggen van ervoor; de vorige versie blijft.
+        beurten = stapTerug.beurten;
+        notulen.zetTerug(stapTerug.notulen);
+        veranderd = stapTerug.veranderd;
+        stapTerug = null;
         toestand = { ...toestand, beurten: structuredClone(beurten) };
         return stand();
       }
@@ -1178,6 +1312,8 @@ export function maakVergaderMock(
         if (!doel || toestand.type !== 'verslag') {
           throw { melding: 'Er is geen verslag open.', vervolg: 'geen' } satisfies Foutmelding;
         }
+        const voor = momentopname();
+        weigerTijdensOpnieuw();
         // Null is "Nieuwe spreker": het eerstvolgende vrije nummer, tot en met 8.
         const gebruikt = new Set(beurten.map((b) => b.sprekernummer));
         let nummer = typeof nummerArg === 'number' ? nummerArg : 1;
@@ -1190,7 +1326,6 @@ export function maakVergaderMock(
             vervolg: 'geen'
           } satisfies Foutmelding;
         }
-        weigerTijdensOpnieuw();
         // De beurt krijgt de naam van die spreker (van zijn eerste beurt), of geen naam.
         const bestaand = beurten.find((b) => b.sprekernummer === nummer);
         beurten = voegBurenSamen(
@@ -1204,6 +1339,7 @@ export function maakVergaderMock(
               : b
           )
         );
+        onthoudStap(voor, { kant: doel.kant, samengevoegd: [], naam: null, nummer: null });
         toestand = { ...toestand, beurten: structuredClone(beurten) };
         return stand();
       }
@@ -1213,6 +1349,7 @@ export function maakVergaderMock(
         if (toestand.type !== 'verslag' || van === naar) {
           throw { melding: 'Er is geen verslag open.', vervolg: 'geen' } satisfies Foutmelding;
         }
+        const voor = momentopname();
         weigerTijdensOpnieuw();
         const bestaand = beurten.find((b) => b.sprekernummer === naar);
         beurten = voegBurenSamen(
@@ -1226,6 +1363,12 @@ export function maakVergaderMock(
               : b
           )
         );
+        onthoudStap(voor, {
+          kant: bestaand?.kant ?? (toestand.soort === 'ruimte' ? 'jij' : 'anderen'),
+          samengevoegd: [],
+          naam: null,
+          nummer: null
+        });
         toestand = { ...toestand, beurten: structuredClone(beurten) };
         return stand();
       }
@@ -1290,6 +1433,9 @@ export function maakVergaderMock(
         } satisfies BewaarUitslag;
       }
       case 'vergadering_kopieer':
+        return null;
+      case 'vergadering_zet_labels':
+        // Rust onthoudt de sprekernamen voor Kopiëren en Opslaan; de mock kopieert en bewaart niets.
         return null;
       case 'vergadering_audio_bewaren':
         return wacht(900).then(() =>
@@ -1471,5 +1617,24 @@ export function maakVergaderMock(
       default:
         return ONBEKEND;
     }
+  };
+
+  // Zoals Rust (`wijzig_open_in`): een wijziging die iets veranderde zonder een nieuwe stap te
+  // maken, laat "Ongedaan maken" vervallen; een wijziging die niets deed of mislukte, laat hem staan.
+  const inhoud = (): string =>
+    toestand.type === 'verslag'
+      ? JSON.stringify([beurten, persoon, verslagNaam, notulen.bewaar()])
+      : '';
+  const isStand = (waarde: unknown): boolean =>
+    typeof waarde === 'object' && waarde !== null && 'toestand' in waarde && 'versie' in waarde;
+  return (cmd, args) => {
+    const stap = stapTerug;
+    const voor = inhoud();
+    const uit = handel(cmd, args);
+    if (stap !== null && stapTerug === stap && inhoud() !== voor) {
+      stapTerug = null;
+      if (isStand(uit)) return stand();
+    }
+    return uit;
   };
 }

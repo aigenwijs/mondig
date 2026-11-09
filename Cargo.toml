@@ -4,6 +4,7 @@ members = [
   "crates/mondig-core",
   "crates/mondig-cli",
   "crates/mondig-engine",
+  "crates/mondig-mac",
   "crates/mondig-mac-slepen",
   "app/src-tauri",
 ]

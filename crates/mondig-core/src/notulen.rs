@@ -26,7 +26,7 @@ use std::ops::Range;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::gesprek::Gesprek;
+use crate::gesprek::{Gesprek, Vergadersoort};
 use crate::persoonsgegevens::Markeringen;
 
 /// De taal van de notulen: die van de interface (ADR 0026 punt 9).
@@ -175,6 +175,51 @@ impl BewaardeNotulen {
             let (wie, wanneer) = controleer_velden(&a.punt, a.controle, invoer);
             a.wie_niet_teruggevonden = wie;
             a.wanneer_niet_teruggevonden = wanneer;
+        }
+    }
+
+    /// Laat de notulen meegaan met een wijziging aan de sprekers van het gesprek, van `oud` naar
+    /// `nieuw` (een naam, samenvoegen, een beurt aan een andere spreker). Gingen er beurten samen
+    /// terwijl de tekst gelijk bleef ([`crate::gesprek::beurtkaart`]), dan wijzen de bronnen naar
+    /// de nieuwe plek en horen de notulen bij de nieuwe opbouw, dus niet bij een vorige versie.
+    /// Een spreker die nu anders heet ([`crate::gesprek::naamwijzigingen`]), heet in `wie` ook
+    /// zo: "Spreker 1" wordt "Noor". Daarna hoort [`BewaardeNotulen::hercontroleer`].
+    ///
+    /// Notulen die al bij een vorige versie hoorden, blijven zoals ze zijn.
+    pub fn volg(&mut self, oud: &Gesprek, nieuw: &Gesprek) {
+        if self.bij_vorige_versie(oud) {
+            return;
+        }
+        let Some(kaart) = crate::gesprek::beurtkaart(oud, nieuw) else {
+            return;
+        };
+        let nieuwe_plek = |beurt: usize| kaart.get(beurt.wrapping_sub(1)).map(|p| p + 1);
+        let verplaats = |bron: &mut Bron, controle: &mut Controle| {
+            // De beurt waarin het citaat stond, anders de beurt die het model noemde.
+            let oude_beurt = match *controle {
+                Controle::Gevonden { beurt } => Some(beurt),
+                Controle::NietTeruggevonden => bestaande_beurt(bron.beurt, kaart.len()),
+            };
+            if let Some(beurt) = oude_beurt.and_then(nieuwe_plek) {
+                bron.beurt = i64::try_from(beurt).unwrap_or(i64::MAX);
+                if controle.gevonden() {
+                    *controle = Controle::Gevonden { beurt };
+                }
+            }
+        };
+        for b in &mut self.besluiten {
+            verplaats(&mut b.punt.bron, &mut b.controle);
+        }
+        for a in &mut self.actiepunten {
+            verplaats(&mut a.punt.bron, &mut a.controle);
+        }
+        self.gesprek_kenmerk = kenmerk(nieuw);
+        let namen = crate::gesprek::naamwijzigingen(oud, nieuw);
+        for a in &mut self.actiepunten {
+            let wie = normaliseer(&a.punt.wie);
+            if let Some((_, naar)) = namen.iter().find(|(van, _)| normaliseer(van) == wie) {
+                a.punt.wie.clone_from(naar);
+            }
         }
     }
 
@@ -524,14 +569,41 @@ pub fn json_schema() -> Value {
     })
 }
 
+/// Welke regels van het verslag een sprekerlabel hebben voor het model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sprekerlabels {
+    /// Elke regel heeft een spreker.
+    Alle,
+    /// Een deel van de regels heeft een spreker (in de ruimte waar niet elke alinea is
+    /// aangewezen).
+    Deels,
+    /// Geen enkele regel heeft een spreker.
+    Geen,
+}
+
 /// De opdracht aan het model (systeembericht) voor notulen van een verslag of een deel ervan.
+/// Zonder sprekerlabels staat er geen naam voor de tekst en vraagt de opdracht alleen een "wie" als
+/// de tekst zelf een naam noemt; bij `Deels` geldt dat voor de regels zonder label.
 #[must_use]
-pub fn opdracht(taal: Taal) -> &'static str {
-    match taal {
-        Taal::Nl => OPDRACHT_NL,
-        Taal::En => OPDRACHT_EN,
+pub fn opdracht(taal: Taal, labels: Sprekerlabels) -> String {
+    match (taal, labels) {
+        (Taal::Nl, Sprekerlabels::Alle) => OPDRACHT_NL.to_string(),
+        (Taal::En, Sprekerlabels::Alle) => OPDRACHT_EN.to_string(),
+        (Taal::Nl, Sprekerlabels::Geen) => OPDRACHT_ZONDER_SPREKERS_NL.to_string(),
+        (Taal::En, Sprekerlabels::Geen) => OPDRACHT_ZONDER_SPREKERS_EN.to_string(),
+        (Taal::Nl, Sprekerlabels::Deels) => format!(
+            "{OPDRACHT_NL}
+{DEELS_NL}"
+        ),
+        (Taal::En, Sprekerlabels::Deels) => format!(
+            "{OPDRACHT_EN}
+{DEELS_EN}"
+        ),
     }
 }
+
+const DEELS_NL: &str = "8. Bij een regel zonder spreker (de vorm \"[nummer] tijd: tekst\") is niet bekend wie er spreekt: vul wie dan alleen in als de tekst zelf een naam of rol noemt, anders leeg, en nooit \"ik\", \"jij\" of \"de spreker\".";
+const DEELS_EN: &str = "8. For a line without a speaker (in the form \"[number] time: text\") it is not known who is speaking: fill in wie only if the text itself mentions a name or role, otherwise leave it empty, and never \"I\", \"you\" or \"the speaker\".";
 
 /// De opdracht om de samenvattingen van de delen samen te voegen tot één samenvatting. De punten
 /// voegt Mondig zelf samen ([`voeg_punten_samen`]), zodat het model er geen kan laten vallen.
@@ -567,6 +639,32 @@ Rules:
 6. If there are no decisions or action items, give an empty list.
 7. Write briefly and factually in English. Give only JSON following the schema.";
 
+// Zonder sprekers weet het verslag niet wie er spreekt (een opname in de ruimte zonder
+// sprekerherkenning, of Alleen ik): alleen kop en regel 4 verschillen van de opdracht met sprekers.
+const OPDRACHT_ZONDER_SPREKERS_NL: &str = "\
+Je maakt notulen van een vergadering. Je krijgt het verslag als genummerde beurten in de vorm \"[nummer] tijd: tekst\". Het verslag is automatisch uitgeschreven en kan fouten bevatten. Er staat niet bij wie er spreekt.
+
+Regels:
+1. Gebruik alleen wat in het verslag staat. Voeg niets toe en vul niets aan uit eigen kennis.
+2. samenvatting: hooguit vijf zinnen over waar de vergadering over ging en wat eruit kwam.
+3. besluiten: alleen wat de deelnemers echt hebben besloten of afgesproken, zoals \"dan doen we het zo\", \"akkoord\" of \"afgesproken\". Een voorstel, idee, wens of twijfel is geen besluit, ook niet als niemand bezwaar maakt. Zinnen als \"we zouden misschien\", \"eventueel\", \"moeten we niet eens\" of \"dat kunnen we overwegen\" zijn geen besluit. Bij twijfel: geen besluit. Elk besluit staat er één keer: stemmen meerdere deelnemers in met hetzelfde besluit, dan is dat één besluit met als bron de beurt waarin het besluit wordt uitgesproken. Een instemming als \"akkoord\" of \"ja\" is nooit een apart besluit.
+4. actiepunten: een concrete taak die iemand echt op zich neemt of krijgt. Een aanbod of mogelijkheid zoals \"ik kan wel\", \"we zouden kunnen\" of \"misschien later\" is geen actiepunt als niemand de taak daarna aanneemt. wie: alleen een naam of rol die in de tekst zelf bij de taak wordt genoemd, zoals \"Piet pakt dat op\" of \"de projectleider regelt het\". Het verslag zegt niet wie er spreekt: bij \"ik doe dat\" of \"ik pak dat op\" is wie dus leeg, en vul nooit \"ik\", \"jij\" of \"de spreker\" in. Wordt er geen naam of rol genoemd, laat wie leeg. wanneer: alleen een moment of termijn die in het verslag genoemd wordt; anders leeg. Nooit raden.
+5. bron bij elk besluit en actiepunt: beurt is het nummer van de beurt waarin het besluit of de taak wordt uitgesproken. citaat is een letterlijk stuk uit die beurt van vijf tot vijftien woorden (minstens vier), precies zoals het er staat: niet herschrijven, niet inkorten met puntjes, geen woorden toevoegen. Zet het nummer en de tijd niet in het citaat, alleen wat er gezegd is.
+6. Staan er geen besluiten of actiepunten in het verslag, geef dan een lege lijst.
+7. Schrijf kort en zakelijk in het Nederlands. Geef alleen JSON volgens het schema.";
+
+const OPDRACHT_ZONDER_SPREKERS_EN: &str = "\
+You write the minutes of a meeting. You get the transcript as numbered turns in the form \"[number] time: text\". The transcript was made automatically and may contain errors. It does not say who is speaking.
+
+Rules:
+1. Use only what is in the transcript. Do not add anything or fill in from your own knowledge.
+2. samenvatting (summary): at most five sentences on what the meeting was about and what came out of it.
+3. besluiten (decisions): only what the participants actually decided or agreed, such as \"then we will do it that way\", \"agreed\" or \"settled\". A proposal, idea, wish or doubt is not a decision, even if nobody objects. Phrases like \"maybe we could\", \"possibly\", \"shouldn't we\" or \"we could consider that\" are not decisions. When in doubt: no decision. List each decision once: if several participants agree to the same decision, that is one decision, with as source the turn in which it is stated. An agreement such as \"agreed\" or \"yes\" is never a separate decision.
+4. actiepunten (action items): a concrete task that someone actually takes on or is given. An offer or possibility such as \"I could\", \"we might\" or \"maybe later\" is not an action item if nobody then takes the task on. wie (who): only a name or role that the text itself mentions with the task, such as \"Piet will pick that up\" or \"the project lead will arrange it\". The transcript does not say who is speaking: for \"I will do that\" wie is therefore empty, and never fill in \"I\", \"you\" or \"the speaker\". If no name or role is mentioned, leave wie empty. wanneer (when): only a moment or deadline mentioned in the transcript; otherwise empty. Never guess.
+5. bron (source) for every decision and action item: beurt is the number of the turn in which the decision or task is stated. citaat is a literal quote from that turn of five to fifteen words (at least four), exactly as written: do not rewrite, do not shorten with dots, do not add words. Do not put the number or the time in the quote, only what was said. Keep the quote in the language of the transcript.
+6. If there are no decisions or action items, give an empty list.
+7. Write briefly and factually in English. Give only JSON following the schema.";
+
 const SAMENVOEGEN_NL: &str = "\
 Je krijgt de samenvattingen van opeenvolgende delen van één vergadering, als JSON. Maak er één samenvatting van van hooguit vijf zinnen over de hele vergadering, alleen op basis van deze samenvattingen. Voeg niets toe. Schrijf in het Nederlands. Geef alleen JSON volgens het schema.";
 
@@ -582,31 +680,57 @@ pub struct Invoer {
     pub teksten: Vec<String>,
     /// Per beurt de spreker zoals het model hem kreeg.
     pub sprekers: Vec<String>,
+    /// Welke regels een sprekerlabel kregen. Een regel zonder label heeft hierboven een lege
+    /// spreker.
+    pub labels: Sprekerlabels,
 }
 
 impl Invoer {
     /// De invoer bij een gesprek. Staat "Persoonsgegevens vervangen" aan, dan krijgt het model de
-    /// vervangen tekst en sprekernamen (ADR 0024 punt 4); anders de tekst zoals hij is.
+    /// vervangen tekst en sprekernamen (ADR 0024 punt 4); anders de tekst zoals hij is. Een regel
+    /// zonder spreker ([`Gesprek::label`], in de ruimte een alinea die niemand aanwees) heeft
+    /// alleen het nummer, de tijd en de tekst: anders heet hij "Jij" en wordt "Jij" de eigenaar
+    /// van elk actiepunt. Bij Alleen ik is "Jij" wel de schrijver: elke regel houdt zijn label.
     #[must_use]
     pub fn van(gesprek: &Gesprek, markeringen: &Markeringen) -> Self {
+        let alleen = gesprek.soort == Vergadersoort::Alleen;
         let mut regels = Vec::with_capacity(gesprek.beurten.len());
         let mut teksten = Vec::with_capacity(gesprek.beurten.len());
         let mut sprekers = Vec::with_capacity(gesprek.beurten.len());
         for (index, beurt) in gesprek.beurten.iter().enumerate() {
             let tekst = op_een_regel(&markeringen.voor_uitvoer(&beurt.tekst));
-            let spreker = op_een_regel(&markeringen.voor_naam(&beurt.spreker()));
-            regels.push(format!(
-                "[{}] {} {spreker}: {tekst}",
-                index + 1,
-                tijdcode(beurt.start_ms)
-            ));
+            let tijd = tijdcode(beurt.start_ms);
+            let nummer = index + 1;
+            let label = if alleen {
+                Some(beurt.spreker())
+            } else if gesprek.met_sprekers() {
+                gesprek.label(beurt)
+            } else {
+                None
+            };
+            if let Some(naam) = label {
+                let spreker = op_een_regel(&markeringen.voor_naam(&naam));
+                regels.push(format!("[{nummer}] {tijd} {spreker}: {tekst}"));
+                sprekers.push(spreker);
+            } else {
+                regels.push(format!("[{nummer}] {tijd}: {tekst}"));
+                sprekers.push(String::new());
+            }
             teksten.push(tekst);
-            sprekers.push(spreker);
         }
+        let met = sprekers.iter().filter(|s| !s.is_empty()).count();
+        let labels = if met == sprekers.len() {
+            Sprekerlabels::Alle
+        } else if met == 0 {
+            Sprekerlabels::Geen
+        } else {
+            Sprekerlabels::Deels
+        };
         Self {
             regels,
             teksten,
             sprekers,
+            labels,
         }
     }
 
@@ -766,6 +890,27 @@ fn bevat(tekst: &str, gezocht: &str) -> bool {
     !gezocht.is_empty() && format!(" {} ", normaliseer(tekst)).contains(&format!(" {gezocht} "))
 }
 
+/// Is `wie` een aanduiding als "ik", "Jij" of "de spreker" in plaats van een naam of rol?
+fn is_voornaamwoord(wie: &str) -> bool {
+    const WOORDEN: [&str; 13] = [
+        "ik",
+        "jij",
+        "je",
+        "u",
+        "wij",
+        "we",
+        "de spreker",
+        "i",
+        "you",
+        "me",
+        "myself",
+        "the speaker",
+        "speaker",
+    ];
+    let wie = normaliseer(wie);
+    WOORDEN.contains(&wie.as_str())
+}
+
 /// Controleert `wie` en `wanneer` van een actiepunt (true = niet teruggevonden). `wie` klopt als
 /// het in de bronbeurt of de beurt ervoor of erna staat, of als het de spreker van de bronbeurt is
 /// (wie zegt "ik pak het op", is de eigenaar). `wanneer` klopt als het daar staat. Een leeg veld
@@ -780,12 +925,17 @@ fn controleer_velden(punt: &Actiepunt, controle: Controle, invoer: &Invoer) -> (
         bronbeurt.is_some_and(|b| rond(b, aantal).any(|r| bevat(&invoer.teksten[r - 1], veld)))
     };
     let wie = punt.wie.trim();
+    // Bij een regel zonder spreker is "ik" of "Jij" geen eigenaar: er is niemand die zo heet. Dat het
+    // woord in de tekst staat ("ik pak het op") maakt het geen naam.
+    let zonder_label = bronbeurt.is_none_or(|b| invoer.sprekers[b - 1].is_empty());
+    let alleen_voornaamwoord = zonder_label && is_voornaamwoord(wie);
     let wie_ok = wie.is_empty()
-        || staat_rond(wie)
-        || bronbeurt.is_some_and(|b| {
-            let spreker = &invoer.sprekers[b - 1];
-            bevat(spreker, wie) || bevat(wie, spreker)
-        });
+        || (!alleen_voornaamwoord
+            && (staat_rond(wie)
+                || bronbeurt.is_some_and(|b| {
+                    let spreker = &invoer.sprekers[b - 1];
+                    bevat(spreker, wie) || bevat(wie, spreker)
+                })));
     let wanneer = punt.wanneer.trim();
     let wanneer_ok = wanneer.is_empty() || staat_rond(wanneer);
     (!wie_ok, !wanneer_ok)

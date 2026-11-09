@@ -183,8 +183,12 @@ describe('plakHoortBij', () => {
 describe('plakSoort', () => {
   it('geplakt is gelukt, de terugval is klembord', () => {
     expect(plakSoort('geplakt')).toBe('gelukt');
+    // Getypt omdat het programma het klembord niet las: de tekst staat waar je typt.
+    expect(plakSoort('getypt')).toBe('gelukt');
     expect(plakSoort('op_klembord')).toBe('klembord');
     expect(plakSoort('waarschijnlijk_geplakt')).toBe('klembord');
+    // Op de Mac in een wachtwoordveld: de tekst staat op het klembord, er is niets te repareren.
+    expect(plakSoort('wachtwoordveld')).toBe('klembord');
   });
 
   it('alles waarbij de tekst niet waar je typt staat, is een fout', () => {
@@ -194,7 +198,14 @@ describe('plakSoort', () => {
       'beheerrechten',
       'toetsen_ingedrukt',
       'geen_venster',
-      'mislukt'
+      'mislukt',
+      // Typen stopte of lukte niet: (de rest van) de tekst staat op het klembord.
+      'typen_onderbroken',
+      'typen_mislukt',
+      // Geen tekstveld: niet getypt, de tekst staat op het klembord.
+      'geen_tekstveld',
+      // Op de Mac zonder recht op toegankelijkheid: een fout met de weg naar de instelling.
+      'geen_toegang'
     ] as const) {
       expect(plakSoort(uitkomst)).toBe('fout');
     }

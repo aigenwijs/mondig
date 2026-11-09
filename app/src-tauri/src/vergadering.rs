@@ -44,7 +44,7 @@ use mondig_core::bestanden::{Bestandsmotor, Gespreksuitslag};
 use mondig_core::bewaren::{self, Document, Formaat};
 use mondig_core::download;
 use mondig_core::gesprek::{
-    Gesprek, Kant, Naambereik, Vergadersoort, schone_verslagnaam, veranderde_beurten,
+    Gesprek, Kant, Naamgeving, Sprekerlabels, Vergadersoort, schone_verslagnaam, veranderde_beurten,
 };
 use mondig_core::model::{self as catalogus, Gebruik, Modelrol};
 use mondig_core::notulen::OpgeslagenNotulen;
@@ -197,9 +197,18 @@ struct Verslag {
     /// Wordt dit verslag opnieuw uitgeschreven (ADR 0023)? Dan blijft het te lezen, te kopiëren
     /// en op te slaan, maar weigert elke wijziging, en sluit het niet.
     opnieuw: Option<Opnieuw>,
-    /// De versie van voor het laatste opnieuw uitschrijven, met zijn markeringen, tot het
-    /// verslag sluit (besluit 8). Alleen in het geheugen: na een crash is ze weg.
+    /// De versie van voor het laatste opnieuw uitschrijven, tot het verslag sluit of er opnieuw
+    /// wordt uitgeschreven (besluit 8). De regel is één en geldt voor elke wijziging: een naam,
+    /// een tekst, een markering of samenvoegen laat haar niet vervallen. Terugzetten zet het hele
+    /// gesprek terug zoals het was, dus ook wat de gebruiker sindsdien aan namen en tekst deed;
+    /// de interface vraagt daarom eerst om bevestiging. Markeringen van persoonsgegevens blijven
+    /// zoals ze nu zijn. "Ongedaan maken" (`stap_terug`) raakt haar niet. Alleen in het
+    /// geheugen: na een crash is ze weg.
     vorige: Option<Box<Vorige>>,
+    /// Hoe het verslag was voor de laatste wijziging aan de sprekers (een naam, samenvoegen, een
+    /// beurt aan een andere spreker), voor "Ongedaan maken". Eén stap: elke andere wijziging laat
+    /// hem vervallen. Alleen in het geheugen.
+    stap_terug: Option<Box<StapTerug>>,
     /// Wat de melding na het opnieuw uitschrijven zegt.
     na_opnieuw: Option<NaOpnieuw>,
     /// Per beurt: veranderd bij het laatste opnieuw uitschrijven? Zo markeert de interface die
@@ -266,6 +275,54 @@ fn resterend(p: u8, p0: u8, verstreken: Duration) -> Option<Duration> {
         return Some(Duration::ZERO);
     }
     (p > p0).then(|| verstreken.mul_f64(f64::from(100 - p) / f64::from(p - p0)))
+}
+
+/// Het verslag van voor de laatste wijziging aan de sprekers ([`Verslag::stap_terug`]): het
+/// gesprek, de notulen (want namen en bronnen gaan mee) en wat die wijziging liet vervallen.
+struct StapTerug {
+    gesprek: Gesprek,
+    notulen: Option<OpgeslagenNotulen>,
+    veranderd: Vec<bool>,
+    info: Sprekerstap,
+}
+
+/// Wat de interface over de laatste wijziging aan de sprekers weet, voor de melding met
+/// "Ongedaan maken".
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Sprekerstap {
+    /// Een nummer per stap: zo ziet de interface of een wijziging echt een nieuwe stap maakte,
+    /// of dat er niets veranderde en de oude stap blijft staan.
+    volgnummer: u64,
+    /// De kant waar het gebeurde.
+    kant: Kant,
+    /// De sprekers die door een naam samengingen ("Spreker 1 en Spreker 2 zijn nu Noor"), als
+    /// nummer; `null` is de kant zonder nummer. Leeg als er niets samenging.
+    samengevoegd: Vec<Option<u8>>,
+    /// Bij een naam: de naam zoals hij nu in het verslag staat; `null` is de standaardnaam.
+    naam: Option<String>,
+    /// Bij een naam: het sprekernummer daarna, voor de standaardnaam ("Terug naar Spreker 2").
+    nummer: Option<u8>,
+}
+
+/// Telt de stappen aan de sprekers ([`Sprekerstap::volgnummer`]).
+static STAPNUMMER: AtomicU64 = AtomicU64::new(1);
+
+impl Sprekerstap {
+    fn nieuw(
+        kant: Kant,
+        samengevoegd: Vec<Option<u8>>,
+        naam: Option<String>,
+        nummer: Option<u8>,
+    ) -> Self {
+        Self {
+            volgnummer: 0,
+            kant,
+            samengevoegd,
+            naam,
+            nummer,
+        }
+    }
 }
 
 /// Het verslag van voor het opnieuw uitschrijven. De markeringen zitten er niet in: die veranderden
@@ -412,6 +469,10 @@ pub(crate) struct BeurtInfo {
     /// Wie er spreekt ("Jij", "Anderen", "Spreker 1" of een gegeven naam); `None` in de ruimte
     /// zonder herkende sprekers en bij Alleen ik.
     spreker: Option<String>,
+    /// `spreker` zoals hij op het scherm staat: met "Persoonsgegevens vervangen" aan en een
+    /// gemarkeerd gegeven in de naam staat hier `[GEGEVEN]` enzovoort, net als in Kopiëren en
+    /// Opslaan (`Markeringen::voor_naam`). Naam geven begint met de echte `spreker`.
+    spreker_getoond: Option<String>,
     /// Heeft de gebruiker deze beurt een eigen naam gegeven?
     eigen_naam: bool,
     start_ms: u64,
@@ -488,6 +549,10 @@ pub(crate) enum StandToestand {
         persoon: PersoonInfo,
         /// De naam die de gebruiker het verslag gaf; `None`: de interface maakt de titel zelf.
         naam: Option<String>,
+        /// `naam` zoals de kop hem toont: met "Persoonsgegevens vervangen" aan en een gemarkeerd
+        /// gegeven in de naam staat hier `[GEGEVEN]` enzovoort, net als in de bestandsnaam en de
+        /// export. Naam wijzigen begint met de echte `naam`.
+        naam_getoond: Option<String>,
         /// Wanneer Mondig het verslag vanzelf wist (milliseconden sinds 1970); `None` als de
         /// bewaartermijn onbekend is.
         wist_ms: Option<u64>,
@@ -513,6 +578,8 @@ pub(crate) enum StandToestand {
         na_opnieuw: Option<NaOpnieuw>,
         /// Is "Vorige versie terugzetten" er nog?
         vorige_versie: bool,
+        /// De laatste wijziging aan de sprekers, zolang die ongedaan kan worden gemaakt.
+        sprekerstap: Option<Sprekerstap>,
         /// De notulen van dit verslag en het maken ervan (ADR 0026).
         notulen: Box<NotulenStand>,
     },
@@ -653,7 +720,34 @@ impl Binnen {
         v.model_id = vorige.model_id;
         v.veranderd.clear();
         v.na_opnieuw = None;
+        v.stap_terug = None;
         v.hercontroleer_notulen();
+        Ok(self.plan_bewaren(false))
+    }
+
+    /// Maakt de laatste wijziging aan de sprekers ongedaan (een naam, samenvoegen, een beurt aan
+    /// een andere spreker): het gesprek en de notulen zoals ze ervoor waren, en wat die wijziging
+    /// liet vervallen. Plant het schrijven naar `verslag.json`.
+    fn zet_stap_terug(&mut self) -> Result<Option<Schrijfopdracht>, Foutmelding> {
+        let Fase::Verslag(v) = &mut self.fase else {
+            return Err(geen_verslag());
+        };
+        if v.opnieuw.is_some() {
+            return Err(opnieuw_bezig());
+        }
+        if v.notulen_maken.is_some() {
+            return Err(notulen_bezig());
+        }
+        let Some(stap) = v.stap_terug.take() else {
+            return Err(Foutmelding::nieuw(
+                "Er is niets meer om ongedaan te maken.",
+                Vervolg::Geen,
+            ));
+        };
+        let stap = *stap;
+        v.gesprek = stap.gesprek;
+        v.notulen = stap.notulen;
+        v.veranderd = stap.veranderd;
         Ok(self.plan_bewaren(false))
     }
 
@@ -704,6 +798,7 @@ impl Binnen {
                 audio_aanwezig: v.map.join(EINDE).is_file(),
                 persoon: persoon_info(&v.persoon),
                 naam: v.naam.clone(),
+                naam_getoond: v.naam.as_deref().map(|n| v.persoon.voor_naam(n)),
                 wist_ms: v.wist_ms,
                 bewaren_mislukt: v.bewaren_mislukt,
                 model_id: v.model_id.clone(),
@@ -714,6 +809,7 @@ impl Binnen {
                 opnieuw: v.opnieuw.as_ref().map(Opnieuw::stand),
                 na_opnieuw: v.na_opnieuw.clone(),
                 vorige_versie: v.vorige.is_some(),
+                sprekerstap: v.stap_terug.as_ref().map(|s| s.info.clone()),
                 notulen: Box::new(NotulenStand::van(v)),
             },
         };
@@ -1211,6 +1307,7 @@ impl Verslag {
             luistert: 0,
             opnieuw: None,
             vorige: None,
+            stap_terug: None,
             na_opnieuw: None,
             veranderd: Vec::new(),
             opname_aanwezig: sporen_aanwezig(&map),
@@ -1224,6 +1321,7 @@ impl Verslag {
     /// buiten het slot).
     fn vervang_door(&mut self, nieuw: Gesprek, opnieuw: Opnieuw, vergelijking: Vergelijking) {
         let oud = std::mem::replace(&mut self.gesprek, nieuw);
+        self.stap_terug = None;
         self.veranderd = vergelijking.veranderd;
         self.vorige = Some(Box::new(Vorige {
             gesprek: oud,
@@ -1238,17 +1336,14 @@ impl Verslag {
         });
     }
 
-    /// Na een wijziging aan het gesprek die `aantal` beurten raakte (ADR 0023, punt 4): de vorige
-    /// versie en haar melding vervallen, zodat terugzetten nooit stil een latere wijziging
-    /// weggooit. Schuiven de beurten (samenvoegen, een andere spreker), dan kloppen de plekken
-    /// van de veranderde regels niet meer en gaan die vlaggen weg; bij een tekst of een naam
-    /// blijven ze.
+    /// Na een wijziging aan het gesprek die `aantal` beurten raakte: de vorige versie en haar
+    /// melding blijven (zie [`Verslag::vorige`]; terugzetten vraagt zelf om bevestiging). Schuiven
+    /// de beurten (samenvoegen, een andere spreker), dan kloppen de plekken van de veranderde
+    /// regels niet meer en gaan die vlaggen weg; bij een tekst of een naam blijven ze.
     fn na_gesprekswijziging(&mut self, aantal: usize, verschuift: bool) {
         if aantal == 0 {
             return;
         }
-        self.vorige = None;
-        self.na_opnieuw = None;
         if verschuift {
             self.veranderd.clear();
         }
@@ -1353,22 +1448,25 @@ fn geen_verslag() -> Foutmelding {
 }
 
 fn beurten_van(gesprek: &Gesprek, persoon: &Markeringen, veranderd: &[bool]) -> Vec<BeurtInfo> {
-    let sprekers = gesprek.met_sprekers();
     gesprek
         .beurten
         .iter()
         .enumerate()
-        .map(|(index, b)| BeurtInfo {
-            index,
-            kant: b.kant,
-            sprekernummer: b.sprekernummer,
-            spreker: sprekers.then(|| b.spreker()),
-            eigen_naam: b.naam.is_some(),
-            start_ms: b.start_ms,
-            eind_ms: b.eind_ms,
-            tekst: b.tekst.clone(),
-            markeringen: markeringen_van(persoon, &b.tekst),
-            veranderd: veranderd.get(index).copied().unwrap_or(false),
+        .map(|(index, b)| {
+            let spreker = gesprek.verslaglabel(b);
+            BeurtInfo {
+                index,
+                kant: b.kant,
+                sprekernummer: b.sprekernummer,
+                spreker_getoond: spreker.as_deref().map(|s| persoon.voor_naam(s)),
+                spreker,
+                eigen_naam: b.naam.is_some(),
+                start_ms: b.start_ms,
+                eind_ms: b.eind_ms,
+                tekst: b.tekst.clone(),
+                markeringen: markeringen_van(persoon, &b.tekst),
+                veranderd: veranderd.get(index).copied().unwrap_or(false),
+            }
         })
         .collect()
 }
@@ -1391,9 +1489,18 @@ pub(crate) struct VergaderingStaat {
     /// Per map het volgnummer van de laatst geschreven `verslag.json`: het schrijven zelf gebeurt
     /// onder dit slot en buiten het slot van de stand, in volgorde ([`schrijf_opdracht`]).
     schrijf: Mutex<HashMap<PathBuf, u64>>,
+    /// De standaardnamen van de sprekers in de taal van de app, voor Kopiëren en Opslaan (ook het
+    /// automatisch opslaan, dat geen scherm nodig heeft). De interface kent de taal en geeft de namen
+    /// door ([`vergadering_zet_labels`]); tot dan zijn ze Nederlands.
+    labels: Mutex<Sprekerlabels>,
 }
 
 impl VergaderingStaat {
+    /// De standaardnamen van de sprekers zoals de interface ze het laatst doorgaf.
+    fn sprekerlabels(&self) -> Sprekerlabels {
+        slot(&self.labels).clone()
+    }
+
     /// Bij het afsluiten van de app: een lopende opname netjes afsluiten, zodat ze daarna als
     /// "nog uit te schrijven" klaarstaat.
     pub(crate) fn stop(&self) {
@@ -1408,13 +1515,18 @@ impl VergaderingStaat {
     /// Het verslag als [`Document`] om te bewaren (voor `bewaren.rs`). `None` als `taak` niet
     /// het verslag van nu is.
     pub(crate) fn document(&self, taak: TaakId) -> Option<Document> {
+        let labels = self.sprekerlabels();
         let binnen = slot(&self.binnen);
         let Fase::Verslag(v) = &binnen.fase else {
             return None;
         };
         (v.taak == taak).then(|| {
-            let mut document =
-                Document::van_gesprek(&v.gesprek, &v.model, bewaren::lokaal_moment(v.begin_ms));
+            let mut document = Document::van_gesprek_met(
+                &v.gesprek,
+                &v.model,
+                bewaren::lokaal_moment(v.begin_ms),
+                &labels,
+            );
             // De naam die de gebruiker gaf, is de titel en geeft de bestandsnaam.
             if let Some(naam) = &v.naam {
                 document.titel.clone_from(naam);
@@ -2649,20 +2761,35 @@ fn claim_uit_lijst(
     Ok(map)
 }
 
-/// Geeft de spreker van een beurt een naam: alleen deze beurt (`beurt`), alle beurten van die
-/// kant met dezelfde naam (`kant`) of alle beurten van die spreker (`spreker`, 4b-D). Een lege
-/// naam zet terug naar "Jij", "Anderen" of "Spreker 1".
+/// Geeft de spreker van een beurt een naam, voor al zijn beurten ([`Gesprek::geef_naam`]): heeft
+/// een andere spreker van die kant dezelfde naam, dan gaan ze samen. Een lege naam zet terug naar
+/// "Jij", "Anderen" of "Spreker 1". Kan ongedaan worden gemaakt.
 #[tauri::command]
 pub(crate) async fn vergadering_naam(
     app: AppHandle,
     index: usize,
     naam: String,
-    bereik: Naambereik,
 ) -> Result<VergaderingStand, Foutmelding> {
-    wijzig_verslag(app, false, move |gesprek| {
-        gesprek.geef_naam(index, &naam, bereik)
-    })
-    .await
+    wijzig_open(app, move |v| wijzig_sprekers(v, |g| noem(g, index, &naam))).await
+}
+
+/// Zie [`vergadering_naam`]: de naam, met wat de melding moet weten.
+fn noem(
+    gesprek: &mut Gesprek,
+    index: usize,
+    naam: &str,
+) -> Result<(usize, Sprekerstap), Foutmelding> {
+    let kant = gesprek.beurten.get(index).map_or(Kant::Anderen, |b| b.kant);
+    let Naamgeving {
+        veranderd,
+        samengevoegd,
+        naam,
+        nummer,
+    } = gesprek.geef_naam(index, naam)?;
+    Ok((
+        veranderd,
+        Sprekerstap::nieuw(kant, samengevoegd, naam, nummer),
+    ))
 }
 
 /// Verbetert de tekst van een beurt (V-1). Kopiëren en alle exports gebruiken daarna de nieuwe
@@ -2798,8 +2925,23 @@ fn wijzig_open_in(
     if v.notulen_maken.is_some() {
         return Err(notulen_bezig());
     }
-    wijziging(v)?;
-    Ok(binnen.plan_bewaren(false))
+    // "Ongedaan maken" geldt alleen voor de laatste wijziging: een andere wijziging laat hem
+    // vervallen, zodat terugzetten nooit stil iets van daarna weggooit. Mislukt de wijziging, of
+    // veranderde er niets, dan blijft hij.
+    let eerder = v.stap_terug.take();
+    if let Err(fout) = wijziging(v) {
+        v.stap_terug = eerder;
+        return Err(fout);
+    }
+    let nieuwe_stap = v.stap_terug.is_some();
+    let opdracht = binnen.plan_bewaren(false);
+    if !nieuwe_stap
+        && opdracht.is_none()
+        && let Fase::Verslag(v) = &mut binnen.fase
+    {
+        v.stap_terug = eerder;
+    }
+    Ok(opdracht)
 }
 
 /// Geeft een beurt aan een andere spreker (4b-D), bijvoorbeeld als het model twee mensen
@@ -2812,11 +2954,26 @@ pub(crate) async fn vergadering_geef_aan_spreker(
     index: usize,
     spreker: Option<u8>,
 ) -> Result<VergaderingStand, Foutmelding> {
-    wijzig_verslag(app, true, move |gesprek| match spreker {
-        Some(nummer) => gesprek.geef_aan_spreker(index, nummer),
-        None => gesprek.geef_aan_nieuwe_spreker(index).map(|_| 1),
+    wijzig_open(app, move |v| {
+        wijzig_sprekers(v, |gesprek| {
+            let aantal = match spreker {
+                Some(nummer) => gesprek.geef_aan_spreker(index, nummer)?,
+                None => gesprek.geef_aan_nieuwe_spreker(index).map(|_| 1)?,
+            };
+            Ok((aantal, zonder_samengaan(gesprek)))
+        })
     })
     .await
+}
+
+/// Een stap aan de sprekers waarbij geen naam iets samenvoegde: de melding maakt de interface zelf.
+fn zonder_samengaan(gesprek: &Gesprek) -> Sprekerstap {
+    Sprekerstap::nieuw(
+        gesprek.sprekerkant().unwrap_or(Kant::Anderen),
+        Vec::new(),
+        None,
+        None,
+    )
 }
 
 /// Voegt twee sprekers samen (4b-D): alle beurten van `van` worden van `naar`.
@@ -2826,8 +2983,27 @@ pub(crate) async fn vergadering_voeg_sprekers_samen(
     van: u8,
     naar: u8,
 ) -> Result<VergaderingStand, Foutmelding> {
-    wijzig_verslag(app, true, move |gesprek| {
-        gesprek.voeg_sprekers_samen(van, naar)
+    wijzig_open(app, move |v| {
+        wijzig_sprekers(v, |gesprek| {
+            let aantal = gesprek.voeg_sprekers_samen(van, naar)?;
+            Ok((aantal, zonder_samengaan(gesprek)))
+        })
+    })
+    .await
+}
+
+/// Maakt de laatste wijziging aan de sprekers ongedaan ([`Binnen::zet_stap_terug`]).
+#[tauri::command]
+pub(crate) async fn vergadering_stap_terug(
+    app: AppHandle,
+) -> Result<VergaderingStand, Foutmelding> {
+    blokkerend(move || {
+        let staat = app.state::<VergaderingStaat>();
+        let opdracht = slot(&staat.binnen).zet_stap_terug()?;
+        if let Some(opdracht) = opdracht {
+            voer_uit(&app, &opdracht);
+        }
+        Ok(wijzig(&app, |_| {}))
     })
     .await
 }
@@ -2849,12 +3025,50 @@ fn wijzig_gesprek(
     verschuift: bool,
     wijziging: impl FnOnce(&mut Gesprek) -> Result<usize, Foutmelding>,
 ) -> Result<(), Foutmelding> {
-    let aantal = wijziging(&mut v.gesprek)?;
+    wijzig_gesprek_in(v, verschuift, |g| wijziging(g).map(|n| (n, None)))
+}
+
+/// Een wijziging aan de sprekers (een naam, samenvoegen, een beurt aan een andere spreker), die
+/// met "Ongedaan maken" terug kan: de stand van ervoor blijft bewaard tot de volgende wijziging.
+fn wijzig_sprekers(
+    v: &mut Verslag,
+    wijziging: impl FnOnce(&mut Gesprek) -> Result<(usize, Sprekerstap), Foutmelding>,
+) -> Result<(), Foutmelding> {
+    wijzig_gesprek_in(v, false, |g| wijziging(g).map(|(n, stap)| (n, Some(stap))))
+}
+
+/// Zie [`wijzig_gesprek`] en [`wijzig_sprekers`]. Verschuiven de beurten (andere tijden, kant of
+/// spreker), dan telt dat als `verschuift`, ook als de aanroeper het niet wist (een naam die twee
+/// sprekers samenvoegt). De notulen gaan mee ([`mondig_core::notulen::BewaardeNotulen::volg`]):
+/// een nieuwe naam staat dan ook bij "Wie", en samengevoegde beurten maken ze geen vorige versie.
+fn wijzig_gesprek_in(
+    v: &mut Verslag,
+    verschuift: bool,
+    wijziging: impl FnOnce(&mut Gesprek) -> Result<(usize, Option<Sprekerstap>), Foutmelding>,
+) -> Result<(), Foutmelding> {
+    let oud = v.gesprek.clone();
+    let (aantal, stap) = wijziging(&mut v.gesprek)?;
+    if aantal == 0 {
+        return Ok(());
+    }
+    let verschuift = verschuift
+        || mondig_core::notulen::kenmerk(&oud) != mondig_core::notulen::kenmerk(&v.gesprek);
+    let notulen = v.notulen.clone();
+    if let Some(OpgeslagenNotulen::Leesbaar(n)) = &mut v.notulen {
+        n.volg(&oud, &v.gesprek);
+    }
+    if let Some(mut info) = stap {
+        info.volgnummer = STAPNUMMER.fetch_add(1, Ordering::Relaxed);
+        v.stap_terug = Some(Box::new(StapTerug {
+            gesprek: oud,
+            notulen,
+            veranderd: v.veranderd.clone(),
+            info,
+        }));
+    }
     v.na_gesprekswijziging(aantal, verschuift);
     // De bronnen van de notulen kloppen misschien niet meer met de nieuwe tekst of namen.
-    if aantal > 0 {
-        v.hercontroleer_notulen();
-    }
+    v.hercontroleer_notulen();
     Ok(())
 }
 
@@ -2894,13 +3108,26 @@ pub(crate) async fn vergadering_opslaan(
     .await
 }
 
+/// Onthoudt de standaardnamen van de sprekers in de taal van de app ("You", "Others", "Speaker 1"),
+/// zodat Kopiëren en Opslaan ze gebruiken. De interface roept dit aan bij het starten en als de taal
+/// wisselt. De namen zijn alleen voor wat de gebruiker leest of bewaart; het verslag zelf houdt
+/// zijn Nederlandse namen.
+#[tauri::command]
+pub(crate) fn vergadering_zet_labels(app: AppHandle, labels: Sprekerlabels) {
+    app.state::<crate::bestanden::BestandenStaat>()
+        .zet_labels(labels.clone());
+    *slot(&app.state::<VergaderingStaat>().labels) = labels;
+}
+
 /// Zet het verslag als platte tekst op het klembord, buiten de klembordgeschiedenis.
 #[tauri::command]
 pub(crate) async fn vergadering_kopieer(app: AppHandle) -> Result<(), Foutmelding> {
     blokkerend(move || {
+        let labels = app.state::<VergaderingStaat>().sprekerlabels();
         let tekst = match &slot(&app.state::<VergaderingStaat>().binnen).fase {
             Fase::Verslag(v) => {
                 let verslag = v.gesprek.als_tekst_met(
+                    &labels,
                     |tekst| v.persoon.voor_uitvoer(tekst),
                     |naam| v.persoon.voor_naam(naam),
                 );
@@ -3639,15 +3866,79 @@ Welkom."
         let uit = tekst(&staat);
         assert!(uit.contains("[GEGEVEN]: Mijn mail is [E-MAIL]"), "{uit}");
         assert!(!uit.contains("Wethouder"), "{uit}");
+        // Het scherm toont de naam net zo: `spreker_getoond` is wat de export geeft, `spreker` blijft
+        // de echte naam voor Naam geven.
+        let json = serde_json::to_value(slot(&staat.binnen).stand()).unwrap();
+        let beurt = &json["toestand"]["beurten"][1];
+        assert_eq!(beurt["sprekerGetoond"], "[GEGEVEN]");
+        assert_eq!(beurt["spreker"], "Wethouder");
+        // Een standaardnaam blijft zoals hij is.
+        assert_eq!(json["toestand"]["beurten"][0]["sprekerGetoond"], "Jij");
+        // De kop toont de naam van het verslag net zo als de bestandsnaam en de export.
+        if let Fase::Verslag(v) = &mut slot(&staat.binnen).fase {
+            v.naam = Some("Overleg Jan Jansen".to_string());
+            v.persoon.markeer("Jan Jansen").unwrap();
+        }
+        let json = serde_json::to_value(slot(&staat.binnen).stand()).unwrap();
+        assert_eq!(json["toestand"]["naam"], "Overleg Jan Jansen");
+        assert_eq!(json["toestand"]["naamGetoond"], "Overleg [GEGEVEN]");
+        assert!(
+            staat
+                .document(TaakId(3))
+                .unwrap()
+                .titel
+                .contains("[GEGEVEN]")
+        );
         if let Fase::Verslag(v) = &slot(&staat.binnen).fase {
-            let gekopieerd = v
-                .gesprek
-                .als_tekst_met(|t| v.persoon.voor_uitvoer(t), |n| v.persoon.voor_naam(n));
+            let gekopieerd = v.gesprek.als_tekst_met(
+                &Sprekerlabels::default(),
+                |t| v.persoon.voor_uitvoer(t),
+                |n| v.persoon.voor_naam(n),
+            );
             assert!(
                 gekopieerd.contains("[GEGEVEN]: Mijn mail is [E-MAIL]"),
                 "{gekopieerd}"
             );
             assert!(!gekopieerd.contains("Wethouder"), "{gekopieerd}");
+        }
+    }
+
+    #[test]
+    fn kopie_en_export_gebruiken_de_sprekerlabels_die_de_interface_doorgaf() {
+        use mondig_core::bewaren::{Formaat, maak};
+        // Beurt 0 is "Jij", beurt 1 heeft een eigen naam ("Wethouder").
+        let g = gesprek(Vergadersoort::Online);
+        let staat = VergaderingStaat::default();
+        slot(&staat.binnen).fase = Fase::Verslag(Box::new(Verslag {
+            model: "Parakeet".to_string(),
+            luistert: 0,
+            ..Verslag::leeg(TaakId(3), PathBuf::from("vergadering-1"), g)
+        }));
+        let txt = |staat: &VergaderingStaat| {
+            let document = staat.document(TaakId(3)).unwrap();
+            String::from_utf8(maak(&document, Formaat::Txt, true).unwrap()).unwrap()
+        };
+        // Zolang de interface niets doorgaf, is het Nederlands.
+        assert!(txt(&staat).contains("Jij"), "{}", txt(&staat));
+        *slot(&staat.labels) = Sprekerlabels {
+            jij: "You".into(),
+            anderen: "Others".into(),
+            sprekers: (1..=8).map(|n| format!("Speaker {n}")).collect(),
+        };
+        // Het document (alle formaten) gebruikt de namen van de app; een eigen naam blijft staan.
+        let uit = txt(&staat);
+        assert!(uit.contains("You") && uit.contains("Wethouder"), "{uit}");
+        assert!(!uit.contains("Jij") && !uit.contains("Anderen"), "{uit}");
+        let document = staat.document(TaakId(3)).unwrap();
+        let sprekers: Vec<_> = document
+            .regels
+            .iter()
+            .map(|r| r.spreker.as_deref().unwrap_or(""))
+            .collect();
+        assert_eq!(sprekers, vec!["You", "Wethouder"]);
+        // Het verslag zelf houdt zijn Nederlandse namen.
+        if let Fase::Verslag(v) = &slot(&staat.binnen).fase {
+            assert_eq!(v.gesprek.beurten[0].spreker(), "Jij");
         }
     }
 
@@ -3795,7 +4086,7 @@ Welkom."
         let Fase::Verslag(v) = &mut binnen.fase else {
             return;
         };
-        v.gesprek.geef_naam(0, "Zaal", Naambereik::Kant).unwrap();
+        v.gesprek.geef_naam(0, "Zaal").unwrap();
         let doc = Document::van_gesprek(&v.gesprek, &v.model, bewaren::lokaal_moment(0));
         assert_eq!(doc.regels[0].spreker.as_deref(), Some("Zaal"));
     }
@@ -4461,10 +4752,7 @@ Welkom."
         })
         .unwrap();
         // Een naam voor een spreker.
-        wijzig_nu(&mut binnen, |v| {
-            v.gesprek.geef_naam(0, "Zaal", Naambereik::Kant).map(|_| ())
-        })
-        .unwrap();
+        wijzig_nu(&mut binnen, |v| v.gesprek.geef_naam(0, "Zaal").map(|_| ())).unwrap();
         // Een markering en Vervangen.
         wijzig_nu(&mut binnen, |v| {
             v.persoon.zet_vervangen(true);
@@ -4695,9 +4983,7 @@ Welkom."
         assert!(binnen.bij_uitslag(taak, Gespreksuitslag::Klaar(gesprek(Vergadersoort::Online))));
         wijzig_nu(&mut binnen, |v| {
             v.gesprek.zet_tekst(0, TEKST).map(|_| ())?;
-            v.gesprek
-                .geef_naam(0, "Zaal", Naambereik::Kant)
-                .map(|_| ())?;
+            v.gesprek.geef_naam(0, "Zaal").map(|_| ())?;
             v.persoon.zet_vervangen(true);
             v.persoon.markeer("Jan de Vries").map_err(markeerfout)?;
             v.persoon.haal_weg("wethouder");
@@ -5552,10 +5838,11 @@ Welkom."
     }
 
     #[test]
-    fn na_een_latere_wijziging_vervalt_de_vorige_versie_en_gaat_niets_stil_verloren() {
+    fn de_vorige_versie_blijft_na_elke_wijziging_en_terugzetten_zet_alles_terug() {
         let basis = tempfile::tempdir().unwrap();
         let map = schrijf_opname(basis.path(), "vergadering-1", 1_000, "online", true);
         let mut binnen = open_voor_opnieuw(&map);
+        let oud = open_verslag_van(&binnen).gesprek.clone();
         binnen.begin_opnieuw(opnieuw(TaakId(30)));
         assert!(binnen.bij_uitslag(TaakId(30), Gespreksuitslag::Klaar(nieuw_gesprek())));
         // Een markering en de naam van het verslag laten de vorige versie en de vlaggen staan.
@@ -5568,7 +5855,8 @@ Welkom."
         let t = json(&binnen.stand())["toestand"].clone();
         assert_eq!(t["vorigeVersie"], true);
         assert_eq!(t["beurten"][1]["veranderd"], true);
-        // Een verbeterde tekst: de vorige versie vervalt, de vlaggen blijven (niets schuift).
+        // Een verbeterde tekst doet hetzelfde: de vorige versie en de melding blijven, de
+        // vlaggen blijven (niets schuift).
         wijzig_nu(&mut binnen, |v| {
             wijzig_gesprek(v, false, |g| {
                 g.zet_tekst(1, "Dag iedereen.").map(usize::from)
@@ -5576,26 +5864,280 @@ Welkom."
         })
         .unwrap();
         let t = json(&binnen.stand())["toestand"].clone();
-        assert_eq!(t["vorigeVersie"], false);
-        assert_eq!(t["naOpnieuw"], serde_json::Value::Null);
+        assert_eq!(t["vorigeVersie"], true);
+        assert_eq!(t["naOpnieuw"]["rol"], "extra_nauwkeurig");
         assert_eq!(t["beurten"][1]["veranderd"], true);
-        assert!(
-            binnen.zet_vorige_terug().is_err(),
-            "de verbetering gaat niet stil verloren"
-        );
+        // Een wijziging die beurten laat schuiven, haalt de vlaggen weg; de vorige versie blijft.
+        wijzig_nu(&mut binnen, |v| {
+            wijzig_gesprek(v, true, |g| g.geef_naam(1, "Piet").map(|n| n.veranderd))
+        })
+        .unwrap();
+        let t = json(&binnen.stand())["toestand"].clone();
+        assert_eq!(t["beurten"][1]["veranderd"], false);
+        assert_eq!(t["vorigeVersie"], true);
+        // Ook een naam via de sprekerstap en haar "Ongedaan maken" laten de vorige versie staan.
+        wijzig_nu(&mut binnen, |v| wijzig_sprekers(v, |g| noem(g, 1, "Noor"))).unwrap();
+        assert_eq!(json(&binnen.stand())["toestand"]["vorigeVersie"], true);
+        binnen.zet_stap_terug().unwrap();
+        assert_eq!(json(&binnen.stand())["toestand"]["vorigeVersie"], true);
+        // Terugzetten zet het gesprek terug zoals het voor het opnieuw uitschrijven was, dus
+        // zonder de verbetering en de naam van sindsdien, en de markering blijft.
+        binnen.zet_vorige_terug().unwrap();
+        let v = open_verslag_van(&binnen);
+        assert!(v.gesprek == oud);
+        assert!(v.persoon.eigen().contains(&"allemaal".to_string()));
+        assert_eq!(json(&binnen.stand())["toestand"]["vorigeVersie"], false);
+        assert!(binnen.zet_vorige_terug().is_err());
+    }
+
+    #[test]
+    fn opnieuw_uitschrijven_vervangt_de_vorige_versie_door_de_nieuwste() {
+        let basis = tempfile::tempdir().unwrap();
+        let map = schrijf_opname(basis.path(), "vergadering-1", 1_000, "online", true);
+        let mut binnen = open_voor_opnieuw(&map);
+        binnen.begin_opnieuw(opnieuw(TaakId(30)));
+        assert!(binnen.bij_uitslag(TaakId(30), Gespreksuitslag::Klaar(nieuw_gesprek())));
+        wijzig_nu(&mut binnen, |v| {
+            wijzig_gesprek(v, false, |g| {
+                g.zet_tekst(1, "Dag iedereen.").map(usize::from)
+            })
+        })
+        .unwrap();
+        // Een tweede keer opnieuw uitschrijven: de vorige versie is nu die met de verbetering.
+        binnen.begin_opnieuw(opnieuw(TaakId(32)));
+        assert!(binnen.bij_uitslag(TaakId(32), Gespreksuitslag::Klaar(nieuw_gesprek())));
+        binnen.zet_vorige_terug().unwrap();
         assert_eq!(
             open_verslag_van(&binnen).gesprek.beurten[1].tekst,
             "Dag iedereen."
         );
-        // Een wijziging die beurten laat schuiven, haalt de vlaggen weg.
+    }
+
+    /// Een online gesprek waarin het model Noor over twee sprekers verdeelde: Jij, Spreker 1,
+    /// Spreker 2, direct na elkaar.
+    fn gesprek_met_twee_lukes() -> Gesprek {
+        let anderen = |nummer: u8, start_ms: u64, tekst: &str| Beurt {
+            kant: Kant::Anderen,
+            sprekernummer: Some(nummer),
+            start_ms,
+            eind_ms: start_ms + 900,
+            tekst: tekst.to_string(),
+            naam: None,
+            verbeterd: false,
+        };
+        Gesprek {
+            beurten: vec![
+                Beurt {
+                    kant: Kant::Jij,
+                    sprekernummer: None,
+                    ..anderen(1, 0, "Hallo allemaal, fijn dat jullie er zijn.")
+                },
+                anderen(1, 2000, "Goedemiddag, ik pak de bewonersbrief op."),
+                anderen(2, 3000, "En ik bel morgen de wethouder."),
+            ],
+            ..gesprek(Vergadersoort::Online)
+        }
+    }
+
+    fn open_met_twee_lukes(map: &Path) -> Binnen {
+        let taak = TaakId(7);
+        let mut binnen = uitschrijven_in(taak, map);
+        assert!(binnen.bij_uitslag(taak, Gespreksuitslag::Klaar(gesprek_met_twee_lukes())));
+        binnen
+    }
+
+    fn sprekers_van(binnen: &Binnen) -> Vec<String> {
+        open_verslag_van(binnen)
+            .gesprek
+            .beurten
+            .iter()
+            .map(Beurt::spreker)
+            .collect()
+    }
+
+    #[test]
+    fn een_naam_samenvoegen_en_een_andere_spreker_kunnen_een_stap_terug() {
+        let basis = tempfile::tempdir().unwrap();
+        let map = schrijf_opname(basis.path(), "vergadering-1", 1_000, "online", true);
+        let mut binnen = open_met_twee_lukes(&map);
+        assert_eq!(
+            json(&binnen.stand())["toestand"]["sprekerstap"],
+            serde_json::Value::Null
+        );
+        // Spreker 1 wordt Noor: terug te draaien, zonder samengaan.
+        wijzig_nu(&mut binnen, |v| wijzig_sprekers(v, |g| noem(g, 1, "Noor"))).unwrap();
+        let stap = json(&binnen.stand())["toestand"]["sprekerstap"].clone();
+        assert_eq!(stap["kant"], "anderen");
+        assert_eq!(stap["samengevoegd"], serde_json::json!([]));
+        // Spreker 2 ook: ze gaan samen, en de stand zegt welke sprekers.
+        wijzig_nu(&mut binnen, |v| wijzig_sprekers(v, |g| noem(g, 2, "Noor"))).unwrap();
+        let stap = json(&binnen.stand())["toestand"]["sprekerstap"].clone();
+        assert_eq!(stap["samengevoegd"], serde_json::json!([1, 2]));
+        assert_eq!(sprekers_van(&binnen), vec!["Jij", "Noor"]);
+        // Ongedaan maken: weer twee sprekers, ook in verslag.json. Eén stap is genoeg.
+        let opdracht = binnen.zet_stap_terug().unwrap().expect("schrijven");
+        let uitslag = schrijf_opdracht(&Mutex::new(HashMap::new()), &opdracht);
+        binnen.na_schrijven(&opdracht, uitslag);
+        assert_eq!(sprekers_van(&binnen), vec!["Jij", "Noor", "Spreker 2"]);
+        assert!(verslagbestand::lees(&map).unwrap().gesprek == open_verslag_van(&binnen).gesprek);
+        assert_eq!(
+            json(&binnen.stand())["toestand"]["sprekerstap"],
+            serde_json::Value::Null
+        );
+        assert!(binnen.zet_stap_terug().is_err());
+        // Een beurt aan een andere spreker geven kan ook terug.
         wijzig_nu(&mut binnen, |v| {
-            wijzig_gesprek(v, true, |g| g.geef_naam(1, "Piet", Naambereik::Beurt))
+            wijzig_sprekers(v, |g| {
+                let n = g.geef_aan_spreker(2, 1)?;
+                Ok((n, zonder_samengaan(g)))
+            })
         })
         .unwrap();
+        assert_eq!(sprekers_van(&binnen), vec!["Jij", "Noor"]);
+        binnen.zet_stap_terug().unwrap();
+        assert_eq!(sprekers_van(&binnen), vec!["Jij", "Noor", "Spreker 2"]);
+    }
+
+    #[test]
+    fn in_de_ruimte_zonder_sprekers_kan_een_alinea_een_spreker_krijgen_en_een_stap_terug() {
+        let basis = tempfile::tempdir().unwrap();
+        let map = schrijf_opname(basis.path(), "vergadering-1", 1_000, "ruimte", true);
+        let taak = TaakId(7);
+        let mut binnen = uitschrijven_in(taak, &map);
+        let alinea = |start_ms: u64, tekst: &str| Beurt {
+            kant: Kant::Jij,
+            sprekernummer: None,
+            start_ms,
+            eind_ms: start_ms + 900,
+            tekst: tekst.to_string(),
+            naam: None,
+            verbeterd: false,
+        };
+        let gesprek = Gesprek {
+            beurten: vec![
+                alinea(0, "Goedemorgen allemaal."),
+                alinea(20_000, "Ik pak de bewonersbrief op."),
+            ],
+            ..gesprek(Vergadersoort::Ruimte)
+        };
+        assert!(binnen.bij_uitslag(taak, Gespreksuitslag::Klaar(gesprek)));
+        let labels = |binnen: &Binnen| -> Vec<Option<String>> {
+            let g = &open_verslag_van(binnen).gesprek;
+            g.beurten.iter().map(|b| g.label(b)).collect()
+        };
+        assert!(!open_verslag_van(&binnen).gesprek.met_sprekers());
+        assert_eq!(labels(&binnen), vec![None, None]);
+        // Alinea 2 aan een nieuwe spreker geven: alinea 1 blijft van niemand ("Jij" zou onwaar zijn).
+        wijzig_nu(&mut binnen, |v| {
+            wijzig_sprekers(v, |g| {
+                g.geef_aan_nieuwe_spreker(1)?;
+                Ok((1, zonder_samengaan(g)))
+            })
+        })
+        .unwrap();
+        assert_eq!(labels(&binnen), vec![None, Some("Spreker 1".to_string())]);
+        assert!(open_verslag_van(&binnen).gesprek.met_sprekers());
+        // Voor het scherm: geen naam bij de alinea zonder spreker.
+        let stand = json(&binnen.stand());
         assert_eq!(
-            json(&binnen.stand())["toestand"]["beurten"][1]["veranderd"],
-            false
+            stand["toestand"]["beurten"][0]["spreker"],
+            serde_json::Value::Null
         );
+        assert_eq!(stand["toestand"]["beurten"][1]["spreker"], "Spreker 1");
+        // Een naam voor die spreker kan ook terug, en daarna de eerste stap niet meer.
+        wijzig_nu(&mut binnen, |v| wijzig_sprekers(v, |g| noem(g, 1, "Bram"))).unwrap();
+        assert_eq!(labels(&binnen), vec![None, Some("Bram".to_string())]);
+        binnen.zet_stap_terug().unwrap();
+        assert_eq!(labels(&binnen), vec![None, Some("Spreker 1".to_string())]);
+        assert!(binnen.zet_stap_terug().is_err());
+    }
+
+    #[test]
+    fn een_andere_wijziging_laat_de_stap_terug_vervallen_niets_doen_niet() {
+        let basis = tempfile::tempdir().unwrap();
+        let map = schrijf_opname(basis.path(), "vergadering-1", 1_000, "online", true);
+        let mut binnen = open_met_twee_lukes(&map);
+        wijzig_nu(&mut binnen, |v| wijzig_sprekers(v, |g| noem(g, 0, "Bram"))).unwrap();
+        // Een wijziging die niets veranderde (dezelfde tekst, of een mislukte), laat hem staan.
+        wijzig_nu(&mut binnen, |v| {
+            wijzig_gesprek(v, false, |g| {
+                g.zet_tekst(1, "Goedemiddag, ik pak de bewonersbrief op.")
+                    .map(usize::from)
+            })
+        })
+        .unwrap();
+        assert!(wijzig_nu(&mut binnen, |v| wijzig_sprekers(v, |g| noem(g, 99, "Piet"))).is_err());
+        let nummer = json(&binnen.stand())["toestand"]["sprekerstap"]["volgnummer"].clone();
+        // Dezelfde naam nog eens (Opslaan zonder wijziging): geen nieuwe stap, de oude blijft.
+        wijzig_nu(&mut binnen, |v| wijzig_sprekers(v, |g| noem(g, 0, "Bram"))).unwrap();
+        let stap = json(&binnen.stand())["toestand"]["sprekerstap"].clone();
+        assert_eq!(stap["volgnummer"], nummer);
+        assert_eq!(stap["naam"], "Bram");
+        assert!(open_verslag_van(&binnen).stap_terug.is_some());
+        // Een verbeterde tekst wel: terugzetten zou die anders stil weggooien.
+        wijzig_nu(&mut binnen, |v| {
+            wijzig_gesprek(v, false, |g| {
+                g.zet_tekst(1, "Goedemiddag.").map(usize::from)
+            })
+        })
+        .unwrap();
+        assert!(open_verslag_van(&binnen).stap_terug.is_none());
+        assert!(binnen.zet_stap_terug().is_err());
+        assert_eq!(sprekers_van(&binnen)[0], "Bram");
+    }
+
+    #[test]
+    fn notulen_volgen_een_naam_en_samenvoegen_en_gaan_mee_terug() {
+        use mondig_core::notulen::{self, Controle, Herkomst, Invoer, Notulen, Taal};
+
+        let basis = tempfile::tempdir().unwrap();
+        let map = schrijf_opname(basis.path(), "vergadering-1", 1_000, "online", true);
+        let mut binnen = open_met_twee_lukes(&map);
+        let gesprek = open_verslag_van(&binnen).gesprek.clone();
+        let ruw: Notulen = serde_json::from_value(serde_json::json!({
+            "samenvatting": "Kort overleg.",
+            "besluiten": [],
+            "actiepunten": [
+                { "wat": "Wethouder bellen", "wie": "Spreker 2", "wanneer": "morgen",
+                  "bron": { "beurt": 3, "citaat": "En ik bel morgen de wethouder" } },
+            ],
+        }))
+        .unwrap();
+        let opgeslagen = OpgeslagenNotulen::Leesbaar(notulen::controleer_notulen(
+            ruw,
+            &Invoer::van(&gesprek, &Markeringen::default()),
+            &gesprek,
+            Herkomst {
+                aanbieder: "mistral".into(),
+                model: "mistral-small-latest".into(),
+                moment_ms: 1,
+                taal: Taal::Nl,
+            },
+        ));
+        wijzig_nu(&mut binnen, |v| {
+            v.notulen = Some(opgeslagen.clone());
+            Ok(())
+        })
+        .unwrap();
+        wijzig_nu(&mut binnen, |v| wijzig_sprekers(v, |g| noem(g, 1, "Noor"))).unwrap();
+        wijzig_nu(&mut binnen, |v| wijzig_sprekers(v, |g| noem(g, 2, "Noor"))).unwrap();
+        // "Wie: Spreker 2" wordt "Wie: Noor", de bron wijst naar de samengevoegde beurt en de
+        // notulen horen niet bij een vorige versie.
+        let t = json(&binnen.stand())["toestand"]["notulen"]["info"].clone();
+        assert_eq!(t["vorigeVersie"], false);
+        assert_eq!(t["actiepunten"][0]["wie"], "Noor");
+        assert_eq!(t["actiepunten"][0]["wieNietTeruggevonden"], false);
+        assert_eq!(t["actiepunten"][0]["bron"]["beurt"], 1);
+        let bewaard = verslagbestand::lees(&map).unwrap();
+        let n = bewaard.notulen.expect("notulen");
+        let n = n.leesbaar().unwrap();
+        assert_eq!(n.actiepunten[0].punt.wie, "Noor");
+        assert_eq!(n.actiepunten[0].controle, Controle::Gevonden { beurt: 2 });
+        // Ongedaan maken zet ook de notulen terug.
+        binnen.zet_stap_terug().unwrap();
+        let t = json(&binnen.stand())["toestand"]["notulen"]["info"].clone();
+        assert_eq!(t["actiepunten"][0]["wie"], "Spreker 2");
+        assert_eq!(t["vorigeVersie"], false);
     }
 
     #[test]

@@ -20,7 +20,7 @@ pub use jiff::Zoned;
 use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 
-use crate::gesprek::{Gesprek, Vergadersoort};
+use crate::gesprek::{Gesprek, Sprekerlabels, Vergadersoort};
 
 /// Hoe de verwerking in de gegevens heet (het soevereiniteitslabel van de lokale engine).
 pub const LOKAAL_VERWERKT: &str = "Lokaal verwerkt";
@@ -388,8 +388,19 @@ impl Document {
     /// gaan samengevoegd in `melding`.
     #[must_use]
     pub fn van_gesprek(gesprek: &Gesprek, model: &str, moment: Zoned) -> Self {
+        Self::van_gesprek_met(gesprek, model, moment, &Sprekerlabels::default())
+    }
+
+    /// Zoals [`Document::van_gesprek`], maar met de standaardnamen van de sprekers in de taal van
+    /// de app ("You", "Others", "Speaker 1"). Een naam die de gebruiker gaf, blijft staan.
+    #[must_use]
+    pub fn van_gesprek_met(
+        gesprek: &Gesprek,
+        model: &str,
+        moment: Zoned,
+        labels: &Sprekerlabels,
+    ) -> Self {
         let melding = (!gesprek.meldingen.is_empty()).then(|| gesprek.meldingen.join(" "));
-        let met_sprekers = gesprek.met_sprekers();
         Self {
             titel: format!("{} {}", gesprek.soort.titelwoord(), datum_voluit(&moment)),
             bron: match gesprek.soort {
@@ -409,7 +420,7 @@ impl Document {
                     start_ms: b.start_ms,
                     eind_ms: b.eind_ms,
                     tekst: b.tekst.clone(),
-                    spreker: met_sprekers.then(|| b.spreker()),
+                    spreker: gesprek.verslaglabel_met(b, labels),
                 })
                 .collect(),
         }
@@ -559,6 +570,39 @@ pub(crate) mod tests {
             ..document()
         };
         assert_eq!(rommel.tekstregels()[0].spreker.as_deref(), Some("Jij"));
+    }
+
+    #[test]
+    fn een_alinea_in_de_ruimte_die_niemand_aanwees_heeft_in_de_export_geen_spreker() {
+        use crate::gesprek::{Beurt, Gesprek, Kant, Spoorstand, Vergadersoort};
+        use std::time::Duration;
+
+        let alinea = |start_ms: u64, nummer: Option<u8>| Beurt {
+            kant: Kant::Jij,
+            sprekernummer: nummer,
+            start_ms,
+            eind_ms: start_ms + 900,
+            tekst: "Tekst.".to_string(),
+            naam: None,
+            verbeterd: false,
+        };
+        let gesprek = Gesprek {
+            beurten: vec![alinea(0, None), alinea(9_000, Some(1))],
+            duur: Duration::from_secs(10),
+            meldingen: Vec::new(),
+            jij: Spoorstand::Opgenomen,
+            anderen: Spoorstand::Ontbrak,
+            weggelaten: 0,
+            soort: Vergadersoort::Ruimte,
+        };
+        let regels = Document::van_gesprek(&gesprek, "m", moment()).regels;
+        assert_eq!(
+            regels
+                .iter()
+                .map(|r| r.spreker.as_deref())
+                .collect::<Vec<_>>(),
+            vec![None, Some("Spreker 1")]
+        );
     }
 
     #[test]
