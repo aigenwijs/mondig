@@ -30,6 +30,10 @@ tauri-plugin-store = "2.5.0"
 # vervangen (persist en persist_noclobber).
 tempfile = "3.27.0"
 
+# Slepen vanuit Dictafoon, Foto's en Mail op de Mac (ADR 0030): de haak voor bestandsbeloftes.
+[target.'cfg(target_os = "macos")'.dependencies]
+mondig-mac-slepen = { path = "../../crates/mondig-mac-slepen" }
+
 # Plakken op Windows (sprint 3c): klembord met delayed rendering, Ctrl+V via SendInput en
 # de controle op beheerrechten. Sprint 3d: de pil zonder activering, het geluidje
 # (PlaySoundW) en de privacy-schakelaars van de microfoon. Dezelfde versie die cpal en tao al gebruiken.

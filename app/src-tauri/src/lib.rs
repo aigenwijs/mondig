@@ -327,6 +327,10 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(hoofdvenster) = app.get_webview_window("main") {
         venster::pas_in_werkgebied(app, &hoofdvenster);
     }
+    // Op de Mac: bestanden aannemen die als belofte gesleept worden, uit Dictafoon, Foto's en
+    // Mail (ADR 0030).
+    #[cfg(target_os = "macos")]
+    bestanden::plaats_mac_haak(app);
     // Het venster is bij het aanmaken onzichtbaar (`visible: false` in tauri.conf.json), dus
     // een verborgen start flitst niet: we tonen het alleen als dat nodig is.
     let via_autostart = std::env::args().any(|arg| arg == AUTOSTART_ARG);
@@ -392,6 +396,7 @@ pub fn run() -> tauri::Result<()> {
             dictaat::dictaat_annuleer,
             sneltoets::sneltoets_status,
             sneltoets::sneltoets_controleer,
+            sneltoets::sneltoets_info,
             sneltoets::sneltoets_vang_start,
             sneltoets::sneltoets_vang_stop,
             sneltoets::sneltoets_wijzig,

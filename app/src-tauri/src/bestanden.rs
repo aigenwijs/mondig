@@ -9,6 +9,11 @@
 //!   schermlezer);
 //! - event `bestanden-slepen`: `true` zolang er bestanden boven het venster hangen.
 //!
+//! Levert een drop van een andere app niets op (geen pad en geen bestandsbelofte, alleen te
+//! zien met de Mac-haak), dan staat dat in de stand (`nietGepakt`) en zegt het scherm in gewone
+//! taal wat wel kan. Een lege drop van binnen Mondig blijft stil. Op de Mac haalt een haak in
+//! de webview bestandsbeloftes op, zoals van Dictafoon, Foto's en Mail (ADR 0030).
+//!
 //! Een fout bij toevoegen (geen model, gestopte wachtrij) staat in de stand, zodat een
 //! scherm dat pas na het slepen opent hem nog ziet ([`bestanden_stand`]).
 //!
@@ -40,6 +45,7 @@ use mondig_core::download::{self, ModelStatus};
 use mondig_core::engine::protocol::Apparaat;
 use mondig_core::engine::supervisor::Instellingen;
 use mondig_core::gesprek::sprekernaam;
+use mondig_core::logboek::{self, Gebeurtenis as LogGebeurtenis, SleepbordType};
 use mondig_core::model::{Gebruik, Model};
 use mondig_core::persoonsgegevens::Markeringen;
 use mondig_core::proef;
@@ -191,6 +197,8 @@ pub(crate) struct BestandenStand {
     versie: u64,
     lijst: Vec<BestandInfo>,
     fout: Option<Foutmelding>,
+    /// De laatste drop leverde geen bestand op; het scherm zegt wat wel kan (ADR 0030).
+    niet_gepakt: bool,
 }
 
 /// Eén stuk tekst met tijdcodes, voor de interface.
@@ -239,6 +247,8 @@ struct Lijst {
     versie: u64,
     items: Vec<Item>,
     fout: Option<Foutmelding>,
+    /// Zie [`BestandenStand`]; gaat weg bij het volgende toevoegen.
+    niet_gepakt: bool,
 }
 
 impl Lijst {
@@ -247,6 +257,7 @@ impl Lijst {
             versie: self.versie,
             lijst: self.items.iter().map(BestandInfo::from).collect(),
             fout: self.fout.clone(),
+            niet_gepakt: self.niet_gepakt,
         }
     }
 
@@ -701,7 +712,10 @@ fn voeg_toe_met(
         let stand = if bewaakt.is_some() {
             slot(&staat.lijst).stand()
         } else {
-            wijzig(app, &staat.lijst, |lijst| lijst.fout = Some(fout.clone()))
+            wijzig(app, &staat.lijst, |lijst| {
+                lijst.fout = Some(fout.clone());
+                lijst.niet_gepakt = false;
+            })
         };
         return (stand, Some(fout), false);
     }
@@ -782,7 +796,10 @@ fn voeg_toe_met(
     let stand = if bewaakt.is_some() {
         slot(&staat.lijst).stand()
     } else {
-        wijzig(app, &staat.lijst, |lijst| lijst.fout.clone_from(&fout))
+        wijzig(app, &staat.lijst, |lijst| {
+            lijst.fout.clone_from(&fout);
+            lijst.niet_gepakt = false;
+        })
     };
     (stand, fout, behandeld)
 }
@@ -1180,8 +1197,8 @@ impl BestandenStaat {
 }
 
 /// Slepen boven het hoofdvenster. Bij loslaten gaan de bestanden in de wachtrij en opent het
-/// scherm Bestanden, ook als de gebruiker op een ander scherm was. Een fout bij toevoegen
-/// staat in de stand, die het scherm bij het openen ophaalt.
+/// scherm Bestanden, ook als de gebruiker op een ander scherm was. Een fout bij toevoegen, of
+/// een drop zonder bestand, staat in de stand, die het scherm bij het openen ophaalt.
 pub(crate) fn bij_slepen(app: &AppHandle, event: &DragDropEvent) {
     match event {
         DragDropEvent::Enter { paths, .. } if !paths.is_empty() => {
@@ -1192,18 +1209,147 @@ pub(crate) fn bij_slepen(app: &AppHandle, event: &DragDropEvent) {
         }
         DragDropEvent::Drop { paths, .. } => {
             let _ = app.emit("bestanden-slepen", false);
+            // Wat de Mac-haak over deze drop meldde; die meldt het eerder dan Tauri.
+            let VolgendeDrop {
+                typen,
+                beloftes,
+                van_buiten,
+            } = slot(&VOLGENDE_DROP).take().unwrap_or_default();
             if paths.is_empty() {
-                return;
+                // Alleen typenamen, voor de tester: wat stuurt een app als Dictafoon mee?
+                logboek::log(&LogGebeurtenis::SlepenZonderPaden {
+                    beloftes: u64::try_from(beloftes).unwrap_or(u64::MAX),
+                    typen: SleepbordType::lijst(&typen),
+                });
             }
-            let paden = paths.clone();
-            let app = app.clone();
-            // Niet op de thread van het venster: de koppen lezen kan even duren.
-            std::thread::spawn(move || {
-                voeg_toe(&app, paden);
-                let _ = app.emit("navigeer", "/bestanden");
-            });
+            match na_drop(paths, beloftes, van_buiten) {
+                NaDrop::Toevoegen => voeg_toe_gesleept(app, paths.clone()),
+                // De bestanden komen via de haak binnen (`bij_mac_melding`); of het is een
+                // lege drop van binnen Mondig of zonder haak, die stil blijft.
+                NaDrop::Overgenomen | NaDrop::Negeren => {}
+                NaDrop::NietGepakt => niet_gepakt(app),
+            }
         }
         _ => {}
+    }
+}
+
+/// Wat de Mac-haak meldde over de drop die Tauri nog moet doorgeven. Op andere platforms (en
+/// op de Mac zonder haak) blijft dit leeg.
+static VOLGENDE_DROP: Mutex<Option<VolgendeDrop>> = Mutex::new(None);
+
+/// Zie [`VOLGENDE_DROP`].
+#[derive(Default)]
+struct VolgendeDrop {
+    /// De typenamen op het sleepbord.
+    typen: Vec<String>,
+    /// Hoeveel beloftes de haak ophaalt.
+    beloftes: usize,
+    /// Kwam de drop van een andere app?
+    van_buiten: bool,
+}
+
+/// Wat er gebeurt als Tauri een drop doorgeeft.
+#[derive(Debug, PartialEq, Eq)]
+enum NaDrop {
+    /// De paden gaan in de wachtrij.
+    Toevoegen,
+    /// De Mac-haak haalt beloftes op en geeft ook de paden door; die van Tauri zouden dubbel zijn.
+    Overgenomen,
+    /// Iets van een andere app, maar niets te pakken: de melding in gewone taal.
+    NietGepakt,
+    /// Leeg, en niet aantoonbaar van buiten (tekst die binnen Mondig versleept wordt, of geen
+    /// haak): stil, zoals vroeger.
+    Negeren,
+}
+
+/// `van_buiten` komt alleen van de Mac-haak; zonder haak is het `false`.
+fn na_drop(paden: &[PathBuf], beloftes: usize, van_buiten: bool) -> NaDrop {
+    if beloftes > 0 {
+        NaDrop::Overgenomen
+    } else if !paden.is_empty() {
+        NaDrop::Toevoegen
+    } else if van_buiten {
+        NaDrop::NietGepakt
+    } else {
+        NaDrop::Negeren
+    }
+}
+
+/// Zet gesleepte bestanden in de wachtrij en opent het scherm Bestanden. Niet op de thread
+/// van het venster: de koppen lezen kan even duren.
+fn voeg_toe_gesleept(app: &AppHandle, paden: Vec<PathBuf>) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        voeg_toe(&app, paden);
+        let _ = app.emit("navigeer", "/bestanden");
+    });
+}
+
+/// Een drop die niets opleverde: de stand zegt het en het scherm Bestanden gaat open.
+fn niet_gepakt(app: &AppHandle) {
+    let staat = app.state::<BestandenStaat>();
+    wijzig(app, &staat.lijst, |lijst| lijst.niet_gepakt = true);
+    let _ = app.emit("navigeer", "/bestanden");
+}
+
+/// Een melding van de Mac-haak (ADR 0030).
+#[cfg(target_os = "macos")]
+fn bij_mac_melding(app: &AppHandle, melding: mondig_mac_slepen::Melding) {
+    use mondig_mac_slepen::Melding;
+    match melding {
+        Melding::BelofteBoven => {
+            let _ = app.emit("bestanden-slepen", true);
+        }
+        Melding::Losgelaten {
+            typen,
+            beloftes,
+            van_buiten,
+        } => {
+            *slot(&VOLGENDE_DROP) = Some(VolgendeDrop {
+                typen,
+                beloftes,
+                van_buiten,
+            });
+        }
+        Melding::Bestand(pad) => voeg_toe_gesleept(app, vec![pad]),
+        Melding::Mislukt => niet_gepakt(app),
+    }
+}
+
+/// Plaatst op de Mac de haak voor bestandsbeloftes op de webview van het hoofdvenster
+/// (ADR 0030). Lukt dat niet, dan staat de reden in het logboek en werkt slepen zoals
+/// zonder haak: paden uit de Finder wel, beloftes niet.
+#[cfg(target_os = "macos")]
+#[expect(
+    unsafe_code,
+    reason = "de haak krijgt de WKWebView als ruwe pointer van Tauri"
+)]
+pub(crate) fn plaats_mac_haak(app: &AppHandle) {
+    let niet = |reden: &'static str| logboek::log(&LogGebeurtenis::SleephaakNiet { reden });
+    let Some(venster) = app.get_webview_window("main") else {
+        niet("geen_venster");
+        return;
+    };
+    // De tijdelijke map voor beloftes, in de cache van de app. Bij het starten leeg: een
+    // opname blijft niet langer bewaard dan nodig (ADR 0008).
+    let Ok(map) = app.path().app_cache_dir().map(|map| map.join("gesleept")) else {
+        niet("geen_map");
+        return;
+    };
+    let _ = std::fs::remove_dir_all(&map);
+    let app = app.clone();
+    let gelukt = venster.with_webview(move |webview| {
+        let ontvanger = Box::new(move |melding| bij_mac_melding(&app, melding));
+        // SAFETY: `inner()` is de WKWebView van het hoofdvenster, die bestaat zolang de app
+        // draait (sluiten verbergt het venster). `with_webview` draait op de hoofdthread.
+        if let Err(fout) = unsafe { mondig_mac_slepen::installeer(webview.inner(), map, ontvanger) }
+        {
+            logboek::log(&LogGebeurtenis::SleephaakNiet { reden: fout.code() });
+        }
+    });
+    if gelukt.is_err() {
+        niet("geen_webview");
     }
 }
 
@@ -1314,6 +1460,31 @@ fn export_regels(klaar: &Klaar) -> Vec<Regel> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn een_lege_drop_van_buiten_geeft_de_melding() {
+        // Van een andere app, zonder pad en zonder belofte: melden.
+        assert_eq!(na_drop(&[], 0, true), NaDrop::NietGepakt);
+        // Leeg van binnen Mondig (versleepte tekst) of zonder haak (Windows, Linux): stil.
+        assert_eq!(na_drop(&[], 0, false), NaDrop::Negeren);
+        // Paden uit de Finder of de Verkenner: gewoon toevoegen.
+        let pad = [PathBuf::from("opname.m4a")];
+        assert_eq!(na_drop(&pad, 0, true), NaDrop::Toevoegen);
+        assert_eq!(na_drop(&pad, 0, false), NaDrop::Toevoegen);
+        // Beloftes: de haak geeft alles door, ook de paden die Tauri meestuurt.
+        assert_eq!(na_drop(&[], 2, true), NaDrop::Overgenomen);
+        assert_eq!(na_drop(&pad, 1, true), NaDrop::Overgenomen);
+    }
+
+    #[test]
+    fn een_lege_drop_staat_in_de_stand() {
+        let lijst = Lijst {
+            niet_gepakt: true,
+            ..Lijst::default()
+        };
+        assert!(lijst.stand().niet_gepakt);
+        assert!(!Lijst::default().stand().niet_gepakt);
+    }
     use mondig_core::aanbieder::Transcript;
     use mondig_core::engine::protocol::Segment;
     use mondig_core::filter::{self, Meting};

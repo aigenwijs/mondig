@@ -68,12 +68,59 @@ impl ModelNaam {
     }
 }
 
+/// De naam van een type op het sleepbord van de Mac, zoals `public.file-url` (ADR 0030). Alleen
+/// de naam, nooit de inhoud. Zo'n naam komt van een app, niet van de gebruiker, maar hij wordt
+/// toch teruggebracht tot het alfabet van het logboek: kleine letters, cijfers, punt, min en
+/// underscore (de rest wordt `_`), hooguit [`SleepbordType::LENGTE`] tekens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SleepbordType(String);
+
+impl SleepbordType {
+    /// Zo lang mag een naam in het logboek zijn.
+    pub const LENGTE: usize = 80;
+    /// Zoveel namen komen er hooguit in één regel.
+    pub const AANTAL: usize = 20;
+
+    /// De naam in het alfabet van het logboek; leeg wordt `leeg`.
+    #[must_use]
+    pub fn nieuw(naam: &str) -> Self {
+        let schoon: String = naam
+            .chars()
+            .take(Self::LENGTE)
+            .map(|c| {
+                let c = c.to_ascii_lowercase();
+                if c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '-' | '_') {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        Self(if schoon.is_empty() {
+            "leeg".to_string()
+        } else {
+            schoon
+        })
+    }
+
+    /// De eerste [`SleepbordType::AANTAL`] namen.
+    #[must_use]
+    pub fn lijst<S: AsRef<str>>(namen: &[S]) -> Vec<Self> {
+        namen
+            .iter()
+            .take(Self::AANTAL)
+            .map(|naam| Self::nieuw(naam.as_ref()))
+            .collect()
+    }
+}
+
 /// Een waarde in een logregel: een getal of een vaste code.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Waarde {
     Getal(u64),
     Code(&'static str),
     Model(ModelNaam),
+    Type(SleepbordType),
 }
 
 /// Waar een taak om draait, voor `TaakMislukt`. Zonder de naam of inhoud van de taak.
@@ -160,6 +207,21 @@ pub enum Gebeurtenis {
         detail: Option<&'static str>,
         /// Hoe lang het duurde, in milliseconden.
         duur_ms: u64,
+    },
+    /// Er is iets op het venster losgelaten zonder bestandspad (ADR 0030): hoeveel beloftes de
+    /// Mac-haak ophaalt en welke typen er op het sleepbord stonden, zodat een tester ziet wat
+    /// een app als Dictafoon meestuurt.
+    SlepenZonderPaden {
+        /// Het aantal bestandsbeloftes (0 als er niets op te halen viel).
+        beloftes: u64,
+        /// De typenamen, zonder inhoud.
+        typen: Vec<SleepbordType>,
+    },
+    /// De haak voor bestandsbeloftes op de Mac staat er niet (ADR 0030); slepen vanuit de
+    /// Finder werkt dan nog wel.
+    SleephaakNiet {
+        /// Een vaste code, bijvoorbeeld `andere_klasse`.
+        reden: &'static str,
     },
 }
 
@@ -248,6 +310,15 @@ impl Gebeurtenis {
                 .flatten()
                 .collect(),
             ),
+            Self::SlepenZonderPaden { beloftes, typen } => (
+                "slepen_zonder_paden",
+                std::iter::once(("beloftes", Waarde::Getal(*beloftes)))
+                    .chain(typen.iter().map(|t| ("type", Waarde::Type(t.clone()))))
+                    .collect(),
+            ),
+            Self::SleephaakNiet { reden } => {
+                ("sleephaak_niet", vec![("reden", Waarde::Code(reden))])
+            }
         }
     }
 
@@ -255,7 +326,9 @@ impl Gebeurtenis {
     #[must_use]
     pub fn niveau(&self) -> Niveau {
         match self {
-            Self::TaakMislukt { .. } | Self::VideokaartTerugval => Niveau::Fout,
+            Self::TaakMislukt { .. } | Self::VideokaartTerugval | Self::SleephaakNiet { .. } => {
+                Niveau::Fout
+            }
             Self::Snelheidstest { oordeel, .. } if *oordeel == "videokaart_faalde" => Niveau::Fout,
             _ => Niveau::Info,
         }
@@ -274,6 +347,7 @@ impl Gebeurtenis {
                 Waarde::Getal(n) => regel.push_str(&n.to_string()),
                 Waarde::Code(c) => regel.push_str(c),
                 Waarde::Model(m) => regel.push_str(&m.0),
+                Waarde::Type(t) => regel.push_str(&t.0),
             }
         }
         regel
@@ -442,7 +516,43 @@ mod tests {
                 detail: Some("getal_erbij"),
                 duur_ms: 420,
             },
+            Gebeurtenis::SlepenZonderPaden {
+                beloftes: 1,
+                typen: SleepbordType::lijst(&[
+                    "com.apple.NSFilePromiseItemMetaData",
+                    "Dit is wat iemand dicteerde!",
+                    "",
+                ]),
+            },
+            Gebeurtenis::SleephaakNiet {
+                reden: "andere_klasse",
+            },
         ]
+    }
+
+    #[test]
+    fn een_sleepbordtype_past_in_het_alfabet_van_het_logboek() {
+        assert_eq!(
+            Gebeurtenis::SlepenZonderPaden {
+                beloftes: 0,
+                typen: SleepbordType::lijst(&[
+                    "public.file-url",
+                    "NSFilenamesPboardType",
+                    "a b=c",
+                    ""
+                ]),
+            }
+            .tekst(),
+            concat!(
+                "slepen_zonder_paden beloftes=0 type=public.file-url ",
+                "type=nsfilenamespboardtype type=a_b_c type=leeg"
+            )
+        );
+        // Begrensd: hooguit 80 tekens per naam en 20 namen per regel.
+        let lang = "x".repeat(500);
+        assert_eq!(SleepbordType::nieuw(&lang).0.len(), SleepbordType::LENGTE);
+        let veel: Vec<String> = (0..50).map(|i| format!("type{i}")).collect();
+        assert_eq!(SleepbordType::lijst(&veel).len(), SleepbordType::AANTAL);
     }
 
     #[test]

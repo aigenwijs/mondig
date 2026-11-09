@@ -19,6 +19,7 @@
     bestandTranscript,
     bestandWeghalen,
     duurTekst,
+    foutVanStand,
     isNieuwer,
     luisterNaarSlepen,
     luisterNaarStand,
@@ -79,7 +80,7 @@
     if (!isNieuwer(nieuw, versie)) return;
     versie = nieuw.versie;
     lijst = nieuw.lijst;
-    standFout = nieuw.fout;
+    standFout = foutVanStand(nieuw, t());
     werkWachtrijBij();
   }
 

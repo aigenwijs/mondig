@@ -105,7 +105,7 @@ export function maakBestandenMock(
   /** De stand met een nieuw volgnummer, zoals Rust die na elke wijziging stuurt. */
   const stand = (): BestandenStand => {
     versie += 1;
-    return { versie, lijst: structuredClone(lijst), fout };
+    return { versie, lijst: structuredClone(lijst), fout, nietGepakt: false };
   };
   const meldStand = (): void => {
     void emit('bestanden-gewijzigd', stand());

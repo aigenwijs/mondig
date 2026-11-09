@@ -20,6 +20,7 @@
 //   dictaten: dictatenweek | dictatenleeg | dictatenniet | dictatenwisfout, zie mock-dictaten.ts.
 //            Standaard staan er voorbeelddictaten van vandaag en gisteren (24 uur bewaard).
 //   sneltoets: terugval | geensneltoets                    (standaard: Ctrl+Spatie)
+//   mac: toont de sneltoetsen zoals op een Mac (Option+Spatie, symbolen als ⌥Spatie)
 //   dictaat: dictaat | dictaatfout | dictaatstil | dictaatlang | dictaatblok
 //            start 1,5 s na het laden een dictaat met de sneltoets, zoals de app dat doet
 //            (open /instellingen?mock=compleet,dictaat voor een dictaat op een ander scherm);
@@ -83,7 +84,8 @@ import type { InvokeArgs } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
 import { mockIPC } from '@tauri-apps/api/mocks';
 import type { PlakUitkomst, PlakUitslag } from '../dictaat';
-import { labelVanToets } from '../sneltoetsvangen';
+import { labelVanToets, labelVoorlezen } from '../sneltoetsvangen';
+import type { Platform } from '../sneltoets';
 import type { Oordeel } from '../sneltoets';
 import { maakBestandenMock, ONBEKEND } from './mock-bestanden';
 import { maakDictatenMock } from './mock-dictaten';
@@ -441,12 +443,16 @@ export function installeerDevMock(): void {
         }
       : null;
 
+  // `mac`: de weergave van een Mac; de standaarden zijn dan die van Rust voor de Mac.
+  const platform: Platform = opties.has('mac') ? 'mac' : 'windows';
+  const standaardToets = platform === 'mac' ? 'Alt+Space' : 'Ctrl+Space';
+  const standaardOpschoon = platform === 'mac' ? 'Alt+Shift+Space' : 'Ctrl+Shift+Space';
   // `eigentoets`: de gebruiker koos zelf een sneltoets (Insert), zoals in de gebruikerstest.
   let huidigeToets = opties.has('terugval')
     ? 'Ctrl+Alt+Space'
     : opties.has('eigentoets')
       ? 'Insert'
-      : 'Ctrl+Space';
+      : standaardToets;
   let rusttijd = '5m';
   let alleenKlembord = opties.has('klembord');
   // Zoals in Rust staat "Stopwoorden weghalen" standaard aan; `stopwoordenuit` zet hem uit.
@@ -928,13 +934,14 @@ export function installeerDevMock(): void {
   };
 
   // De tweede sneltoets (ADR 0027): alleen aan bij "Met een eigen sneltoets".
-  let tweedeToets = 'Ctrl+Shift+Space';
+  let tweedeToets = standaardOpschoon;
   const opschoonToets = (): Record<string, unknown> => {
-    const label = labelVanToets(tweedeToets);
+    const label = labelVanToets(tweedeToets, platform);
     const dubbel = opties.has('opschoondubbel');
     const aan = opschonen.stand() === 'eigenSneltoets' && !dubbel;
     return {
       actief: aan ? label : null,
+      actiefVoorlezen: aan ? labelVoorlezen(tweedeToets, platform) : null,
       isTerugval: false,
       gewenst: label,
       geprobeerd: [label],
@@ -952,9 +959,10 @@ export function installeerDevMock(): void {
       };
     }
     const terugval = opties.has('terugval') && huidigeToets === 'Ctrl+Alt+Space';
-    const label = labelVanToets(huidigeToets);
+    const label = labelVanToets(huidigeToets, platform);
     return {
       actief: label,
+      actiefVoorlezen: labelVoorlezen(huidigeToets, platform),
       isTerugval: terugval,
       gewenst: terugval ? 'Ctrl+Spatie' : label,
       geprobeerd: [label]
@@ -987,6 +995,14 @@ export function installeerDevMock(): void {
       switch (cmd) {
         case 'sneltoets_controleer':
           return mockOordeel(tekstArg(args, 'toets', ''));
+        case 'sneltoets_info':
+          return {
+            platform,
+            standaard: standaardToets,
+            standaardLabel: labelVanToets(standaardToets, platform),
+            standaardOpschonen: standaardOpschoon,
+            standaardOpschonenLabel: labelVanToets(standaardOpschoon, platform)
+          };
         case 'model_status':
           if (opties.has('statusfout')) throw 'Er is geen gegevensmap gevonden op deze computer.';
           return status();

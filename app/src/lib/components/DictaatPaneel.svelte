@@ -88,16 +88,21 @@
   // De tweede sneltoets (ADR 0027): alleen bij "Met een eigen sneltoets", en alleen als hij
   // echt aan staat. Een fout hier verbergt alleen de regel.
   let tweede = $state<string | null>(null);
+  let tweedeVoorlezen = $state<string | null>(null);
   async function laadTweede(): Promise<void> {
     try {
       const info = await opschonenInstellingen();
       if (info.stand !== 'eigenSneltoets') {
         tweede = null;
+        tweedeVoorlezen = null;
         return;
       }
-      tweede = (await haalSneltoetsStatus('opschonen'))?.actief ?? null;
+      const stand = await haalSneltoetsStatus('opschonen');
+      tweede = stand?.actief ?? null;
+      tweedeVoorlezen = stand?.actiefVoorlezen ?? null;
     } catch {
       tweede = null;
+      tweedeVoorlezen = null;
     }
   }
 
@@ -250,7 +255,9 @@
     </div>
   {:else if sneltoets?.isTerugval && sneltoets.actief}
     <p class="m-0 text-gedempt">
-      {t().sneltoetsTerugval(sneltoets.gewenst, sneltoets.actief)}
+      {sneltoets.overgezet
+        ? t().sneltoetsOvergezet(sneltoets.gewenst, sneltoets.actief)
+        : t().sneltoetsTerugval(sneltoets.gewenst, sneltoets.actief)}
     </p>
   {/if}
 
@@ -329,7 +336,7 @@
   {#if toonRust && !isActief(weergave)}
     <!-- Sneltoets met de microfoonregel eronder, in één kaart. Wijzigen is dezelfde bediening
          als in Instellingen; de microfoon kies je daar, hier staat alleen de naam en de test. -->
-    <InstellingSneltoets variant="kaart" bijStatus={zetGewijzigd} {tweede}>
+    <InstellingSneltoets variant="kaart" bijStatus={zetGewijzigd} {tweede} {tweedeVoorlezen}>
       {#snippet onder()}
         <MicrofoonRegel />
       {/snippet}

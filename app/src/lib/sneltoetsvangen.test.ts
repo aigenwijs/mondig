@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   LEGE_VANG,
-  STANDAARD_SNELTOETS,
   bouwToets,
   drukIn,
   isAfgerond,
   labelVanToets,
+  labelVoorlezen,
   laatLos,
   liveLabel,
+  liveVoorlezen,
   toetsNaam
 } from './sneltoetsvangen';
 
@@ -27,7 +28,8 @@ describe('toetsnamen in gewone taal', () => {
   it('vertaalt een sneltoets van de plugin', () => {
     expect(labelVanToets('Ctrl+Space')).toBe('Ctrl+Spatie');
     expect(labelVanToets('Ctrl+Alt+Shift+KeyD')).toBe('Ctrl+Alt+Shift+D');
-    expect(labelVanToets(STANDAARD_SNELTOETS)).toBe('Ctrl+Spatie');
+    expect(labelVanToets('Ctrl+Space', 'windows')).toBe('Ctrl+Spatie');
+    expect(labelVanToets('Ctrl+Space', 'linux')).toBe('Ctrl+Spatie');
   });
 });
 
@@ -119,5 +121,51 @@ describe('labels', () => {
   it('laat functietoetsen en Insert staan', () => {
     expect(labelVanToets('F13')).toBe('F13');
     expect(labelVanToets('Insert')).toBe('Insert');
+  });
+});
+
+// De Mac: symbolen in de volgorde van Apple direct voor de toets, voluit voor schermlezers.
+// Dezelfde uitkomsten als `toets_label` in mondig-core.
+describe('labels op de Mac', () => {
+  it('zet de modifiers als symbolen direct voor de toets', () => {
+    expect(labelVanToets('Alt+Space', 'mac')).toBe('\u2325Spatie');
+    expect(labelVanToets('Alt+Shift+Space', 'mac')).toBe('\u2325\u21E7Spatie');
+    expect(labelVanToets('Ctrl+Super+KeyD', 'mac')).toBe('\u2303\u2318D');
+    expect(labelVanToets('Super+Shift+Alt+Ctrl+KeyD', 'mac')).toBe('\u2303\u2325\u21E7\u2318D');
+    expect(labelVanToets('Alt+ArrowUp', 'mac')).toBe('\u2325Pijl omhoog');
+    expect(labelVanToets('F13', 'mac')).toBe('F13');
+  });
+
+  it('noemt de Windows-toets op de Mac Command', () => {
+    expect(toetsNaam('MetaLeft', 'mac')).toBe('Command');
+    expect(toetsNaam('MetaLeft', 'windows')).toBe('Windows');
+    expect(toetsNaam('MetaRight')).toBe('Windows');
+  });
+
+  it('leest de schermlezer voluit voor', () => {
+    expect(labelVoorlezen('Alt+Space', 'mac')).toBe('Option Spatie');
+    expect(labelVoorlezen('Ctrl+Super+KeyD', 'mac')).toBe('Control Command D');
+    expect(labelVoorlezen('Ctrl+Space', 'windows')).toBe('Ctrl+Spatie');
+  });
+
+  it('toont het live label met symbolen, zonder plus', () => {
+    expect(liveLabel(['AltLeft'], 'mac')).toBe('\u2325');
+    expect(liveLabel(['AltLeft', 'ControlLeft'], 'mac')).toBe('\u2303\u2325');
+    expect(liveLabel(['MetaLeft', 'ShiftLeft', 'KeyD'], 'mac')).toBe('\u21E7\u2318D');
+    expect(liveLabel(['AltRight', 'Space'], 'mac')).toBe('\u2325Spatie');
+    expect(liveLabel([], 'mac')).toBe('');
+    // Links en rechts van dezelfde modifier tellen een keer.
+    expect(liveLabel(['AltLeft', 'AltRight'], 'mac')).toBe('\u2325');
+  });
+
+  it('leest het live label voluit voor', () => {
+    expect(liveVoorlezen(['AltLeft'], 'mac')).toBe('Option');
+    expect(liveVoorlezen(['MetaLeft', 'ControlLeft', 'KeyD'], 'mac')).toBe('Control Command D');
+    expect(liveVoorlezen(['ControlLeft'], 'windows')).toBe('Ctrl+');
+  });
+
+  it('laat Windows en het vangen op de Mac dezelfde plugintoets bouwen', () => {
+    // Cmd is `Super` voor de plugin; Rust beslist of het mag.
+    expect(bouwToets(['MetaLeft', 'AltLeft', 'KeyD'])).toBe('Super+Alt+KeyD');
   });
 });

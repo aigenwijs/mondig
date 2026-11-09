@@ -2747,6 +2747,7 @@ name = "mondig"
 version = "0.3.0-dev"
 dependencies = [
  "mondig-core",
+ "mondig-mac-slepen",
  "serde",
  "serde_json",
  "tauri",
@@ -2810,6 +2811,16 @@ dependencies = [
  "serde_json",
  "tempfile",
  "transcribe-cpp",
+]
+
+[[package]]
+name = "mondig-mac-slepen"
+version = "0.3.0-dev"
+dependencies = [
+ "block2",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
 ]
 
 [[package]]

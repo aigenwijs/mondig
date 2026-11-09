@@ -662,13 +662,13 @@ pub(crate) fn instellingen_terugzetten(app: AppHandle) -> Result<TerugzetUitkoms
     drop(store);
 
     // Opschonen staat weer uit (de keuze is gewist): eerst de tweede sneltoets weg, anders weigert
-    // de gewone standaard (Ctrl+Spatie) als die gelijk is aan de tweede.
+    // de gewone standaard als die gelijk is aan de tweede.
     crate::sneltoets::werk_opschoontoets_bij(&app, mondig_core::opschonen::Stand::Uit);
     // De sneltoets staat in Windows, niet alleen in de store: zet de standaard weer vast.
     let sneltoets_bezet = crate::sneltoets::wijzig(
         &app,
         &app.state::<crate::sneltoets::SneltoetsStand>(),
-        mondig_core::sneltoets::STANDAARD_SNELTOETS,
+        mondig_core::sneltoets::standaard_sneltoets(mondig_core::sneltoets::Platform::huidig()),
         crate::sneltoets::Soort::Dicteren,
     )
     .is_err();

@@ -65,6 +65,8 @@ export const en = {
   sneltoetsUitleg: (toets: string): string => `Hold ${toets} and speak. A short tap works too.`,
   sneltoetsTerugval: (gewenst: string, actief: string): string =>
     `${gewenst} is already used by another program. Mondig now uses ${actief}.`,
+  sneltoetsOvergezet: (gewenst: string, actief: string): string =>
+    `${gewenst} cannot be a shortcut on this computer. Mondig now uses ${actief}. You can choose another key with Change.`,
   sneltoetsGeen: (toetsen: string): string =>
     `Mondig could not set up a shortcut: ${toetsen} are already used by other programs. Close one of them and restart Mondig, or choose your own key under Settings, Advanced.`,
   dictaatLuistert: 'Mondig is listening…',
@@ -138,14 +140,22 @@ export const en = {
   sneltoetsBezetTekst: (toets: string): string =>
     `${toets} is used by another program. Choose a different combination.`,
   sneltoetsFoutWindows: 'Combinations with the Windows key are not possible. Try Ctrl or Alt.',
-  sneltoetsFoutLosseToets:
-    'You need this key for typing or navigating. Choose Insert, Scroll Lock or a function key, or add Ctrl or Alt.',
-  sneltoetsFoutShiftAlleen: 'Shift alone is not enough. Add Ctrl or Alt.',
-  sneltoetsFoutWerktNiet: (toets: string): string =>
-    toets.includes('+')
+  sneltoetsFoutLosseToets: (mac: boolean): string =>
+    mac
+      ? 'You need this key for typing or navigating. Choose a function key, or add Control, Option or Command.'
+      : 'You need this key for typing or navigating. Choose Insert, Scroll Lock or a function key, or add Ctrl or Alt.',
+  sneltoetsFoutShiftAlleen: (mac: boolean): string =>
+    mac
+      ? 'Shift alone is not enough. Add Control, Option or Command.'
+      : 'Shift alone is not enough. Add Ctrl or Alt.',
+  sneltoetsFoutWerktNiet: (toets: string, mac: boolean): string => {
+    if (mac) return 'Pause does not work as a shortcut. Choose another key.';
+    return toets.includes('+')
       ? 'Pause does not work as a shortcut, not even with Ctrl or Alt. Choose another key.'
-      : 'Pause does not work as a shortcut: Windows does not report when you let go. Choose another key.',
-  sneltoetsFoutHoofdtoets: 'Also press a regular key, for example Ctrl+Space or F9.',
+      : 'Pause does not work as a shortcut: Windows does not report when you let go. Choose another key.';
+  },
+  sneltoetsFoutHoofdtoets: (voorbeeld: string): string =>
+    `Also press a regular key, for example ${voorbeeld} or F9.`,
   sneltoetsFoutMeerdere: 'Use only one regular key.',
   sneltoetsFoutOnbekend: 'This key cannot be a shortcut. Choose another.',
   sneltoetsFoutGereserveerd: 'You need this combination in other programs. Choose another.',
@@ -467,6 +477,8 @@ export const en = {
     'A conversation, a Teams recording, a voice message. Several at once is fine.',
   bestandenLoslaten: 'Release, and Mondig starts',
   bestandenLoslatenUitleg: 'They are transcribed on this computer, one after the other.',
+  bestandenNietGepakt:
+    "Mondig couldn't pick up this file. Drag it to the desktop first, then drag it here.",
   bestandenKiezen: 'Choose files',
   bestandenMapOpenen: 'Open folder',
   bestandenUitschriftenOpenen: 'Open transcripts',

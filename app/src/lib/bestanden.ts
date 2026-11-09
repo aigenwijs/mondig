@@ -41,6 +41,17 @@ export interface BestandenStand {
   lijst: BestandInfo[];
   /** Een fout van het laatste toevoegen, bijvoorbeeld bij slepen zonder model. */
   fout: Foutmelding | null;
+  /** De laatste drop leverde geen bestand op (geen pad en geen belofte, ADR 0030). */
+  nietGepakt: boolean;
+}
+
+/**
+ * De fout die het scherm bij een stand toont: de fout van het toevoegen, of bij een drop die
+ * niets opleverde de uitleg wat wel kan.
+ */
+export function foutVanStand(stand: BestandenStand, t: Berichten): Foutmelding | null {
+  if (stand.fout) return stand.fout;
+  return stand.nietGepakt ? { melding: t.bestandenNietGepakt, vervolg: 'geen' } : null;
 }
 
 /** Is `nieuw` nieuwer dan de stand met dit volgnummer? */

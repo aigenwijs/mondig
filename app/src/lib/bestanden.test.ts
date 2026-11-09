@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   duurTekst,
+  foutVanStand,
   isNieuwer,
   naamZonderExtensie,
   stand,
   tijdcode,
   transcriptTekst,
   verwerkingTekst,
+  type BestandenStand,
   type BestandInfo
 } from './bestanden';
 import { en } from './i18n/en';
@@ -98,7 +100,8 @@ describe('de volgorde van standen', () => {
     const stand = (versie: number) => ({
       versie,
       lijst: [info({ toestand: { type: 'klaar' } })],
-      fout: null
+      fout: null,
+      nietGepakt: false
     });
     expect(isNieuwer(stand(5), 4)).toBe(true);
     expect(isNieuwer(stand(4), 4)).toBe(false);
@@ -237,5 +240,27 @@ describe('kopiëren', () => {
         persoon: { vervangen: false, eigen: [] }
       })
     ).toBe('Spreker 1: Eerste zin.\nSpreker 2: Tweede zin.\nZonder.');
+  });
+});
+
+describe('een drop die niets oplevert (ADR 0030)', () => {
+  const leeg: BestandenStand = { versie: 1, lijst: [], fout: null, nietGepakt: false };
+
+  it('zegt in gewone taal wat wel kan, in beide talen', () => {
+    const stand = { ...leeg, nietGepakt: true };
+    expect(foutVanStand(stand, nl)).toEqual({
+      melding:
+        'Mondig kon dit bestand niet pakken. Sleep het eerst naar het bureaublad en dan hierheen.',
+      vervolg: 'geen'
+    });
+    expect(foutVanStand(stand, en)?.melding).toBe(
+      "Mondig couldn't pick up this file. Drag it to the desktop first, then drag it here."
+    );
+  });
+
+  it('toont niets zonder lege drop, en een fout van het toevoegen gaat voor', () => {
+    expect(foutVanStand(leeg, nl)).toBeNull();
+    const fout = { melding: 'Download eerst een spraakmodel.', vervolg: 'geen' as const };
+    expect(foutVanStand({ ...leeg, fout, nietGepakt: true }, nl)).toBe(fout);
   });
 });

@@ -66,6 +66,10 @@ export const nl = {
     `Houd ${toets} ingedrukt en praat. Kort tikken kan ook.`,
   sneltoetsTerugval: (gewenst: string, actief: string): string =>
     `${gewenst} wordt al door een ander programma gebruikt. Mondig gebruikt nu ${actief}.`,
+  // De opgeslagen sneltoets kan op deze computer niet (bijvoorbeeld Ctrl+Spatie op de Mac, waar
+  // het systeem die zelf gebruikt). Geen foutmelding: Mondig koos al een andere.
+  sneltoetsOvergezet: (gewenst: string, actief: string): string =>
+    `${gewenst} kan op deze computer niet als sneltoets. Mondig gebruikt nu ${actief}. Je kunt een andere toets kiezen onder Wijzigen.`,
   sneltoetsGeen: (toetsen: string): string =>
     `Mondig kon geen sneltoets instellen: ${toetsen} worden al door andere programma's gebruikt. Sluit zo'n programma en start Mondig opnieuw, of kies zelf een toets bij Instellingen, onder Geavanceerd.`,
   dictaatLuistert: 'Mondig luistert…',
@@ -144,14 +148,22 @@ export const nl = {
     `${toets} wordt door een ander programma gebruikt. Kies een andere combinatie.`,
   sneltoetsFoutWindows:
     'Combinaties met de Windows-toets kunnen niet. Probeer het met Ctrl of Alt.',
-  sneltoetsFoutLosseToets:
-    'Deze toets heb je nodig om te typen of te navigeren. Kies Insert, Scroll Lock of een functietoets, of voeg Ctrl of Alt toe.',
-  sneltoetsFoutShiftAlleen: 'Shift alleen is niet genoeg. Voeg Ctrl of Alt toe.',
-  sneltoetsFoutWerktNiet: (toets: string): string =>
-    toets.includes('+')
+  sneltoetsFoutLosseToets: (mac: boolean): string =>
+    mac
+      ? 'Deze toets heb je nodig om te typen of te navigeren. Kies een functietoets, of voeg Control, Option of Command toe.'
+      : 'Deze toets heb je nodig om te typen of te navigeren. Kies Insert, Scroll Lock of een functietoets, of voeg Ctrl of Alt toe.',
+  sneltoetsFoutShiftAlleen: (mac: boolean): string =>
+    mac
+      ? 'Shift alleen is niet genoeg. Voeg Control, Option of Command toe.'
+      : 'Shift alleen is niet genoeg. Voeg Ctrl of Alt toe.',
+  sneltoetsFoutWerktNiet: (toets: string, mac: boolean): string => {
+    if (mac) return 'Pause werkt niet als sneltoets. Kies een andere toets.';
+    return toets.includes('+')
       ? 'Pause werkt niet als sneltoets, ook niet met Ctrl of Alt. Kies een andere toets.'
-      : 'Pause werkt niet als sneltoets: Windows meldt niet wanneer je loslaat. Kies een andere toets.',
-  sneltoetsFoutHoofdtoets: 'Druk ook een gewone toets in, bijvoorbeeld Ctrl+Spatie of F9.',
+      : 'Pause werkt niet als sneltoets: Windows meldt niet wanneer je loslaat. Kies een andere toets.';
+  },
+  sneltoetsFoutHoofdtoets: (voorbeeld: string): string =>
+    `Druk ook een gewone toets in, bijvoorbeeld ${voorbeeld} of F9.`,
   sneltoetsFoutMeerdere: 'Gebruik maar één gewone toets.',
   sneltoetsFoutOnbekend: 'Deze toets kan niet als sneltoets. Kies een andere.',
   sneltoetsFoutGereserveerd: "Deze combinatie heb je nodig in andere programma's. Kies een andere.",
@@ -475,6 +487,8 @@ export const nl = {
   bestandenSleepUitleg: 'Een gesprek, een Teams-opname, een spraakbericht. Ook meerdere tegelijk.',
   bestandenLoslaten: 'Laat los, dan begint Mondig',
   bestandenLoslatenUitleg: 'Ze worden op deze computer uitgeschreven, na elkaar.',
+  bestandenNietGepakt:
+    'Mondig kon dit bestand niet pakken. Sleep het eerst naar het bureaublad en dan hierheen.',
   bestandenKiezen: 'Bestanden kiezen',
   bestandenMapOpenen: 'Map openen',
   bestandenUitschriftenOpenen: 'Uitschriften openen',

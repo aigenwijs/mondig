@@ -8,6 +8,13 @@ Alle merkbare wijzigingen staan hier. Opmaak volgens
 
 ### Toegevoegd
 
+- Op de Mac kun je opnames rechtstreeks uit Dictafoon, Foto's en Mail naar Mondig slepen, net als
+  uit de Finder. Lukt het pakken van een gesleept bestand niet, dan zegt Mondig dat en wat je wel
+  kunt doen: het bestand eerst naar het bureaublad slepen.
+- Sneltoetsen voor de Mac: de standaard is daar Option+Spatie (Option+Shift+Spatie voor een
+  opgeschoond dictaat), want Ctrl+Spatie en Cmd+Spatie gebruikt macOS zelf. Toetsen staan als
+  symbolen (⌥Spatie, ⌃⌘D) en de Command-toets mag in een eigen sneltoets. Stond er een
+  Windows-sneltoets die op de Mac niet kan, dan kiest Mondig de standaard en meldt dat.
 - Stopwoorden weghalen: klanken als "ehm", "uh" en "hmm" gaan uit je dictaten, uitschriften
   van bestanden en opnames, zonder taalmodel en zonder internet. Het staat standaard aan; je zet
   het uit bij Instellingen onder Dicteren, achter Meer opties. Alleen klanken die geen woord
