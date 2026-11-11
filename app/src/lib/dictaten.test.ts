@@ -7,7 +7,7 @@ import {
   laatsteLosTonen,
   groepeerPerDag,
   termijnUit,
-  vraagVoorTermijn,
+  herbevestig,
   type BewaardDictaat
 } from './dictaten';
 
@@ -22,15 +22,17 @@ const dictaat = (id: string, tijdUnixMs: number, tekst = id): BewaardDictaat => 
 });
 
 describe('de termijn', () => {
-  it('kent de drie keuzes uit ADR 0021, met 24 uur als standaard', () => {
-    expect(DICTATEN_TERMIJNEN).toEqual(['niet', '24u', '7d']);
+  it('kent de vijf keuzes uit ADR 0021 en de aanvulling, met 24 uur als standaard', () => {
+    expect(DICTATEN_TERMIJNEN).toEqual(['niet', 'laatste10', '24u', '7d', '30d']);
     expect(STANDAARD_DICTATEN_TERMIJN).toBe('24u');
   });
 
   it('valt bij een onbekende waarde terug op 24 uur', () => {
     expect(termijnUit('7d')).toBe('7d');
     expect(termijnUit('niet')).toBe('niet');
-    expect(termijnUit('30d')).toBe('24u');
+    expect(termijnUit('30d')).toBe('30d');
+    expect(termijnUit('laatste10')).toBe('laatste10');
+    expect(termijnUit('30 dagen')).toBe('24u');
     expect(termijnUit(undefined)).toBe('24u');
     expect(termijnUit(7)).toBe('24u');
   });
@@ -80,13 +82,28 @@ describe('groepeerPerDag', () => {
   });
 });
 
-describe('de bevestigvraag bij een andere termijn', () => {
-  it('komt alleen bij Niet bewaren, en alleen als er bewaarde dictaten zijn', () => {
-    expect(vraagVoorTermijn('niet', 12)).toBe(true);
-    expect(vraagVoorTermijn('niet', 1)).toBe(true);
-    expect(vraagVoorTermijn('niet', 0)).toBe(false);
-    expect(vraagVoorTermijn('24u', 12)).toBe(false);
-    expect(vraagVoorTermijn('7d', 12)).toBe(false);
+describe('groepeerPerDag over de delen heen', () => {
+  it('houdt een dag bij elkaar als hij over de grens van het eerste deel loopt', () => {
+    const nu = om(11, 4, 15, 0);
+    const alle = Array.from({ length: 14 }, (_, i) => dictaat(`d${String(i)}`, nu - i * 60_000));
+    // Het eerste deel van tien en daarna alle veertien: dezelfde ene groep Vandaag.
+    expect(groepeerPerDag(alle.slice(0, 10), nu)).toHaveLength(1);
+    const groepen = groepeerPerDag(alle, nu);
+    expect(groepen).toHaveLength(1);
+    expect(groepen[0]?.soort).toBe('vandaag');
+    expect(groepen[0]?.dictaten).toHaveLength(14);
+  });
+});
+
+describe('herbevestig', () => {
+  it('gaat door als het getal gelijk is of er niets meer wegvalt', async () => {
+    expect(await herbevestig(5, () => Promise.resolve(5))).toEqual({ doorgaan: true, aantal: 5 });
+    expect(await herbevestig(5, () => Promise.resolve(0))).toEqual({ doorgaan: true, aantal: 0 });
+  });
+
+  it('blijft vragen met het nieuwe getal als het veranderd is', async () => {
+    expect(await herbevestig(5, () => Promise.resolve(6))).toEqual({ doorgaan: false, aantal: 6 });
+    expect(await herbevestig(5, () => Promise.resolve(4))).toEqual({ doorgaan: false, aantal: 4 });
   });
 });
 
@@ -107,6 +124,18 @@ describe('filterVerlopen', () => {
 
   it('laat bij Niet bewaren alles weg', () => {
     expect(filterVerlopen([dictaat('a', nu)], 'niet', nu)).toEqual([]);
+  });
+
+  it('kent 30 dagen en laat bij Laatste 10 niets op leeftijd weg', () => {
+    const DAG = 24 * UUR;
+    const lijst = [dictaat('net-erna', nu - 30 * DAG), dictaat('net-ervoor', nu - 30 * DAG + 1)];
+    expect(filterVerlopen(lijst, '30d', nu).map((d) => d.id)).toEqual(['net-ervoor']);
+    expect(filterVerlopen(lijst, '7d', nu)).toEqual([]);
+    // Het aantal bij Laatste 10 regelt Rust; hoe oud ook, de leeftijd telt niet.
+    const oud = [dictaat('heel-oud', nu - 400 * DAG)];
+    expect(filterVerlopen(oud, 'laatste10', nu)).toHaveLength(1);
+    // Een tijd ver in de toekomst telt ook hier als verlopen.
+    expect(filterVerlopen([dictaat('te-ver', nu + UUR + 1)], 'laatste10', nu)).toEqual([]);
   });
 });
 

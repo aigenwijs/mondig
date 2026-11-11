@@ -8,11 +8,15 @@
   import { Button } from '#lib/components/ui/button/index.js';
   import { t } from '#lib';
   import {
+    allePunten,
     beperkPunten,
     EERSTE_PUNTEN,
-    eerdereUitgaven,
+    details,
+    eerdereUitgavenVoor,
+    eersteZin,
     isDevVersie,
-    uitgaveVoor
+    uitgaveVoor,
+    voorPlatform
   } from '#lib/changelog.js';
   import { kopieerNaarKlembord } from '#lib/klembord.js';
   import { paginaTitel, rijNaam, sectieKop, vlak } from '#lib/stijl.js';
@@ -24,6 +28,7 @@
     korteDatum,
     type ModelVermelding
   } from '#lib/versie.js';
+  import { haalPlatform } from '#lib/platform.js';
   import { uitgaven } from '#lib/wijzigingen.js';
   import { apparaatInGebruik } from '#lib/videokaart.js';
 
@@ -35,9 +40,14 @@
   let modellenFout = $state(false);
   let gekopieerd = $state(false);
   let kopieerMislukt = $state(false);
+  // Mac-punten staan alleen op de Mac; tot Rust het platform meldt (of buiten de app) geldt Windows.
+  let opMac = $state(false);
 
   onMount(() => {
     void versieStand.laad();
+    void haalPlatform().then((platform) => {
+      opMac = platform === 'mac';
+    });
     haalModelVermeldingen()
       .then((lijst) => {
         modellen = lijst;
@@ -48,12 +58,19 @@
   });
 
   const info = $derived(versieStand.info);
-  const uitgave = $derived(info ? uitgaveVoor(uitgaven, info.versie) : null);
+  const uitgave = $derived.by(() => {
+    const gevonden = info ? uitgaveVoor(uitgaven, info.versie) : null;
+    return gevonden ? voorPlatform(gevonden, opMac) : null;
+  });
   // De eerdere uitgaven, voor "Alle wijzigingen" (de huidige staat er al boven).
-  const andere = $derived(info ? eerdereUitgaven(uitgaven, info.versie) : []);
-  // Eerst de eerste punten; "Alle wijzigingen tonen" klapt de rest uit (bij -dev is dat veel).
+  const andere = $derived(info ? eerdereUitgavenVoor(uitgaven, info.versie, opMac) : []);
+  // Eerst de eerste punten, elk met alleen zijn eerste zin (wat je merkt); "Alle wijzigingen
+  // tonen" klapt de rest uit, nu met de details achter elke zin (bij -dev is dat veel).
   let alles = $state(false);
   const beperkt = $derived(uitgave ? beperkPunten(uitgave, EERSTE_PUNTEN) : null);
+  const heeftDetails = $derived(
+    uitgave ? allePunten(uitgave).some((p) => details(p) !== '') : false
+  );
   const getoond = $derived(
     alles || !uitgave ? (uitgave?.categorieen ?? []) : (beperkt?.categorieen ?? [])
   );
@@ -121,12 +138,16 @@
             <h3 class="{rijNaam} mb-1.5">{categorie.naam}</h3>
             <ul class="m-0 flex list-disc flex-col gap-1.5 pl-5 text-midden">
               {#each categorie.punten as punt, i (i)}
-                <li>{punt}</li>
+                {#if alles && details(punt) !== ''}
+                  <li>{eersteZin(punt)} <span class="text-gedempt">{details(punt)}</span></li>
+                {:else}
+                  <li>{eersteZin(punt)}</li>
+                {/if}
               {/each}
             </ul>
           </div>
         {/each}
-        {#if beperkt && beperkt.verborgen > 0}
+        {#if beperkt && (beperkt.verborgen > 0 || heeftDetails)}
           <div>
             <Button
               variant="tweede"

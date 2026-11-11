@@ -12,8 +12,10 @@
 //! 3. Krijgt de pil toch de focus (een webview die zichzelf focust), dan gaat die meteen
 //!    terug naar het venster waar je werkte (bijgehouden bij elke klik en activering).
 //!
-//! Alleen op Windows. Op macOS en Linux zou `show()` het venster activeren; daar toont
-//! Mondig de pil pas in sprint 3e en blijft de tekst in het venster.
+//! Op de Mac (mijlpaal M1) wordt het venster door `focusable(false)` nooit key of main, en
+//! tonen gaat met `orderFrontRegardless` in plaats van `show()` (dat zou het venster key maken):
+//! zie de crate `mondig-mac`, `pil.rs`. Daar ook de plek: het scherm onder de muis, onderaan het
+//! werkgebied. Op Linux zou `show()` het venster activeren; daar toont Mondig de pil nog niet.
 //!
 //! Wat de pil toont, beslist de interface (`src/routes/pil`) uit dezelfde `taak`-events als
 //! het hoofdvenster. Zij meet zichzelf en vraagt dan `pil_toon` met haar maat in CSS-pixels;
@@ -21,7 +23,8 @@
 //! hoort (de proef in het venster krijgt geen pil) en stuurt tijdens het opnemen het niveau
 //! als `pil-niveau`. Er wordt niets bewaard.
 
-// De plaatsing via Win32 heeft nog geen tegenhanger op macOS en Linux (sprint 3e).
+// De plaatsing via Win32 rekent in fysieke pixels; de Mac rekent in punten (crate `mondig-mac`)
+// en Linux toont de pil nog niet. Daar is een deel van deze code ongebruikt.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -46,7 +49,7 @@ static LAATSTE_TAAK: AtomicU64 = AtomicU64::new(0);
 /// Het dictaat waarvan de opname nu loopt (0: geen).
 static OPNAME: AtomicU64 = AtomicU64::new(0);
 
-/// Afstand tot de rand van het werkgebied, in logische pixels. De pil zelf heeft 8 px
+/// Afstand tot de rand van het werkgebied, in logische pixels (op de Mac: punten). De pil zelf heeft 8 px
 /// doorzichtige rand voor de schaduw, dus de zichtbare afstand is ongeveer 22 px.
 const MARGE: f64 = 14.0;
 
@@ -112,8 +115,15 @@ pub(crate) fn lees_plek(app: &AppHandle) -> Plek {
 }
 
 /// Maakt het (verborgen) venster bij de start van de app.
+#[cfg_attr(
+    target_os = "macos",
+    expect(
+        unsafe_code,
+        reason = "de pil krijgt de NSWindow als ruwe pointer van Tauri"
+    )
+)]
 pub(crate) fn maak(app: &AppHandle) -> tauri::Result<()> {
-    let venster = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("pil".into()))
+    let bouwer = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("pil".into()))
         .title("Mondig")
         .inner_size(360.0, 60.0)
         .decorations(false)
@@ -126,13 +136,23 @@ pub(crate) fn maak(app: &AppHandle) -> tauri::Result<()> {
         .skip_taskbar(true)
         .focusable(false)
         .focused(false)
-        .visible(false)
-        .build()?;
+        .visible(false);
+    // Op de Mac: een klik op de pil (Kopiëren, Mondig openen) werkt meteen, ook als Mondig
+    // niet actief is; anders activeert de eerste klik alleen.
+    #[cfg(target_os = "macos")]
+    let bouwer = bouwer.accept_first_mouse(true);
+    let venster = bouwer.build()?;
     #[cfg(windows)]
     if let Ok(hwnd) = venster.hwnd() {
         win32::richt_in(hwnd.0 as isize);
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    if let Some(ns_window) = venster.ns_window().ok().and_then(std::ptr::NonNull::new) {
+        // SAFETY: de NSWindow van de pil, die zo lang bestaat als de app (sluiten wordt
+        // tegengehouden in `bij_vensterevent`).
+        unsafe { mondig_mac::pil::richt_in(ns_window) };
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     let _ = venster;
     Ok(())
 }
@@ -142,6 +162,13 @@ pub(crate) fn maak(app: &AppHandle) -> tauri::Result<()> {
 #[expect(
     clippy::needless_pass_by_value,
     reason = "Tauri geeft een commando de AppHandle per waarde mee; een verwijzing kan niet"
+)]
+#[cfg_attr(
+    target_os = "macos",
+    expect(
+        unsafe_code,
+        reason = "de pil krijgt de NSWindow als ruwe pointer van Tauri"
+    )
 )]
 #[tauri::command]
 pub(crate) fn pil_toon(app: AppHandle, breedte: f64, hoogte: f64) {
@@ -153,9 +180,25 @@ pub(crate) fn pil_toon(app: AppHandle, breedte: f64, hoogte: f64) {
     if let Ok(hwnd) = venster.hwnd() {
         win32::toon(hwnd.0 as isize, (breedte, hoogte), plek);
     }
-    // Buiten Windows nog niet tonen (sprint 3e).
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    if let Some(ns_window) = venster.ns_window().ok().and_then(std::ptr::NonNull::new) {
+        // SAFETY: de NSWindow van de pil, die zo lang bestaat als de app.
+        unsafe {
+            mondig_mac::pil::toon(ns_window, (breedte, hoogte), plek == Plek::Boven, MARGE);
+        }
+    }
+    // Op Linux nog niet tonen.
+    #[cfg(not(any(windows, target_os = "macos")))]
     let _ = (venster, breedte, hoogte, plek);
+}
+
+/// Er is op de pil geklikt. Op de Mac activeert een klik Mondig, ook al wordt de pil nooit
+/// key-venster; zet dan het programma waar je typte weer vooraan, zoals `kreeg_focus` op
+/// Windows. Zo plakt het volgende dictaat daar, en niet in Mondig.
+#[tauri::command]
+pub(crate) fn pil_klik() {
+    #[cfg(target_os = "macos")]
+    let _ = mondig_mac::pil::herstel_voorgrond(true);
 }
 
 /// Verbergt de pil.

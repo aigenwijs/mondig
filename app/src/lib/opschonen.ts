@@ -16,9 +16,6 @@ export const OPSCHOON_STANDEN: readonly OpschoonStand[] = [
   'bijElkDictaat'
 ];
 
-/** De standaard voor de tweede sneltoets, in de schrijfwijze van de plugin. */
-export const STANDAARD_OPSCHOONTOETS = 'Ctrl+Shift+Space';
-
 /** Het label van een aanbieder, zoals overal in Mondig. */
 export type Label = 'lokaal' | 'europees' | 'buiten_europa';
 

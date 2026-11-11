@@ -11,9 +11,31 @@ import {
   plakHoortBij,
   plakSoort,
   stripToestand,
+  type PlakUitkomst,
   type Weergave
 } from './dictaat';
 import type { Gebeurtenis, ProefResultaat, Toestand } from './taak';
+
+// Elke plakuitkomst, afgedwongen door het type: komt er een bij, dan faalt de compiler hier.
+const UITKOMSTEN: Record<PlakUitkomst, true> = {
+  geplakt: true,
+  waarschijnlijk_geplakt: true,
+  niet_gelezen: true,
+  niet_geplakt: true,
+  getypt: true,
+  typen_onderbroken: true,
+  typen_mislukt: true,
+  geen_tekstveld: true,
+  op_klembord: true,
+  beheerrechten: true,
+  toetsen_ingedrukt: true,
+  geen_venster: true,
+  mislukt: true,
+  in_mondig: true,
+  geen_toegang: true,
+  wachtwoordveld: true
+};
+const ALLE_PLAKUITKOMSTEN = Object.keys(UITKOMSTEN) as PlakUitkomst[];
 
 function gebeurtenis(
   taak: number,
@@ -136,21 +158,45 @@ describe('stripToestand', () => {
   const klaar: Weergave = { type: 'klaar', taak: 1, uitslag: uitslag(1) };
   const fout: Weergave = { type: 'fout', taak: 1, melding: 'x', vervolg: 'geen' };
 
-  it('toont een lopend dictaat altijd', () => {
-    expect(stripToestand({ type: 'luistert', taak: 1, sinds: 0 }, true)).toBe('luistert');
-    expect(stripToestand({ type: 'verwerkt', taak: 1 }, false)).toBe('verwerkt');
+  it('toont niets tijdens luisteren en verwerken: de dicteerbalk doet dat al', () => {
+    expect(stripToestand({ type: 'luistert', taak: 1, sinds: 0 }, false, null)).toBeNull();
+    expect(stripToestand({ type: 'verwerkt', taak: 1 }, false, null)).toBeNull();
   });
 
-  it('toont klaar en fout tot het startscherm is gezien', () => {
-    expect(stripToestand(klaar, false)).toBe('klaar');
-    expect(stripToestand(klaar, true)).toBeNull();
-    expect(stripToestand(fout, false)).toBe('fout');
-    expect(stripToestand(fout, true)).toBeNull();
+  it('toont niets bij een dictaat dat gewoon geplakt of getypt is', () => {
+    expect(stripToestand(klaar, false, 'geplakt')).toBeNull();
+    expect(stripToestand(klaar, false, 'getypt')).toBeNull();
+  });
+
+  it('toont niets bij waarschijnlijk geplakt: geen vals alarm', () => {
+    expect(stripToestand(klaar, false, 'waarschijnlijk_geplakt')).toBeNull();
+  });
+
+  it('wacht met klaar tot de plakuitkomst bekend is', () => {
+    expect(stripToestand(klaar, false, null)).toBeNull();
+  });
+
+  it('toont een strook bij elk plakprobleem, ook als de tekst op het klembord staat', () => {
+    const problemen = ALLE_PLAKUITKOMSTEN.filter(
+      (u) => plakSoort(u) !== 'gelukt' && u !== 'waarschijnlijk_geplakt'
+    );
+    expect(problemen).toContain('op_klembord');
+    expect(problemen).toContain('typen_mislukt');
+    expect(problemen).toContain('mislukt');
+    for (const uitkomst of problemen) {
+      expect(stripToestand(klaar, false, uitkomst), uitkomst).toBe('plakprobleem');
+      expect(stripToestand(klaar, true, uitkomst), uitkomst).toBeNull();
+    }
+  });
+
+  it('toont een fout tot het startscherm is gezien', () => {
+    expect(stripToestand(fout, false, null)).toBe('fout');
+    expect(stripToestand(fout, true, null)).toBeNull();
   });
 
   it('toont niets in rust of na annuleren', () => {
-    expect(stripToestand(RUST, false)).toBeNull();
-    expect(stripToestand({ type: 'geannuleerd', taak: 1 }, false)).toBeNull();
+    expect(stripToestand(RUST, false, null)).toBeNull();
+    expect(stripToestand({ type: 'geannuleerd', taak: 1 }, false, null)).toBeNull();
   });
 });
 
@@ -183,8 +229,12 @@ describe('plakHoortBij', () => {
 describe('plakSoort', () => {
   it('geplakt is gelukt, de terugval is klembord', () => {
     expect(plakSoort('geplakt')).toBe('gelukt');
+    // Getypt omdat het programma het klembord niet las: de tekst staat waar je typt.
+    expect(plakSoort('getypt')).toBe('gelukt');
     expect(plakSoort('op_klembord')).toBe('klembord');
     expect(plakSoort('waarschijnlijk_geplakt')).toBe('klembord');
+    // Op de Mac in een wachtwoordveld: de tekst staat op het klembord, er is niets te repareren.
+    expect(plakSoort('wachtwoordveld')).toBe('klembord');
   });
 
   it('alles waarbij de tekst niet waar je typt staat, is een fout', () => {
@@ -194,7 +244,14 @@ describe('plakSoort', () => {
       'beheerrechten',
       'toetsen_ingedrukt',
       'geen_venster',
-      'mislukt'
+      'mislukt',
+      // Typen stopte of lukte niet: (de rest van) de tekst staat op het klembord.
+      'typen_onderbroken',
+      'typen_mislukt',
+      // Geen tekstveld: niet getypt, de tekst staat op het klembord.
+      'geen_tekstveld',
+      // Op de Mac zonder recht op toegankelijkheid: een fout met de weg naar de instelling.
+      'geen_toegang'
     ] as const) {
       expect(plakSoort(uitkomst)).toBe('fout');
     }

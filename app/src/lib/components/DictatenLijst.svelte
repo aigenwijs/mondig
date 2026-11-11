@@ -6,51 +6,81 @@
   import Ellipsis from '@lucide/svelte/icons/ellipsis';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import { Button } from '#lib/components/ui/button/index.js';
+  import LijstMeer from '#lib/components/LijstMeer.svelte';
+  import VerwijderVraag from '#lib/components/VerwijderVraag.svelte';
   import { huidigeTaal, t } from '#lib';
   import { klokTijd } from '#lib/dictaat.js';
-  import { datumKop, groepeerPerDag, type BewaardDictaat, type DagGroep } from '#lib/dictaten.js';
+  import {
+    DICTATEN_TERMIJNEN,
+    datumKop,
+    herbevestig,
+    groepeerPerDag,
+    type BewaardDictaat,
+    type DagGroep,
+    type DictatenTermijn
+  } from '#lib/dictaten.js';
+  import { termijnLabel } from '#lib/dictatentekst.js';
   import { kopieerNaarKlembord } from '#lib/klembord.js';
   import { modelNaam } from '#lib/opschonen.js';
   import { foutVak, vlak } from '#lib/stijl.js';
+  import { maakMelder } from '#lib/schermlezer.js';
   import { foutUitCommando } from '#lib/taak.js';
 
   // "Je dictaten" (ADR 0021, ontwerp N-0 sectie 1): de bewaarde dictaten per dag, een regel per
   // dictaat met de tijd en de tekst afgekapt; een klik klapt de hele tekst open. Kopiëren en het
   // prullenbakje staan bij aanwijzen, bij toetsenbordfocus en bij een opengeklapte regel. De
   // lijst tekent alleen wat de ouder geeft; Rust is de bron (zie dictatenstand.svelte.ts).
+  // De lijst komt in delen: de nieuwste 10, met onderaan "Meer tonen" (20 erbij) en de telling
+  // "10 van 37". Het menu "…" kiest ook de bewaartermijn; een kortere stand wist meteen, dus
+  // daar komt eerst een vraag als er dictaten wegvallen.
   // Een opgeschoond dictaat (ADR 0027) toont opengeklapt een grijze regel met wie het opschoonde
   // en de knop "Letterlijke tekst kopiëren".
 
   interface Props {
-    /** Nieuwste eerst. */
+    /** Nieuwste eerst; het geladen deel van de lijst. */
     dictaten: BewaardDictaat[];
+    /** Hoeveel dictaten er in totaal gelden, voor de telling en voor "Meer tonen". */
+    totaal: number;
     /** De termijn, voor "24 uur bewaard" en de zin van de lege staat. Niet bewaren komt hier niet. */
-    termijn: '24u' | '7d';
+    termijn: Exclude<DictatenTermijn, 'niet'>;
     /** Het aantal bestanden op schijf: zoveel gaat weg bij Alles wissen. */
     bewaard: number;
     /** Het moment van nu, voor Vandaag en Gisteren; standaard de klok. */
     nu?: number;
     bijVerwijder: (id: string) => Promise<void>;
     bijWisAlles: () => Promise<void>;
-    /** Naar Instellingen, de rij Dictaten bewaren. */
-    bijHoeLang: () => void;
+    /** Laadt 20 dictaten meer. */
+    bijMeerTonen: () => Promise<void>;
+    /** Hoeveel dictaten vallen weg bij deze termijn? Voor de bevestigvraag. */
+    wegval: (termijn: DictatenTermijn) => Promise<number>;
+    /** Bewaart een andere termijn. */
+    bijTermijn: (termijn: DictatenTermijn) => Promise<void>;
+    /**
+     * Meldt wat er net gebeurde aan de ouder, die een statusregio heeft die blijft bestaan: bij
+     * Niet bewaren verdwijnt deze lijst, en met haar de regio hieronder.
+     */
+    bijMelding?: (tekst: string) => void;
     /** Welk dictaat bij het tekenen al open staat (voor de tests). */
     beginOpen?: string | null;
   }
   let {
     dictaten,
+    totaal,
     termijn,
     bewaard,
     nu = Date.now(),
     bijVerwijder,
     bijWisAlles,
-    bijHoeLang,
+    bijMeerTonen,
+    wegval,
+    bijTermijn,
+    bijMelding,
     beginOpen = null
   }: Props = $props();
 
   const taal = $derived(huidigeTaal());
   const groepen = $derived<DagGroep[]>(groepeerPerDag(dictaten, nu));
-  const termijnTekst = $derived(termijn === '24u' ? t().dictatenTermijn24u : t().dictatenTermijn7d);
+  const termijnTekst = $derived(termijnLabel(termijn));
 
   // svelte-ignore state_referenced_locally
   let open = $state<string | null>(beginOpen);
@@ -58,6 +88,9 @@
   let letterlijkGekopieerd = $state<string | null>(null);
   let gekopieerd = $state<string | null>(null);
   let vraagWissen = $state(false);
+  // De termijn waarvoor we om bevestiging wachten, en hoeveel dictaten daarmee wegvallen.
+  let wachtTermijn = $state<DictatenTermijn | null>(null);
+  let wachtAantal = $state(0);
   let fout = $state<string | null>(null);
   // Voor de schermlezer: wat er net gebeurde, zonder de focus te verplaatsen (WCAG 4.1.3).
   let melding = $state('');
@@ -93,7 +126,7 @@
       else letterlijkGekopieerd = waarde;
     };
     zet(id);
-    melding = soort === 'tekst' ? t().dictatenGekopieerd : t().dictatenLetterlijkGekopieerd;
+    meld(soort === 'tekst' ? t().dictatenGekopieerd : t().dictatenLetterlijkGekopieerd);
     clearTimeout(timers[soort]);
     timers[soort] = setTimeout(() => {
       zet(null);
@@ -124,7 +157,7 @@
     const buur = buurVan(dictaat.id);
     try {
       await bijVerwijder(dictaat.id);
-      melding = t().dictatenVerwijderd;
+      meld(t().dictatenVerwijderd);
     } catch (e) {
       fout = foutUitCommando(e, t().somsGingErIetsMis).melding;
     }
@@ -133,30 +166,84 @@
     (buur === null ? document.getElementById('dictaten-menu') : rijKnop(buur))?.focus();
   }
 
-  async function vraag(): Promise<void> {
+  function vraag(): void {
     vraagWissen = true;
-    await tick();
-    document.getElementById('dictaten-wis-annuleer')?.focus();
   }
 
-  async function annuleerWissen(): Promise<void> {
-    vraagWissen = false;
+  // Eerst leegmaken, ook bij de regio van het paneel: een tweede gelijke melding ("20 dictaten
+  // erbij") verandert de regio anders niet, en dan zegt de schermlezer niets (zoals bij Eerder
+  // opgenomen).
+  const meld = maakMelder((tekst: string) => {
+    melding = tekst;
+    bijMelding?.(tekst);
+  });
+
+  async function zetTermijn(gekozen: DictatenTermijn): Promise<void> {
+    try {
+      await bijTermijn(gekozen);
+      meld(t().dictatenTermijnGezet(termijnLabel(gekozen)));
+    } catch (e) {
+      fout = foutUitCommando(e, t().somsGingErIetsMis).melding;
+    }
+  }
+
+  /** Een keuze in het menu: meteen bewaren, of eerst vragen als er dictaten wegvallen. */
+  async function kiesTermijn(waarde: string): Promise<void> {
+    const gekozen = DICTATEN_TERMIJNEN.find((d) => d === waarde);
+    if (gekozen === undefined || gekozen === termijn) return;
+    fout = null;
+    let aantal: number;
+    try {
+      aantal = await wegval(gekozen);
+    } catch (e) {
+      fout = foutUitCommando(e, t().somsGingErIetsMis).melding;
+      return;
+    }
+    if (aantal > 0) {
+      wachtTermijn = gekozen;
+      wachtAantal = aantal;
+      await tick();
+      document.getElementById('dictaten-termijn-annuleer')?.focus();
+      return;
+    }
+    await zetTermijn(gekozen);
+  }
+
+  async function bevestigTermijn(): Promise<void> {
+    const doel = wachtTermijn;
+    if (doel === null) return;
+    // Het getal in de vraag kan verouderd zijn: eerst opnieuw tellen.
+    try {
+      const { doorgaan, aantal } = await herbevestig(wachtAantal, () => wegval(doel));
+      if (!doorgaan) {
+        wachtAantal = aantal;
+        return;
+      }
+    } catch (e) {
+      fout = foutUitCommando(e, t().somsGingErIetsMis).melding;
+      return;
+    }
+    wachtTermijn = null;
+    await zetTermijn(doel);
+    await tick();
+    document.getElementById('dictaten-menu')?.focus();
+  }
+
+  async function annuleerTermijn(): Promise<void> {
+    wachtTermijn = null;
     await tick();
     document.getElementById('dictaten-menu')?.focus();
   }
 
   async function bevestigWissen(): Promise<void> {
     fout = null;
-    vraagWissen = false;
     try {
       await bijWisAlles();
-      melding = t().dictatenAlleGewist;
+      meld(t().dictatenAlleGewist);
     } catch (e) {
       fout = foutUitCommando(e, t().somsGingErIetsMis).melding;
     }
     open = null;
-    await tick();
-    document.getElementById('dictaten-menu')?.focus();
   }
 </script>
 
@@ -191,18 +278,39 @@
           class={menuInhoud}
           onCloseAutoFocus={(e) => {
             // De bevestigvraag pakt de focus zelf.
-            if (vraagWissen) e.preventDefault();
+            if (vraagWissen || wachtTermijn !== null) e.preventDefault();
           }}
         >
-          <DropdownMenu.Item class={menuItem} onSelect={bijHoeLang}
-            >{t().dictatenHoeLang}</DropdownMenu.Item
-          >
+          <DropdownMenu.Group>
+            <DropdownMenu.GroupHeading class="px-2.5 pt-1 pb-1 text-klein text-dim"
+              >{t().dictatenMenuBewaren}</DropdownMenu.GroupHeading
+            >
+            <DropdownMenu.RadioGroup
+              value={termijn}
+              onValueChange={(waarde) => {
+                void kiesTermijn(waarde);
+              }}
+            >
+              {#each DICTATEN_TERMIJNEN as optie (optie)}
+                <DropdownMenu.RadioItem value={optie} class={menuItem}>
+                  {#snippet children({ checked })}
+                    <span class="flex w-5 shrink-0 items-center">
+                      {#if checked}
+                        <Check size={14} aria-hidden="true" />
+                      {/if}
+                    </span>
+                    {termijnLabel(optie)}
+                  {/snippet}
+                </DropdownMenu.RadioItem>
+              {/each}
+            </DropdownMenu.RadioGroup>
+          </DropdownMenu.Group>
           {#if bewaard > 0}
             <DropdownMenu.Separator class="my-1 h-px bg-lijn" />
             <DropdownMenu.Item
               class="{menuItem} text-fout-tekst"
               onSelect={() => {
-                void vraag();
+                vraag();
               }}>{t().dictatenAllesWissen}</DropdownMenu.Item
             >
           {/if}
@@ -211,18 +319,39 @@
     </DropdownMenu.Root>
   </div>
 
-  {#if vraagWissen}
+  <!-- Alles verwijderen: de vraag opent vanuit het menu "…"; na Annuleren of Verwijderen
+       gaat de focus terug naar dat menu. -->
+  <VerwijderVraag
+    id="dictaten-wis"
+    knop={false}
+    bind:open={vraagWissen}
+    vraag={t().dictatenAllesWissenKop}
+    uitleg={t().dictatenWisVraag(bewaard)}
+    bevestigTekst={t().dictatenWisBevestig}
+    verwijder={bevestigWissen}
+    focusTerug={() => document.getElementById('dictaten-menu')}
+  />
+
+  {#if wachtTermijn !== null}
     <div
       class="{vlak} flex flex-col gap-2.5 px-4 py-3.5"
       role="alertdialog"
-      aria-labelledby="dictaten-wis-kop"
-      aria-describedby="dictaten-wis-uitleg"
+      aria-labelledby="dictaten-termijn-kop"
+      aria-describedby="dictaten-termijn-uitleg"
     >
-      <b id="dictaten-wis-kop" class="font-semibold">{t().dictatenAllesWissenKop}</b>
-      <span id="dictaten-wis-uitleg" class="text-gedempt">{t().dictatenWisVraag(bewaard)}</span>
+      <b id="dictaten-termijn-kop" class="font-semibold"
+        >{wachtTermijn === 'niet' ? t().dictatenNietBewarenKop : t().dictatenKorterKop}</b
+      >
+      <span id="dictaten-termijn-uitleg" class="text-gedempt"
+        >{t().dictatenWisVraag(wachtAantal)}</span
+      >
       <div class="flex flex-wrap gap-2">
-        <Button class={gevaarKnop} onclick={bevestigWissen}>{t().dictatenWisBevestig}</Button>
-        <Button id="dictaten-wis-annuleer" variant="spook" onclick={annuleerWissen}
+        <Button class={gevaarKnop} onclick={bevestigTermijn}
+          >{wachtTermijn === 'niet'
+            ? t().dictatenNietBewarenBevestig
+            : t().dictatenKorterBevestig}</Button
+        >
+        <Button id="dictaten-termijn-annuleer" variant="spook" onclick={annuleerTermijn}
           >{t().annuleren}</Button
         >
       </div>
@@ -240,7 +369,9 @@
       </span>
       <b class="font-semibold">{t().dictatenLeegKop}</b>
       <span class="max-w-[420px] text-klein text-gedempt"
-        >{t().dictatenLeegTekst(termijnTekst)}</span
+        >{termijn === 'laatste10'
+          ? t().dictatenLeegTekstLaatste10
+          : t().dictatenLeegTekst(termijnTekst)}</span
       >
     </div>
   {:else}
@@ -335,6 +466,26 @@
           {/each}
         </ul>
       {/each}
+      <!-- Het volgende stuk van de lijst: 20 erbij, met de telling ernaast. -->
+      <LijstMeer
+        id="dictaten-meer"
+        getoond={dictaten.length}
+        {totaal}
+        meer={() => {
+          fout = null;
+          return bijMeerTonen();
+        }}
+        rij={(i: number) => {
+          const dictaat = dictaten[i];
+          return dictaat ? rijKnop(dictaat.id) : null;
+        }}
+        bijErbij={(aantal: number) => {
+          meld(t().dictatenMeerGetoond(aantal));
+        }}
+        bijFout={(e: unknown) => {
+          fout = foutUitCommando(e, t().somsGingErIetsMis).melding;
+        }}
+      />
     </div>
   {/if}
 

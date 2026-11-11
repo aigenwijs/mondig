@@ -7,7 +7,9 @@
 //   ollamauit:      Ollama draait niet
 //   notulenbezig:   het maken loopt al (deel 2 van 3) en blijft staan
 //   notulenklaar:   de notulen staan er: twee besluiten met bron, één niet teruggevonden, en twee
-//                   actiepunten waarvan één met een wie die niet in het verslag staat
+//                   actiepunten waarvan één met een wie die niet in het verslag staat (zonder
+//                   sprekers, zoals een opname in de ruimte waar niemand een spreker aanwees, is die
+//                   wie leeg: het verslag zegt dan niet wie "ik" is, zoals in Rust)
 //   notulenvorige:  idem, maar gemaakt bij de vorige versie van het verslag (bronnen niet klikbaar)
 // Zonder opties is Notulen maken niet ingesteld; instellen in Instellingen werkt gewoon. Maken
 // duurt in de mock ongeveer vier seconden, in drie delen. De sleutel gaat heen en komt nooit terug.
@@ -25,7 +27,7 @@ import type {
   PuntSoort
 } from '../notulen';
 import type { Foutmelding } from '../taak';
-import type { BeurtInfo } from '../vergadering';
+import type { BeurtInfo, Vergadersoort } from '../vergadering';
 import { ONBEKEND } from './mock-bestanden';
 
 const NOTULEN_BEZIG: Foutmelding = {
@@ -53,6 +55,15 @@ export interface NotulenMock {
   bezig: () => boolean;
   /** Het verslag is gesloten of een ander verslag is geopend: vergeet de notulen. */
   vergeet: () => void;
+  /** De notulen zoals ze nu zijn, om bij "Ongedaan maken" terug te zetten. */
+  bewaar: () => NotulenInfo | null;
+  /** Zet notulen terug die `bewaar` gaf. */
+  zetTerug: (bewaard: NotulenInfo | null) => void;
+  /**
+   * Na een wijziging aan de sprekers, zoals `BewaardeNotulen::volg` in Rust: de bronnen wijzen
+   * naar de nieuwe plek van samengevoegde beurten, en "Wie" heet zoals de spreker nu heet.
+   */
+  volg: (oud: BeurtInfo[], nieuw: BeurtInfo[]) => void;
   /** De commando's van Notulen; `ONBEKEND` voor de rest. */
   handel: (cmd: string, args: InvokeArgs | undefined) => unknown;
 }
@@ -62,7 +73,11 @@ export function maakNotulenMock(
   melden: () => void,
   beurten: () => BeurtInfo[],
   nieuweStand: () => unknown,
-  vervangenNu: () => boolean = () => false
+  vervangenNu: () => boolean = () => false,
+  bijNieuw: () => void = () => undefined,
+  soort: () => Vergadersoort = () => 'online',
+  uitvoer: (tekst: string) => string = (tekst) => tekst,
+  uitvoerNaam: (naam: string) => string = (naam) => naam
 ): NotulenMock {
   const ollamaKeuze = opties.has('notulenollama');
   const klaarOptie = opties.has('notulenklaar') || opties.has('notulenvorige');
@@ -105,13 +120,24 @@ export function maakNotulenMock(
     };
   };
 
+  // Heeft deze beurt een label voor het model (Rust: `Invoer::van`)? Online en bij Alleen ik elke
+  // beurt; in de ruimte alleen een beurt die iemand aanwees (de mock geeft zo'n beurt een spreker).
+  // Bij een regel zonder label is geen enkele "wie" de spreker: "ik" is dan niemand.
+  const heeftLabel = (b: BeurtInfo | undefined): boolean =>
+    soort() !== 'ruimte' || (b !== undefined && b.spreker !== null);
+
   const voorbeeld = (vorige: boolean): NotulenInfo => {
+    const bronBeurt = beurten()[6] ?? beurten().at(-1);
+    const zonderLabel = !heeftLabel(bronBeurt);
     const actiepunten: NotulenActiepunt[] = [
       {
         id: 1,
         wat: 'De omwonenden uitnodigen met een brief en een bericht in het buurthuis',
         wie: '',
         wanneer: '',
+        watGetoond: '',
+        wieGetoond: '',
+        wanneerGetoond: '',
         wieNietTeruggevonden: false,
         wanneerNietTeruggevonden: false,
         bron: bron(4, 'Dan nodigen we de omwonenden uit met een brief', true, vorige)
@@ -119,30 +145,37 @@ export function maakNotulenMock(
       {
         id: 2,
         wat: 'Een uitnodiging sturen naar de speeltuinvereniging',
-        wie: 'Jan',
+        wie: zonderLabel ? '' : 'Jan',
         wanneer: 'deze week',
-        wieNietTeruggevonden: true,
+        watGetoond: '',
+        wieGetoond: '',
+        wanneerGetoond: '',
+        wieNietTeruggevonden: !zonderLabel,
         wanneerNietTeruggevonden: false,
         bron: bron(6, 'Ik stuur hen deze week een uitnodiging', true, vorige)
       }
     ];
     return {
+      samenvattingGetoond: '',
       samenvatting:
         'De bijeenkomst over het nieuwe speelveld wordt op een donderdagavond gehouden in de aula van de wijkschool. Omwonenden krijgen een brief en de speeltuinvereniging wordt uitgenodigd.',
       besluiten: [
         {
           id: 1,
           tekst: 'De bijeenkomst wordt op een donderdagavond gehouden.',
+          tekstGetoond: '',
           bron: bron(1, 'bijeenkomst op een donderdagavond te houden', true, vorige)
         },
         {
           id: 2,
           tekst: 'De aula van de wijkschool is de locatie.',
+          tekstGetoond: '',
           bron: bron(3, 'De aula heeft plek voor zo’n tachtig mensen', true, vorige)
         },
         {
           id: 3,
           tekst: 'De gemeente betaalt de zaalhuur.',
+          tekstGetoond: '',
           bron: bron(3, 'De gemeente betaalt de huur van de zaal', false)
         }
       ],
@@ -154,6 +187,29 @@ export function maakNotulenMock(
       vorigeVersie: vorige,
       gevonden: 4,
       nietGevonden: 1
+    };
+  };
+
+  // Zoals Rust (`notulen_info`): met Vervangen aan staat op het scherm wat Kopiëren en Opslaan
+  // geven. De echte tekst blijft in `info`, want bewerken begint daarmee. Het citaat is alleen om
+  // te lezen en wordt direct vervangen.
+  const toon = (n: NotulenInfo): NotulenInfo => {
+    const bron = (b: NotulenBron): NotulenBron => ({ ...b, citaat: uitvoer(b.citaat) });
+    return {
+      ...n,
+      samenvattingGetoond: uitvoer(n.samenvatting),
+      besluiten: n.besluiten.map((b) => ({
+        ...b,
+        tekstGetoond: uitvoer(b.tekst),
+        bron: bron(b.bron)
+      })),
+      actiepunten: n.actiepunten.map((a) => ({
+        ...a,
+        watGetoond: uitvoer(a.wat),
+        wieGetoond: uitvoerNaam(a.wie),
+        wanneerGetoond: uitvoer(a.wanneer),
+        bron: bron(a.bron)
+      }))
     };
   };
 
@@ -187,6 +243,8 @@ export function maakNotulenMock(
         stop();
         maken = null;
         info = voorbeeld(false);
+        // Zoals Rust: nieuwe notulen laten "Ongedaan maken" van een naam vervallen.
+        bijNieuw();
       }
       melden();
     }, 1300);
@@ -209,7 +267,7 @@ export function maakNotulenMock(
     stand: () => {
       bouwWachtende();
       return {
-        info: info === null ? null : structuredClone(info),
+        info: info === null ? null : toon(structuredClone(info)),
         onleesbaar: false,
         maken: maken === null ? null : { ...maken }
       };
@@ -220,6 +278,66 @@ export function maakNotulenMock(
       stop();
       info = null;
       maken = null;
+    },
+    bewaar: () => {
+      bouwWachtende();
+      return info === null ? null : structuredClone(info);
+    },
+    zetTerug: (bewaard) => {
+      info = bewaard === null ? null : structuredClone(bewaard);
+    },
+    volg: (oud, nieuw) => {
+      bouwWachtende();
+      if (info === null || info.vorigeVersie) return;
+      // Per oude beurt de nieuwe beurt van dezelfde kant die zijn tijden en tekst omvat.
+      const kaart: number[] = [];
+      let plek = 0;
+      for (const b of oud) {
+        const past = (n: BeurtInfo | undefined): boolean =>
+          n?.kant === b.kant &&
+          n.startMs <= b.startMs &&
+          b.eindMs <= n.eindMs &&
+          n.tekst.includes(b.tekst);
+        while (plek < nieuw.length && !past(nieuw[plek])) plek += 1;
+        if (plek >= nieuw.length) return;
+        kaart.push(plek);
+      }
+      const verplaats = (b: NotulenBron): NotulenBron => {
+        const n = b.beurt === null ? undefined : nieuw[kaart[b.beurt] ?? -1];
+        return n ? { ...b, beurt: n.index, ms: n.startMs } : b;
+      };
+      // Per oude naam de nieuwe, alleen als die voor alle beurten gelijk is.
+      const namen = new Map<string, string | null>();
+      oud.forEach((b, i) => {
+        const van = b.spreker ?? (b.kant === 'jij' ? 'Jij' : 'Anderen');
+        const naar = nieuw[kaart[i] ?? -1]?.spreker ?? null;
+        const andereKant = b.kant === 'jij' ? 'Anderen' : 'Jij';
+        const doel = naar === andereKant ? null : naar;
+        const eerder = namen.get(van);
+        namen.set(van, eerder === undefined || eerder === doel ? doel : null);
+      });
+      const nieuweNaam = (wie: string): string | null => {
+        if (wie.trim() === '') return null;
+        for (const [van, naar] of namen) {
+          if (naar !== null && naar !== van && van.toLowerCase() === wie.trim().toLowerCase()) {
+            return naar;
+          }
+        }
+        return null;
+      };
+      info = {
+        ...info,
+        besluiten: info.besluiten.map((p) => ({ ...p, bron: verplaats(p.bron) })),
+        actiepunten: info.actiepunten.map((a) => {
+          const naar = nieuweNaam(a.wie);
+          return {
+            ...a,
+            wie: naar ?? a.wie,
+            wieNietTeruggevonden: naar === null ? a.wieNietTeruggevonden : false,
+            bron: verplaats(a.bron)
+          };
+        })
+      };
     },
     handel: (cmd, args) => {
       bouwWachtende();
@@ -266,17 +384,17 @@ export function maakNotulenMock(
         case 'vergadering_notulen_maken': {
           if (aanbieder === null) {
             throw fout(
-              'Je hebt nog niet gekozen waar Mondig notulen maakt. Dat kies je bij Instellingen, onder Notulen.'
+              'Je hebt nog niet gekozen waar Mondig notulen maakt. Dat kies je bij Instellingen, onder AI-dienst.'
             );
           }
           if (aanbieder === 'mistral' && !trainingUit) {
             throw fout(
-              'Zet bij Instellingen, onder Notulen, het vinkje dat training uit staat voor je sleutel. Zonder dat maakt Mondig geen notulen via Mistral.'
+              'Zet bij Instellingen, onder AI-dienst, het vinkje dat training uit staat voor je sleutel. Zonder dat maakt Mondig geen notulen via Mistral.'
             );
           }
           if (aanbieder === 'mistral' && !sleutelStaat) {
             throw fout(
-              'Er is nog geen sleutel voor Mistral ingevuld. Vul hem in bij Instellingen, onder Notulen.'
+              'Er is nog geen sleutel voor Mistral ingevuld. Vul hem in bij Instellingen, onder AI-dienst.'
             );
           }
           if (maken !== null) throw fout('Mondig maakt al notulen van dit verslag.');

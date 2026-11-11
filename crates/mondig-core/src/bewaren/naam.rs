@@ -11,44 +11,56 @@
 //!   krijgt er een `_` achter, ook als er nog een punt volgt ("CON.2026" wordt "CON_.2026");
 //! - een te lange naam wordt ingekort tot [`MAX_STAM`] tekens, zodat er ruimte blijft voor
 //!   " (2)" en de extensie;
-//! - een lege naam bestaat niet: dan de naam van de opname, en anders "Transcript".
+//! - een lege naam bestaat niet: dan de standaard van het document (de naam van de opname, of
+//!   "Vergadering"), en anders "Uitschrift".
+//!
+//! De bouwstenen zijn Datum, Klant, Onderwerp, Tijd en Model. Een lege bouwsteen valt weg. Oudere
+//! instellingen kennen "label" en "naam"; die worden bij het lezen Klant en Onderwerp
+//! ([`lees_bouwstenen`]).
 
 use serde::{Deserialize, Serialize};
 
-use super::{Formaat, Zoned, is_onzichtbaar};
+use super::{Document, Formaat, Zoned, is_onzichtbaar};
+use crate::gesprek::schone_naamveld;
 
 /// Zoveel tekens mag de naam zonder extensie hooguit hebben. Windows staat 255 tekens per
 /// naam toe, maar het hele pad mag in veel programma's niet langer zijn dan 260 tekens.
 pub const MAX_STAM: usize = 120;
 
 /// De naam als er niets bruikbaars overblijft.
-const TERUGVAL: &str = "Transcript";
+const TERUGVAL: &str = "Uitschrift";
 
 /// Een onderdeel van de bestandsnaam.
+///
+/// Oudere instellingen en bestanden noemen Klant "label" en Onderwerp "naam"; de aliassen lezen
+/// die nog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Bouwsteen {
-    /// De datum als 2026-11-01, zodat de namen goed sorteren.
+    /// De datum als 2026-11-01, zodat de namen goed sorteren. De gebruiker mag hem aanpassen.
     Datum,
-    /// De naam van de opname, zonder extensie.
-    Naam,
-    /// Het label, zoals een zaaknummer. Valt weg als het leeg is.
-    Label,
+    /// Voor wie het is, zoals een gemeente of een zaaknummer. Valt weg als het leeg is.
+    #[serde(alias = "label")]
+    Klant,
+    /// Waar het over gaat. Staat vooraf ingevuld met de naam van de opname (of "Vergadering").
+    #[serde(alias = "naam")]
+    Onderwerp,
     /// De tijd als 14.32 (een dubbele punt mag niet in een naam).
     Tijd,
     /// Het spraakmodel, kort ("Parakeet Ultra").
     Model,
 }
 
-/// De standaard: "2026-11-01 Interview wethouder".
-pub const STANDAARD_BOUWSTENEN: [Bouwsteen; 2] = [Bouwsteen::Datum, Bouwsteen::Naam];
+/// De standaard: "2026-11-01 Interview wethouder" (de Klant is dan leeg en valt weg).
+pub const STANDAARD_BOUWSTENEN: [Bouwsteen; 3] =
+    [Bouwsteen::Datum, Bouwsteen::Klant, Bouwsteen::Onderwerp];
 
 impl Bouwsteen {
     /// Alle bouwstenen, in de volgorde van het ontwerp.
     pub const ALLE: [Self; 5] = [
         Self::Datum,
-        Self::Naam,
-        Self::Label,
+        Self::Klant,
+        Self::Onderwerp,
         Self::Tijd,
         Self::Model,
     ];
@@ -58,35 +70,54 @@ impl Bouwsteen {
     pub const fn sleutel(self) -> &'static str {
         match self {
             Self::Datum => "datum",
-            Self::Naam => "naam",
-            Self::Label => "label",
+            Self::Klant => "klant",
+            Self::Onderwerp => "onderwerp",
             Self::Tijd => "tijd",
             Self::Model => "model",
         }
     }
 
-    /// De bouwsteen bij een sleutel; `None` als die onbekend is.
+    /// De bouwsteen bij een sleutel; `None` als die onbekend is. De oude sleutels "label" en
+    /// "naam" geven Klant en Onderwerp.
     #[must_use]
     pub fn uit_sleutel(sleutel: &str) -> Option<Self> {
-        Self::ALLE
-            .into_iter()
-            .find(|b| b.sleutel() == sleutel.trim())
+        let sleutel = sleutel.trim();
+        match sleutel {
+            "label" => Some(Self::Klant),
+            "naam" => Some(Self::Onderwerp),
+            _ => Self::ALLE.into_iter().find(|b| b.sleutel() == sleutel),
+        }
     }
 }
 
-/// Leest de bewaarde bouwstenen ("datum,naam"). Onbekende en dubbele vallen weg.
+/// Leest de bewaarde bouwstenen ("datum,klant,onderwerp"). Onbekende en dubbele vallen weg.
+///
+/// Migratie: "label" wordt Klant en "naam" wordt Onderwerp. Staat er een oude sleutel in maar na
+/// de omzetting geen Klant, dan komt Klant direct vóór Onderwerp (of achteraan zonder
+/// Onderwerp). Anders zou de gebruiker een klant invullen en de naam niet veranderen.
 #[must_use]
 pub fn lees_bouwstenen(tekst: &str) -> Vec<Bouwsteen> {
     let mut lijst = Vec::new();
-    for steen in tekst.split(',').filter_map(Bouwsteen::uit_sleutel) {
-        if !lijst.contains(&steen) {
+    let mut oud = false;
+    for deel in tekst.split(',') {
+        oud |= matches!(deel.trim(), "label" | "naam");
+        if let Some(steen) = Bouwsteen::uit_sleutel(deel)
+            && !lijst.contains(&steen)
+        {
             lijst.push(steen);
         }
+    }
+    if oud && !lijst.contains(&Bouwsteen::Klant) {
+        let plek = lijst
+            .iter()
+            .position(|s| *s == Bouwsteen::Onderwerp)
+            .unwrap_or(lijst.len());
+        lijst.insert(plek, Bouwsteen::Klant);
     }
     lijst
 }
 
-/// De bouwstenen als tekst voor de instellingen ("datum,naam").
+/// De bouwstenen als tekst voor de instellingen ("datum,klant,onderwerp").
 #[must_use]
 pub fn schrijf_bouwstenen(bouwstenen: &[Bouwsteen]) -> String {
     bouwstenen
@@ -100,12 +131,57 @@ pub fn schrijf_bouwstenen(bouwstenen: &[Bouwsteen]) -> String {
 pub struct NaamGegevens<'a> {
     /// Wanneer het transcript klaar was.
     pub moment: &'a Zoned,
-    /// De naam van de opname zonder extensie.
-    pub naam: &'a str,
-    /// Het label, als het er is.
-    pub label: Option<&'a str>,
+    /// De datum die de gebruiker typte. `None`: de datum van `moment`. Leeg: valt weg.
+    pub datum: Option<&'a str>,
+    /// De klant; leeg valt weg.
+    pub klant: &'a str,
+    /// Het onderwerp, zoals het nu geldt (de standaard als de gebruiker niets typte); leeg valt weg.
+    pub onderwerp: &'a str,
+    /// Wat de naam wordt als er niets overblijft: de naam van de opname, of het soortwoord
+    /// ("Vergadering", "Notitie") bij een verslag.
+    pub terugval: &'a str,
     /// Het spraakmodel, kort.
     pub model: &'a str,
+}
+
+impl Document {
+    /// De gegevens voor de bestandsnaam van dit document. Zonder eigen onderwerp geldt de
+    /// standaard (de naam van de opname of het soortwoord).
+    #[must_use]
+    pub fn naamgegevens(&self) -> NaamGegevens<'_> {
+        NaamGegevens {
+            moment: &self.moment,
+            datum: self.datum.as_deref(),
+            klant: self.klant.as_deref().unwrap_or_default(),
+            onderwerp: self
+                .onderwerp
+                .as_deref()
+                .unwrap_or(&self.standaard_onderwerp),
+            terugval: &self.standaard_onderwerp,
+            model: &self.model,
+        }
+    }
+}
+
+/// De datum zoals de naam hem standaard heeft: 2026-11-01.
+#[must_use]
+pub fn standaard_datum(moment: &Zoned) -> String {
+    format!(
+        "{:04}-{:02}-{:02}",
+        moment.year(),
+        moment.month(),
+        moment.day()
+    )
+}
+
+/// Wat de gebruiker in een veld typte, tegenover de standaard van dat veld: schoongemaakt en
+/// begrensd, en `None` als het gelijk is aan de standaard. Zo blijft een veld dat de gebruiker
+/// niet echt veranderde "nooit aangeraakt" en volgt het de standaard. Leeg getypt is `Some("")`:
+/// het veld valt dan weg uit de naam.
+#[must_use]
+pub fn eigen_waarde(getypt: &str, standaard: &str) -> Option<String> {
+    let schoon = schone_naamveld(getypt);
+    (schoon != schone_naamveld(standaard)).then_some(schoon)
 }
 
 /// De bestandsnaam met extensie, uit de bouwstenen in hun volgorde, met spaties ertussen.
@@ -119,9 +195,11 @@ pub fn bestandsnaam(
     let delen: Vec<String> = bouwstenen
         .iter()
         .map(|steen| match steen {
-            Bouwsteen::Datum => format!("{:04}-{:02}-{:02}", m.year(), m.month(), m.day()),
-            Bouwsteen::Naam => gegevens.naam.to_string(),
-            Bouwsteen::Label => gegevens.label.unwrap_or_default().to_string(),
+            Bouwsteen::Datum => gegevens
+                .datum
+                .map_or_else(|| standaard_datum(m), str::to_string),
+            Bouwsteen::Klant => gegevens.klant.to_string(),
+            Bouwsteen::Onderwerp => gegevens.onderwerp.to_string(),
             Bouwsteen::Tijd => format!("{:02}.{:02}", m.hour(), m.minute()),
             Bouwsteen::Model => gegevens.model.to_string(),
         })
@@ -130,7 +208,7 @@ pub fn bestandsnaam(
         .collect();
     let mut stam = veilige_stam(&delen.join(" "));
     if stam.is_empty() {
-        stam = veilige_stam(&schoon_deel(gegevens.naam));
+        stam = veilige_stam(&schoon_deel(gegevens.terugval));
     }
     if stam.is_empty() {
         stam = TERUGVAL.to_string();
@@ -235,48 +313,63 @@ mod tests {
     use super::super::tests::moment;
     use super::*;
 
-    fn gegevens<'a>(moment: &'a Zoned, naam: &'a str, label: Option<&'a str>) -> NaamGegevens<'a> {
+    /// Gegevens met een onderwerp en een klant; `terugval` is hetzelfde onderwerp.
+    fn gegevens<'a>(moment: &'a Zoned, onderwerp: &'a str, klant: &'a str) -> NaamGegevens<'a> {
         NaamGegevens {
             moment,
-            naam,
-            label,
+            datum: None,
+            klant,
+            onderwerp,
+            terugval: onderwerp,
             model: "Parakeet Ultra",
         }
     }
 
     #[test]
-    fn de_standaard_is_datum_en_naam() {
+    fn de_standaard_is_datum_klant_en_onderwerp() {
         let m = moment();
         let naam = bestandsnaam(
             &STANDAARD_BOUWSTENEN,
-            &gegevens(&m, "Interview wethouder", Some("Z-2026-1043")),
+            &gegevens(&m, "Interview wethouder", "Gemeente Vlaardingen"),
             Formaat::Docx,
         );
-        assert_eq!(naam, "2026-11-01 Interview wethouder.docx");
+        assert_eq!(
+            naam,
+            "2026-11-01 Gemeente Vlaardingen Interview wethouder.docx"
+        );
+        // Zonder klant verandert er niets ten opzichte van voorheen.
+        let zonder = bestandsnaam(
+            &STANDAARD_BOUWSTENEN,
+            &gegevens(&m, "Interview wethouder", ""),
+            Formaat::Docx,
+        );
+        assert_eq!(zonder, "2026-11-01 Interview wethouder.docx");
     }
 
     #[test]
-    fn de_datum_kan_achter_de_naam_staan() {
+    fn de_datum_kan_achter_het_onderwerp_staan() {
         let m = moment();
-        let g = gegevens(&m, "Interview wethouder", None);
-        let omgedraaid = lees_bouwstenen("naam,datum");
+        let g = gegevens(&m, "Interview wethouder", "");
+        let omgedraaid = lees_bouwstenen("onderwerp,datum");
         assert_eq!(
             bestandsnaam(&omgedraaid, &g, Formaat::Docx),
             "Interview wethouder 2026-11-01.docx"
         );
-        // De standaard blijft hetzelfde als voorheen, dus bestaande instellingen veranderen niet.
-        assert_eq!(schrijf_bouwstenen(&STANDAARD_BOUWSTENEN), "datum,naam");
+        assert_eq!(
+            schrijf_bouwstenen(&STANDAARD_BOUWSTENEN),
+            "datum,klant,onderwerp"
+        );
     }
 
     #[test]
     fn alle_bouwstenen_in_de_gekozen_volgorde() {
         let m = moment();
-        let g = gegevens(&m, "Interview wethouder", Some("Z-2026-1043"));
+        let g = gegevens(&m, "Interview wethouder", "Z-2026-1043");
         let alle = [
-            Bouwsteen::Label,
+            Bouwsteen::Klant,
             Bouwsteen::Datum,
             Bouwsteen::Tijd,
-            Bouwsteen::Naam,
+            Bouwsteen::Onderwerp,
             Bouwsteen::Model,
         ];
         assert_eq!(
@@ -286,11 +379,35 @@ mod tests {
     }
 
     #[test]
+    fn lege_delen_vallen_weg() {
+        let m = moment();
+        let mut g = gegevens(&m, "  ", "Gemeente");
+        // Alleen de datum en de klant blijven over.
+        assert_eq!(
+            bestandsnaam(&STANDAARD_BOUWSTENEN, &g, Formaat::Txt),
+            "2026-11-01 Gemeente.txt"
+        );
+        // Een lege datum (de gebruiker wiste hem) valt ook weg.
+        g.datum = Some("");
+        assert_eq!(
+            bestandsnaam(&STANDAARD_BOUWSTENEN, &g, Formaat::Txt),
+            "Gemeente.txt"
+        );
+        // Een eigen datum komt zoals getypt in de naam.
+        g.datum = Some("30 okt 2026");
+        g.onderwerp = "Intake";
+        assert_eq!(
+            bestandsnaam(&STANDAARD_BOUWSTENEN, &g, Formaat::Txt),
+            "30 okt 2026 Gemeente Intake.txt"
+        );
+    }
+
+    #[test]
     fn ongeldige_tekens_worden_een_streepje() {
         let m = moment();
-        let g = gegevens(&m, "Overleg: a/b \\ c|d?*\"<x>\u{7}", Some("Z/2026/1043"));
+        let g = gegevens(&m, "Overleg: a/b \\ c|d?*\"<x>\u{7}", "Z/2026/1043");
         assert_eq!(
-            bestandsnaam(&[Bouwsteen::Naam, Bouwsteen::Label], &g, Formaat::Txt),
+            bestandsnaam(&[Bouwsteen::Onderwerp, Bouwsteen::Klant], &g, Formaat::Txt),
             "Overleg- a-b - c-d----x-- Z-2026-1043.txt"
         );
     }
@@ -298,9 +415,9 @@ mod tests {
     #[test]
     fn witruimte_en_punten_aan_het_eind() {
         let m = moment();
-        let g = gegevens(&m, "  Vergadering\t\n  dinsdag ... ", None);
+        let g = gegevens(&m, "  Vergadering\t\n  dinsdag ... ", "");
         assert_eq!(
-            bestandsnaam(&[Bouwsteen::Naam], &g, Formaat::Srt),
+            bestandsnaam(&[Bouwsteen::Onderwerp], &g, Formaat::Srt),
             "Vergadering dinsdag.srt"
         );
     }
@@ -320,9 +437,9 @@ mod tests {
             ("CONSOLE", "CONSOLE.docx"),
             ("COM10", "COM10.docx"),
         ] {
-            let g = gegevens(&m, naam, None);
+            let g = gegevens(&m, naam, "");
             assert_eq!(
-                bestandsnaam(&[Bouwsteen::Naam], &g, Formaat::Docx),
+                bestandsnaam(&[Bouwsteen::Onderwerp], &g, Formaat::Docx),
                 verwacht,
                 "{naam}"
             );
@@ -333,14 +450,14 @@ mod tests {
     fn te_lange_namen_worden_ingekort() {
         let m = moment();
         let lang = "é".repeat(400);
-        let g = gegevens(&m, &lang, None);
-        let naam = bestandsnaam(&[Bouwsteen::Naam], &g, Formaat::Docx);
+        let g = gegevens(&m, &lang, "");
+        let naam = bestandsnaam(&[Bouwsteen::Onderwerp], &g, Formaat::Docx);
         assert_eq!(naam.chars().count(), MAX_STAM + ".docx".len());
         // Inkorten mag niet op een spatie of punt eindigen.
         let met_spatie = format!("{} b", "a".repeat(MAX_STAM - 1));
-        let g = gegevens(&m, &met_spatie, None);
+        let g = gegevens(&m, &met_spatie, "");
         assert_eq!(
-            bestandsnaam(&[Bouwsteen::Naam], &g, Formaat::Txt),
+            bestandsnaam(&[Bouwsteen::Onderwerp], &g, Formaat::Txt),
             format!("{}.txt", "a".repeat(MAX_STAM - 1))
         );
     }
@@ -348,19 +465,43 @@ mod tests {
     #[test]
     fn nooit_een_lege_naam() {
         let m = moment();
-        // Alleen een leeg label: dan de naam van de opname.
-        let g = gegevens(&m, "Interview", Some("  "));
+        // Alleen een lege klant: dan de terugval (de naam van de opname).
+        let g = gegevens(&m, "Interview", "  ");
         assert_eq!(
-            bestandsnaam(&[Bouwsteen::Label], &g, Formaat::Txt),
+            bestandsnaam(&[Bouwsteen::Klant], &g, Formaat::Txt),
             "Interview.txt"
         );
-        // Geen bouwstenen: ook de naam van de opname.
+        // Geen bouwstenen: ook de terugval.
         assert_eq!(bestandsnaam(&[], &g, Formaat::Txt), "Interview.txt");
-        // Niets bruikbaars: "Transcript".
-        let g = gegevens(&m, " ... ", None);
+        // Bij een verslag is de terugval het soortwoord, ook met een leeg onderwerp.
+        let mut g = gegevens(&m, "", "");
+        g.terugval = "Vergadering";
         assert_eq!(
-            bestandsnaam(&[Bouwsteen::Naam], &g, Formaat::Vtt),
-            "Transcript.vtt"
+            bestandsnaam(&[Bouwsteen::Klant, Bouwsteen::Onderwerp], &g, Formaat::Docx),
+            "Vergadering.docx"
+        );
+        // Niets bruikbaars, ook niet in de terugval: "Uitschrift".
+        let g = gegevens(&m, " ... ", "");
+        assert_eq!(
+            bestandsnaam(&[Bouwsteen::Onderwerp], &g, Formaat::Vtt),
+            "Uitschrift.vtt"
+        );
+    }
+
+    #[test]
+    fn een_veld_gelijk_aan_de_standaard_blijft_ongeraakt() {
+        assert_eq!(eigen_waarde("Vergadering", "Vergadering"), None);
+        assert_eq!(eigen_waarde("  Vergadering ", "Vergadering"), None);
+        assert_eq!(
+            eigen_waarde("Intake", "Vergadering"),
+            Some("Intake".to_string())
+        );
+        // Leeg getypt is een eigen keuze: het veld valt weg.
+        assert_eq!(eigen_waarde("  ", "Vergadering"), Some(String::new()));
+        assert_eq!(standaard_datum(&moment()), "2026-11-01");
+        assert_eq!(
+            eigen_waarde("2026-11-01", &standaard_datum(&moment())),
+            None
         );
     }
 
@@ -380,10 +521,10 @@ mod tests {
         let g = gegevens(
             &m,
             "Verslag\u{202e}xcod.exe\u{200b}\u{feff}",
-            Some("Z\u{2066}1\u{2069}"),
+            "Z\u{2066}1\u{2069}",
         );
         assert_eq!(
-            bestandsnaam(&[Bouwsteen::Naam, Bouwsteen::Label], &g, Formaat::Docx),
+            bestandsnaam(&[Bouwsteen::Onderwerp, Bouwsteen::Klant], &g, Formaat::Docx),
             "Verslagxcod.exe Z1.docx"
         );
     }
@@ -417,13 +558,80 @@ mod tests {
 
     #[test]
     fn bouwstenen_bewaren_en_lezen() {
-        let lijst = [Bouwsteen::Label, Bouwsteen::Datum];
-        assert_eq!(schrijf_bouwstenen(&lijst), "label,datum");
-        assert_eq!(lees_bouwstenen("label,datum"), lijst);
+        let lijst = [Bouwsteen::Klant, Bouwsteen::Datum];
+        assert_eq!(schrijf_bouwstenen(&lijst), "klant,datum");
+        assert_eq!(lees_bouwstenen("klant,datum"), lijst);
         assert_eq!(
-            lees_bouwstenen("datum, naam,onbekend,datum"),
-            [Bouwsteen::Datum, Bouwsteen::Naam]
+            lees_bouwstenen("datum, onderwerp,onbekend,datum"),
+            [Bouwsteen::Datum, Bouwsteen::Onderwerp]
         );
         assert!(lees_bouwstenen("").is_empty());
+    }
+
+    #[test]
+    fn de_oude_sleutels_label_en_naam_worden_klant_en_onderwerp() {
+        // De oude standaard "datum,naam" wordt datum, klant, onderwerp: anders zou een ingevulde
+        // klant de naam niet veranderen.
+        assert_eq!(
+            lees_bouwstenen("datum,naam"),
+            [Bouwsteen::Datum, Bouwsteen::Klant, Bouwsteen::Onderwerp]
+        );
+        // Een label dat er al was, wordt Klant op zijn eigen plek.
+        assert_eq!(
+            lees_bouwstenen("label,datum,naam"),
+            [Bouwsteen::Klant, Bouwsteen::Datum, Bouwsteen::Onderwerp]
+        );
+        assert_eq!(
+            lees_bouwstenen("naam,label"),
+            [Bouwsteen::Onderwerp, Bouwsteen::Klant]
+        );
+        assert_eq!(
+            lees_bouwstenen("datum,label"),
+            [Bouwsteen::Datum, Bouwsteen::Klant]
+        );
+        // Alleen "naam": Klant komt ervoor.
+        assert_eq!(
+            lees_bouwstenen("naam,tijd"),
+            [Bouwsteen::Klant, Bouwsteen::Onderwerp, Bouwsteen::Tijd]
+        );
+        // Wie bewust zonder Klant opsloeg (nieuwe sleutels), houdt dat.
+        assert_eq!(
+            lees_bouwstenen("datum,onderwerp"),
+            [Bouwsteen::Datum, Bouwsteen::Onderwerp]
+        );
+        // Nogmaals lezen van het resultaat verandert niets.
+        let eens = lees_bouwstenen("datum,naam");
+        assert_eq!(lees_bouwstenen(&schrijf_bouwstenen(&eens)), eens);
+    }
+
+    #[test]
+    fn de_oude_namen_werken_ook_als_serde_alias() {
+        let oud: Vec<Bouwsteen> = serde_json::from_str(r#"["datum","label","naam"]"#).unwrap();
+        assert_eq!(
+            oud,
+            [Bouwsteen::Datum, Bouwsteen::Klant, Bouwsteen::Onderwerp]
+        );
+        let nieuw = serde_json::to_string(&oud).unwrap();
+        assert_eq!(nieuw, r#"["datum","klant","onderwerp"]"#);
+    }
+
+    #[test]
+    fn een_document_geeft_zijn_naamgegevens() {
+        let mut doc = super::super::tests::document();
+        doc.klant = Some("Gemeente Vlaardingen".to_string());
+        doc.onderwerp = None;
+        doc.datum = None;
+        doc.standaard_onderwerp = "Interview wethouder".to_string();
+        assert_eq!(
+            bestandsnaam(&STANDAARD_BOUWSTENEN, &doc.naamgegevens(), Formaat::Docx),
+            "2026-11-01 Gemeente Vlaardingen Interview wethouder.docx"
+        );
+        // Een gewist onderwerp valt weg en de datum wordt wat de gebruiker typte.
+        doc.onderwerp = Some(String::new());
+        doc.datum = Some("2026-10-30".to_string());
+        assert_eq!(
+            bestandsnaam(&STANDAARD_BOUWSTENEN, &doc.naamgegevens(), Formaat::Docx),
+            "2026-10-30 Gemeente Vlaardingen.docx"
+        );
     }
 }

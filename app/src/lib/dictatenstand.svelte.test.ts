@@ -16,9 +16,23 @@ const antwoordMet = (
   termijn: DictatenAntwoord['termijn'],
   dictaten: DictatenAntwoord['dictaten'],
   laatste: DictatenAntwoord['laatste'] = null
-): DictatenAntwoord => ({ termijn, dictaten, bewaard: dictaten.length, laatste });
+): DictatenAntwoord => ({
+  termijn,
+  dictaten,
+  totaal: dictaten.length,
+  bewaard: dictaten.length,
+  laatste
+});
 
 const dictaat = (id: string) => ({ id, tijdUnixMs: 1_000, tekst: `tekst ${id}` });
+
+/** `aantal` dictaten van vlak voor nu, nieuwste eerst: d0 is het nieuwste. */
+const reeks = (aantal: number) =>
+  Array.from({ length: aantal }, (_, i) => ({
+    id: `d${String(i)}`,
+    tijdUnixMs: Date.now() - i * 1_000,
+    tekst: `tekst ${String(i)}`
+  }));
 
 function straks<T>() {
   let klaar!: (waarde: T) => void;
@@ -86,6 +100,7 @@ describe('de dictatenstand', () => {
         { id: 'vers', tijdUnixMs: nu - 3_600_000, tekst: 'vers' },
         { id: 'oud', tijdUnixMs: nu - 25 * 3_600_000, tekst: 'oud' }
       ],
+      totaal: 2,
       bewaard: 2,
       laatste: { tekst: 'vers', id: 'vers' }
     };
@@ -97,6 +112,129 @@ describe('de dictatenstand', () => {
     // De klok tikt door: een uur later is ook het verse dictaat te oud (24 uur + 1 minuut).
     stand0.nu = nu + 23 * 3_600_000 + 61 * 60_000;
     expect(stand0.zichtbaar).toEqual([]);
+  });
+
+  it('vraagt eerst de nieuwste tien en neemt het totaal over', async () => {
+    const stand = new DictatenStand();
+    antwoord = { ...antwoordMet('24u', reeks(10)), totaal: 37, bewaard: 37 };
+    await stand.ververs();
+    expect(kern.invoke).toHaveBeenCalledWith('dictaten_stand', { begin: 0, limiet: 10 });
+    expect(stand.dictaten).toHaveLength(10);
+    expect(stand.totaal).toBe(37);
+    expect(stand.zichtbaarTotaal).toBe(37);
+  });
+
+  it('Meer tonen vraagt er 20 bij en houdt dat vast bij een volgende verversing', async () => {
+    const stand = new DictatenStand();
+    kern.invoke.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd !== 'dictaten_stand') return Promise.resolve(null);
+      const { begin, limiet } = args as { begin: number; limiet: number };
+      return Promise.resolve({
+        ...antwoordMet('24u', reeks(37).slice(begin, begin + limiet)),
+        totaal: 37,
+        bewaard: 37
+      });
+    });
+    await stand.ververs();
+    expect(stand.dictaten).toHaveLength(10);
+    await stand.meerTonen();
+    expect(kern.invoke).toHaveBeenLastCalledWith('dictaten_stand', { begin: 0, limiet: 30 });
+    expect(stand.dictaten).toHaveLength(30);
+    await stand.meerTonen();
+    expect(stand.dictaten).toHaveLength(37);
+    expect(stand.gevraagd).toBe(50);
+    // Een verversing door een event houdt de uitgeklapte lijst uitgeklapt.
+    await stand.ververs();
+    expect(stand.dictaten).toHaveLength(37);
+  });
+
+  it('een nieuw dictaat bovenaan laat de extra geladen dictaten niet verspringen of verdwijnen', async () => {
+    const stand = new DictatenStand();
+    let alle = reeks(37);
+    kern.invoke.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd !== 'dictaten_stand') return Promise.resolve(null);
+      const { begin, limiet } = args as { begin: number; limiet: number };
+      return Promise.resolve({
+        ...antwoordMet('24u', alle.slice(begin, begin + limiet)),
+        totaal: alle.length,
+        bewaard: alle.length
+      });
+    });
+    await stand.ververs();
+    await stand.meerTonen();
+    expect(stand.dictaten.map((d) => d.id)).toEqual(alle.slice(0, 30).map((d) => d.id));
+    // Rust krijgt een nieuw dictaat: het staat nu op plaats 0 en alles schuift een plaats op.
+    alle = [{ id: 'nieuw', tijdUnixMs: Date.now(), tekst: 'nieuw' }, ...alle];
+    await stand.ververs();
+    // Het oudste dat je al zag (nummer 29) staat er nog; er is er een bij gekomen.
+    expect(stand.dictaten).toHaveLength(31);
+    expect(stand.dictaten[0]?.id).toBe('nieuw');
+    expect(stand.dictaten.at(-1)?.id).toBe('d29');
+    expect(stand.totaal).toBe(38);
+  });
+
+  it('zonder uitgeklapte lijst schuift het oudste er gewoon af', async () => {
+    const stand = new DictatenStand();
+    let alle = reeks(37);
+    kern.invoke.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd !== 'dictaten_stand') return Promise.resolve(null);
+      const { begin, limiet } = args as { begin: number; limiet: number };
+      return Promise.resolve({
+        ...antwoordMet('24u', alle.slice(begin, begin + limiet)),
+        totaal: alle.length,
+        bewaard: alle.length
+      });
+    });
+    await stand.ververs();
+    alle = [{ id: 'nieuw', tijdUnixMs: Date.now(), tekst: 'nieuw' }, ...alle];
+    await stand.ververs();
+    expect(stand.dictaten).toHaveLength(10);
+    expect(stand.dictaten[0]?.id).toBe('nieuw');
+    expect(stand.totaal).toBe(38);
+  });
+
+  it('een andere termijn vraagt de verversing door het event al met de basislimiet', async () => {
+    const stand = new DictatenStand();
+    await stand.meerTonen();
+    kern.invoke.mockClear();
+    kern.invoke.mockImplementation(async (cmd: string) => {
+      // Rust stuurt het event tijdens het commando: de stand ververst voor het klaar is.
+      if (cmd === 'dictaten_bewaren_zet') await stand.ververs();
+      return cmd === 'dictaten_stand' ? antwoord : null;
+    });
+    await stand.zetTermijn('laatste10');
+    expect(kern.invoke).toHaveBeenCalledWith('dictaten_stand', { begin: 0, limiet: 10 });
+    expect(kern.invoke).not.toHaveBeenCalledWith('dictaten_stand', { begin: 0, limiet: 30 });
+  });
+
+  it('een mislukte termijn laat de lijst uitgeklapt', async () => {
+    const stand = new DictatenStand();
+    await stand.meerTonen();
+    kern.invoke.mockImplementation((cmd: string) =>
+      cmd === 'dictaten_bewaren_zet'
+        ? // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+          Promise.reject({ melding: 'mis' })
+        : Promise.resolve(antwoord)
+    );
+    await expect(stand.zetTermijn('niet')).rejects.toEqual({ melding: 'mis' });
+    expect(stand.gevraagd).toBe(30);
+  });
+
+  it('een andere termijn zet de lijst terug op de eerste tien', async () => {
+    const stand = new DictatenStand();
+    await stand.meerTonen();
+    expect(stand.gevraagd).toBe(30);
+    await stand.zetTermijn('laatste10');
+    expect(stand.gevraagd).toBe(10);
+  });
+
+  it('vraagt aan Rust hoeveel dictaten er wegvallen bij een termijn', async () => {
+    const stand = new DictatenStand();
+    kern.invoke.mockImplementation((cmd: string) =>
+      Promise.resolve(cmd === 'dictaten_wegval' ? 7 : antwoord)
+    );
+    expect(await stand.wegval('laatste10')).toBe(7);
+    expect(kern.invoke).toHaveBeenCalledWith('dictaten_wegval', { termijn: 'laatste10' });
   });
 
   it('geeft de fout van Rust door', async () => {

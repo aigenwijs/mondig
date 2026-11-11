@@ -23,7 +23,7 @@ De vermelding volgt artikel 3(a)(1) van die licentie: de maker, de copyrightrege
 (voor zover de maker die geeft), de licentie, de garantiedisclaimer en een link naar het
 materiaal, plus de aanduiding dat het is gewijzigd.
 
-## Canary 1b-v2 (nauwkeurigst, 25 Europese talen)
+## Canary 1b-v2 (25 Europese talen)
 
 - **Titel:** Canary 1B v2: Multitask Speech Transcription and Translation Model
 - **Maker:** NVIDIA
@@ -50,7 +50,7 @@ materiaal, plus de aanduiding dat het is gewijzigd.
 - **Gewijzigd:** Omgezet naar GGUF en gekwantiseerd (Q8_0) door handy-computer. De gewichten zijn niet opnieuw getraind.
 - **Omgezette versie die Mondig downloadt:** <https://huggingface.co/handy-computer/whisper-large-v3-turbo-gguf>
 
-## Silero VAD v6.2 (stiltedetectie, hulpmodel)
+## Silero VAD v6.2 (stiltedetectie)
 
 - **Titel:** Silero VAD
 - **Maker:** Silero Team

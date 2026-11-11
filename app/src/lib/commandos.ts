@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { RijStand } from './downloadrij';
-import type { DictatenAntwoord, DictatenTermijn } from './dictaten';
+import { LIJST_EERSTE, type DictatenAntwoord, type DictatenTermijn } from './dictaten';
 import type { DownloadVoortgang, Toestand } from './taak';
 
 // Dunne laag om de Tauri-commando's van het downloadscherm en de proef. Weigert een
@@ -39,14 +39,27 @@ export function laatsteDictaat(): Promise<string | null> {
   return invoke<string | null>('laatste_dictaat');
 }
 
-/** De termijn van "Dictaten bewaren" en de bewaarde dictaten, nieuwste eerst (ADR 0021). */
-export function dictatenStand(): Promise<DictatenAntwoord> {
-  return invoke<DictatenAntwoord>('dictaten_stand');
+/**
+ * De termijn van "Dictaten bewaren" en een deel van de bewaarde dictaten, nieuwste eerst (ADR
+ * 0021): `limiet` dictaten vanaf plaats `begin`, plus het totaal. Zo hoeft niet alle tekst over
+ * de brug.
+ */
+export function dictatenStand(begin = 0, limiet = LIJST_EERSTE): Promise<DictatenAntwoord> {
+  return invoke<DictatenAntwoord>('dictaten_stand', { begin, limiet });
 }
 
 /**
- * Bewaart een andere termijn. Korter wist meteen wat ouder is; Niet bewaren wist alle bewaarde
- * dictaten (de bevestigvraag stelt de interface zelf, alleen als er dictaten zijn).
+ * Hoeveel bewaarde dictaten er wegvallen als deze termijn gekozen wordt. Wist niets; voor de
+ * bevestigvraag bij een kortere of strengere stand.
+ */
+export function dictatenWegval(termijn: DictatenTermijn): Promise<number> {
+  return invoke<number>('dictaten_wegval', { termijn });
+}
+
+/**
+ * Bewaart een andere termijn. Korter wist meteen wat ouder is (of, bij Laatste 10, alles
+ * behalve de tien nieuwste); Niet bewaren wist alle bewaarde dictaten. De bevestigvraag stelt de
+ * interface zelf, alleen als er dictaten wegvallen.
  */
 export function dictatenBewarenZet(termijn: DictatenTermijn): Promise<void> {
   return invoke<undefined>('dictaten_bewaren_zet', { termijn });
@@ -77,6 +90,19 @@ export function microfooninstellingOpen(): Promise<void> {
   return invoke<undefined>('microfooninstelling_open');
 }
 
+/** Het recht op toegankelijkheid op de Mac; Windows kent het niet (`niet_nodig`). */
+export type ToegangStand = 'niet_nodig' | 'toegestaan' | 'geweigerd';
+
+/** Mag Mondig op de Mac toetsen sturen (en dus plakken)? */
+export function toegankelijkheidStand(): Promise<ToegangStand> {
+  return invoke<ToegangStand>('toegankelijkheid_stand');
+}
+
+/** Zet Mondig in de lijst bij Toegankelijkheid en opent die instelling (alleen op de Mac). */
+export function toegankelijkheidOpen(): Promise<void> {
+  return invoke<undefined>('toegankelijkheid_open');
+}
+
 /** Toont de pil met deze maat in CSS-pixels; Rust kiest het scherm en de plek. */
 export function pilToon(breedte: number, hoogte: number): Promise<void> {
   return invoke<undefined>('pil_toon', { breedte, hoogte });
@@ -96,6 +122,14 @@ export function pilStand(): Promise<PilStand> {
 /** Verbergt de pil. */
 export function pilVerberg(): Promise<void> {
   return invoke<undefined>('pil_verberg');
+}
+
+/**
+ * Er is op de pil geklikt. Op de Mac activeert dat Mondig; Rust zet dan het programma waar je
+ * typte weer vooraan, zodat het volgende dictaat daar plakt. Elders doet het niets.
+ */
+export function pilKlik(): Promise<void> {
+  return invoke<undefined>('pil_klik');
 }
 
 /** Opent het venster van Mondig bij het spraakmodel (vervolgactie vanuit de pil). */

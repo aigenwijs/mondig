@@ -1,5 +1,6 @@
 <script lang="ts">
   import Users from '@lucide/svelte/icons/users';
+  import { Button } from '#lib/components/ui/button/index.js';
   import Schakelaar from '#lib/components/Schakelaar.svelte';
   import SprekersMelding from '#lib/components/SprekersMelding.svelte';
   import { huidigeTaal, t } from '#lib';
@@ -14,12 +15,19 @@
 
   const model = $derived(sprekers.model);
   const naam = $derived(model ? (t().modelTekst(model.id)?.naam ?? model.naam) : '');
+  // Is het sprekermodel er nog niet, dan staat hier een knop "Downloaden (139 MB)" in plaats van
+  // de schakelaar (UI-check punt 26): de schakelaar zou stilletjes een download starten. Na de
+  // download springt de poort (`sprekers.svelte.ts`) de schakelaar zelf aan. De grootte komt uit
+  // de catalogus, min wat er al binnen is.
+  const nogTeDownloaden = $derived(model !== undefined && model.status !== 'compleet');
+  const grootte = $derived(
+    model
+      ? leesbareGrootte(Math.max(0, model.grootteBytes - model.aanwezigBytes), huidigeTaal())
+      : ''
+  );
   const stand = $derived.by(() => {
     if (!model) return '';
-    if (model.status === 'compleet') return t().sprekersModelAanwezig;
-    return t().sprekersModelNiet(
-      leesbareGrootte(Math.max(0, model.grootteBytes - model.aanwezigBytes), huidigeTaal())
-    );
+    return model.status === 'compleet' ? t().sprekersModelAanwezig : t().sprekersModelNiet;
   });
 </script>
 
@@ -43,13 +51,25 @@
   <span id="sprekers-hulp" class="text-klein leading-snug text-gedempt">{stand}</span>
   <SprekersMelding />
   <div class="mt-auto flex min-h-8 items-center justify-end pt-1.5">
-    <Schakelaar
-      aan={sprekers.schakelaar}
-      wijzig={(aan: boolean) => void sprekers.zet(aan)}
-      labelledby="sprekers-kop"
-      describedby="sprekers-hulp"
-      bestuurd
-      disabled={sprekers.fase === 'wacht'}
-    />
+    {#if nogTeDownloaden}
+      <Button
+        variant="tweede"
+        class="text-klein"
+        aria-describedby="sprekers-hulp"
+        aria-disabled={sprekers.fase === 'wacht'}
+        onclick={() => {
+          if (sprekers.fase !== 'wacht') void sprekers.download();
+        }}>{t().sprekersDownloaden(grootte)}</Button
+      >
+    {:else}
+      <Schakelaar
+        aan={sprekers.schakelaar}
+        wijzig={(aan: boolean) => void sprekers.zet(aan)}
+        labelledby="sprekers-kop"
+        describedby="sprekers-hulp"
+        bestuurd
+        disabled={sprekers.fase === 'wacht'}
+      />
+    {/if}
   </div>
 </div>

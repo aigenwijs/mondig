@@ -6,11 +6,11 @@ import { en } from '#lib/i18n/en.js';
 import { nl } from '#lib/i18n/nl.js';
 import InstellingStopwoorden from './InstellingStopwoorden.svelte';
 
-describe('Stopwoorden weghalen', () => {
+describe('Opvulklanken weghalen', () => {
   it('is een rij met schakelaar, kop en uitleg in gewone taal', () => {
     const html = render(InstellingStopwoorden).body;
     expect(html).toContain('role="switch"');
-    expect(html).toContain('Stopwoorden weghalen');
+    expect(html).toContain('Opvulklanken weghalen');
     expect(html).toContain('uitschriften van bestanden en opnames');
   });
 

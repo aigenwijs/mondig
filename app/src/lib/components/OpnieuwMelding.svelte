@@ -7,7 +7,8 @@
 
   // De melding na het opnieuw uitschrijven (N-C4, ADR 0023, punten 2, 4 en 5): met welk model,
   // hoeveel regels er veranderden, hoeveel eigen markeringen niet meer in de tekst staan, en
-  // "Vorige versie terugzetten" (kan tot het verslag sluit).
+  // "Vorige versie terugzetten" (kan tot het verslag sluit of opnieuw wordt uitgeschreven, wat je
+  // ook wijzigt; de pagina vraagt eerst om bevestiging).
 
   let {
     na,

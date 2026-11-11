@@ -5,6 +5,7 @@
   import Globe from '@lucide/svelte/icons/globe';
   import HardDrive from '@lucide/svelte/icons/hard-drive';
   import Info from '@lucide/svelte/icons/info';
+  import Lock from '@lucide/svelte/icons/lock';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import X from '@lucide/svelte/icons/x';
   import { Button } from '#lib/components/ui/button/index.js';
@@ -228,11 +229,13 @@
     {/if}
 
     {#if stand.verwijderen && !bevestig}
+      <!-- Bij een model in gebruik is Verwijderen duidelijk uit (UI-check punt 28): een slotje, de
+           aanwijzer "niet toegestaan", de reden als tooltip én zichtbaar eronder. -->
       <Button
         variant="spook"
         class="text-klein {stand.verwijderen === 'aan'
           ? 'not-aria-disabled:hover:text-fout-tekst'
-          : ''}"
+          : 'aria-disabled:cursor-not-allowed'}"
         bind:ref={verwijderKnop}
         onclick={stand.verwijderen === 'aan'
           ? () => {
@@ -242,9 +245,12 @@
         aria-disabled={stand.verwijderen === 'uit' || bezig ? 'true' : undefined}
         title={stand.verwijderen === 'uit' ? t().nietWeg : undefined}
         aria-describedby={stand.verwijderen === 'uit' ? `niet-weg-${regel.id}` : undefined}
-        ><Trash2 size={14} aria-hidden="true" />{t().verwijderen}</Button
+        >{#if stand.verwijderen === 'uit'}<Lock size={14} aria-hidden="true" />{:else}<Trash2
+            size={14}
+            aria-hidden="true"
+          />{/if}{t().verwijderen}</Button
       >
-      {#if stand.verwijderen === 'uit'}<span id="niet-weg-{regel.id}" class="sr-only"
+      {#if stand.verwijderen === 'uit'}<span id="niet-weg-{regel.id}" class="basis-full text-dim"
           >{t().nietWeg}</span
         >{/if}
     {/if}

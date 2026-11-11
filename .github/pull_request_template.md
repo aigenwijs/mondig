@@ -6,8 +6,7 @@ Fase:
 
 ## Hoe getest
 
-- [ ] `cargo fmt --check`, `cargo clippy --all-features`, `cargo test --all-features`, `cargo deny check`
-- [ ] `npm run check`, `npm run lint`, `npm test`
+- [ ] `node scripts/controle.mjs` groen
 - [ ] Handmatig op: Windows / macOS / Linux
 - [ ] `mondig-cli bench` (bij wijziging aan engine of model)
 

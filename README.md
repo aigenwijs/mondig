@@ -10,7 +10,7 @@ audio would go. Status: alpha, under development. Licensed under the EUPL-1.2. B
 instructions are in the section "Bouwen op Windows" below.*
 
 > **Status: alfa, in ontwikkeling.** De app werkt, maar is nog niet klaar voor algemeen
-> gebruik. Voorlopig bouwen we voor Windows; macOS en Linux volgen later.
+> gebruik. Voorlopig bouwen we voor Windows. Een proefversie voor macOS is in de maak; Linux volgt later.
 
 ## Principes
 
@@ -62,13 +62,7 @@ Het resultaat staat in `target/release/bundle/nsis/`.
 Controles die we voor elke wijziging draaien:
 
 ```
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
-cargo deny --all-features check
-npm --prefix app run check
-npm --prefix app run lint
-npm --prefix app test
+node scripts/controle.mjs
 ```
 
 De spraakmodellen zitten niet in de repo; de app laat je ze downloaden. Zie `MODEL_LICENSES.md`.

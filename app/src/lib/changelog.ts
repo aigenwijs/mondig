@@ -104,6 +104,33 @@ export function eersteZin(punt: string): string {
   return m ? m[0] : punt;
 }
 
+/**
+ * Een punt dat alleen op de Mac geldt, begint in CHANGELOG.md met "Op de Mac". Op andere
+ * platforms laat "Wat is er nieuw" het weg.
+ */
+export function isMacPunt(punt: string): boolean {
+  return /^Op de Mac(?!\p{L})/u.test(punt);
+}
+
+/** De uitgave zonder de punten die niet voor dit platform zijn; lege categorieën vallen weg. */
+export function voorPlatform(uitgave: Uitgave, mac: boolean): Uitgave {
+  if (mac) return uitgave;
+  return {
+    ...uitgave,
+    categorieen: uitgave.categorieen
+      .map((c) => ({ naam: c.naam, punten: c.punten.filter((p) => !isMacPunt(p)) }))
+      .filter((c) => c.punten.length > 0)
+  };
+}
+
+/**
+ * Wat er in een punt na de eerste zin volgt: de details. Een punt begint met één zin in gewone
+ * taal over wat je merkt; de rest is voor wie het precies wil weten. Leeg als er geen details zijn.
+ */
+export function details(punt: string): string {
+  return punt.slice(eersteZin(punt).length).trim();
+}
+
 /** Hoeveel punten een uitgave in eerste instantie toont voordat de rest uitklapt. */
 export const EERSTE_PUNTEN = 5;
 
@@ -135,4 +162,15 @@ export function eerdereUitgaven(uitgaven: readonly Uitgave[], versie: string): U
   return uitgaven.filter(
     (u) => u !== huidige && u.kop !== NOG_NIET_UITGEBRACHT && allePunten(u).length > 0
   );
+}
+
+/** `eerdereUitgaven` voor dit platform: ook daar staan geen Mac-punten op Windows. */
+export function eerdereUitgavenVoor(
+  uitgaven: readonly Uitgave[],
+  versie: string,
+  mac: boolean
+): Uitgave[] {
+  return eerdereUitgaven(uitgaven, versie)
+    .map((u) => voorPlatform(u, mac))
+    .filter((u) => allePunten(u).length > 0);
 }

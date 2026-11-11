@@ -44,6 +44,13 @@ describe('Dicteren met de dictaatgeschiedenis', () => {
     expect(uit).not.toContain('Je dictaten');
   });
 
+  it('heeft een statusregio met focusdoel die ook bij Niet bewaren blijft bestaan', () => {
+    for (const termijn of ['niet', '24u', 'laatste10'] as const) {
+      dictatenStand.termijn = termijn;
+      expect(html()).toMatch(/<div[^>]*id="dictaten-status"[^>]*role="status"[^>]*tabindex="-1"/);
+    }
+  });
+
   it('toont bij 24 uur de lijst Je dictaten in plaats van het losse laatste dictaat', () => {
     dictatenStand.dictaten = [
       {

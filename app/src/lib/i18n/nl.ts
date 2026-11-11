@@ -55,7 +55,7 @@ export const nl = {
     }).format(seconden);
     return `Klaar in ${tekst} seconde${seconden >= 2 ? 'n' : ''}`;
   },
-  lokaalVerwerkt: 'Lokaal verwerkt',
+  lokaalVerwerkt: 'Verwerkt op deze computer',
   uitgeschrevenMet: (naam: string): string => `Uitgeschreven met ${naam}`,
   tekstGekopieerd: 'De tekst is gekopieerd.',
   geenGeluid: 'Geen geluid gehoord.',
@@ -66,6 +66,10 @@ export const nl = {
     `Houd ${toets} ingedrukt en praat. Kort tikken kan ook.`,
   sneltoetsTerugval: (gewenst: string, actief: string): string =>
     `${gewenst} wordt al door een ander programma gebruikt. Mondig gebruikt nu ${actief}.`,
+  // De opgeslagen sneltoets kan op deze computer niet (bijvoorbeeld Ctrl+Spatie op de Mac, waar
+  // het systeem die zelf gebruikt). Geen foutmelding: Mondig koos al een andere.
+  sneltoetsOvergezet: (gewenst: string, actief: string): string =>
+    `${gewenst} kan op deze computer niet als sneltoets. Mondig gebruikt nu ${actief}. Je kunt een andere toets kiezen onder Wijzigen.`,
   sneltoetsGeen: (toetsen: string): string =>
     `Mondig kon geen sneltoets instellen: ${toetsen} worden al door andere programma's gebruikt. Sluit zo'n programma en start Mondig opnieuw, of kies zelf een toets bij Instellingen, onder Geavanceerd.`,
   dictaatLuistert: 'Mondig luistert…',
@@ -87,15 +91,34 @@ export const nl = {
   plakVorigKlembordKwijt: 'Je vorige klembord kon niet bewaard worden.',
   plakVorigKlembordOnvolledig: 'Je vorige klembord kon niet volledig bewaard worden.',
   plakOpKlembord: 'De tekst staat op het klembord. Plak hem met Ctrl+V.',
+  plakGetypt: 'De tekst staat waar je typte.',
+  plakTypenOnderbroken:
+    'Mondig stopte halverwege met typen, omdat je van venster wisselde, een toets ingedrukt hield of in een wachtwoordveld kwam. Het begin staat er al; de rest, die nog niet getypt was, staat op het klembord, zodat je hem zelf kunt plakken.',
+  plakGeenTekstveld:
+    'Mondig vond geen tekstveld om in te typen. De tekst staat op het klembord, zodat je hem zelf kunt plakken; je vorige kopie is daarmee vervangen.',
+  plakTypenMislukt:
+    'Plakken en typen lukten niet in dit venster. De tekst staat op het klembord, zodat je hem zelf kunt plakken.',
   plakBeheerrechten:
-    'Mondig kan niet plakken in dit venster, omdat het met beheerrechten draait. Kopieer de tekst en plak hem zelf.',
+    'Mondig kan niet plakken of typen in dit venster, omdat het met beheerrechten draait. De tekst staat op het klembord: plak hem met Ctrl+V. Je vorige kopie is daarmee vervangen.',
   plakToetsen:
     'Mondig plakte niet, omdat er nog een toets ingedrukt was. Kopieer de tekst en plak hem zelf.',
   plakGeenVenster: 'Er was geen venster om in te plakken. Kopieer de tekst en plak hem zelf.',
   plakNietGelezen:
     'Mondig weet niet zeker of de tekst is geplakt. Staat hij er niet, kopieer hem dan en plak hem zelf.',
   plakMislukt: 'Plakken lukte niet. Kopieer de tekst en plak hem zelf.',
-  plakNietGeplakt: 'Mondig kon niet plakken in dit venster. De tekst staat klaar onder Kopiëren.',
+  plakNietGeplakt:
+    'Mondig kon niet plakken of typen in dit venster, misschien omdat het met beheerrechten draait. De tekst staat op het klembord, zodat je hem zelf kunt plakken; je vorige kopie is daarmee vervangen.',
+  // Plakken op de Mac (mijlpaal M1)
+  plakGeenToegang:
+    'Mondig mag nog niet plakken, want macOS vraagt eerst je toestemming. De tekst staat op het klembord: plak hem met ⌘V.',
+  plakWachtwoordveld:
+    'Mondig kon niet plakken, waarschijnlijk omdat beveiligde invoer aanstond (bijvoorbeeld in een wachtwoordveld). De tekst staat op het klembord: plak hem met ⌘V.',
+  toegankelijkheidOpenen: 'Toegankelijkheid openen',
+  toegangKop: 'Geef Mondig toestemming om te plakken',
+  toegangTekst:
+    'Om de tekst te plakken waar je typt, moet Mondig toetsen mogen sturen. Zet Mondig aan in Systeeminstellingen, bij Privacy en beveiliging, Toegankelijkheid. Tot die tijd zet Mondig de tekst op het klembord.',
+  toegangOpnieuw:
+    'Staat Mondig daar al aan en plakt hij toch niet? Dat gebeurt na een nieuwe versie van Mondig. Haal Mondig dan uit de lijst met de minknop en zet hem er opnieuw in met de plusknop.',
   modelAanvullenKop: 'Het spraakmodel is nog niet compleet',
   modelAanvullenTekst: (grootte: string): string =>
     `Nog ${grootte} te downloaden. Daarna is Mondig klaar om te dicteren.`,
@@ -130,7 +153,7 @@ export const nl = {
   sneltoetsKop: 'Sneltoets',
   sneltoetsWijzigen: 'Wijzigen',
   sneltoetsHoudTik:
-    'Ingedrukt houden: opnemen tot je loslaat. Kort tikken: opnemen tot je weer tikt.',
+    'Ingedrukt houden: dicteren tot je loslaat. Kort tikken: dicteren tot je weer tikt.',
   sneltoetsVang: 'Druk de toetsen die je wilt gebruiken…',
   sneltoetsVangHulp:
     'Wat je indrukt verschijnt hier; loslaten legt hem vast. Esc stopt zonder te wijzigen.',
@@ -144,14 +167,22 @@ export const nl = {
     `${toets} wordt door een ander programma gebruikt. Kies een andere combinatie.`,
   sneltoetsFoutWindows:
     'Combinaties met de Windows-toets kunnen niet. Probeer het met Ctrl of Alt.',
-  sneltoetsFoutLosseToets:
-    'Deze toets heb je nodig om te typen of te navigeren. Kies Insert, Scroll Lock of een functietoets, of voeg Ctrl of Alt toe.',
-  sneltoetsFoutShiftAlleen: 'Shift alleen is niet genoeg. Voeg Ctrl of Alt toe.',
-  sneltoetsFoutWerktNiet: (toets: string): string =>
-    toets.includes('+')
+  sneltoetsFoutLosseToets: (mac: boolean): string =>
+    mac
+      ? 'Deze toets heb je nodig om te typen of te navigeren. Kies een functietoets, of voeg Control, Option of Command toe.'
+      : 'Deze toets heb je nodig om te typen of te navigeren. Kies Insert, Scroll Lock of een functietoets, of voeg Ctrl of Alt toe.',
+  sneltoetsFoutShiftAlleen: (mac: boolean): string =>
+    mac
+      ? 'Shift alleen is niet genoeg. Voeg Control, Option of Command toe.'
+      : 'Shift alleen is niet genoeg. Voeg Ctrl of Alt toe.',
+  sneltoetsFoutWerktNiet: (toets: string, mac: boolean): string => {
+    if (mac) return 'Pause werkt niet als sneltoets. Kies een andere toets.';
+    return toets.includes('+')
       ? 'Pause werkt niet als sneltoets, ook niet met Ctrl of Alt. Kies een andere toets.'
-      : 'Pause werkt niet als sneltoets: Windows meldt niet wanneer je loslaat. Kies een andere toets.',
-  sneltoetsFoutHoofdtoets: 'Druk ook een gewone toets in, bijvoorbeeld Ctrl+Spatie of F9.',
+      : 'Pause werkt niet als sneltoets: Windows meldt niet wanneer je loslaat. Kies een andere toets.';
+  },
+  sneltoetsFoutHoofdtoets: (voorbeeld: string): string =>
+    `Druk ook een gewone toets in, bijvoorbeeld ${voorbeeld} of F9.`,
   sneltoetsFoutMeerdere: 'Gebruik maar één gewone toets.',
   sneltoetsFoutOnbekend: 'Deze toets kan niet als sneltoets. Kies een andere.',
   sneltoetsFoutGereserveerd: "Deze combinatie heb je nodig in andere programma's. Kies een andere.",
@@ -358,26 +389,35 @@ export const nl = {
   klembordKop: 'Alleen op het klembord zetten',
   klembordHulp:
     'Niet zelf plakken. Handig als plakken in een programma niet lukt; je plakt dan met Ctrl+V.',
-  stopwoordenKop: 'Stopwoorden weghalen',
+  stopwoordenKop: 'Opvulklanken weghalen',
   stopwoordenHulp:
     "Haalt klanken als 'ehm' en 'uh' weg. Geldt ook voor uitschriften van bestanden en opnames.",
   opgeslagen: 'Opgeslagen.',
 
   // Dictaat op andere schermen
-  stripVerwerkt: 'Mondig schrijft uit…',
-  stripKlaar: 'Klaar, de tekst staat op het startscherm',
-  stripNaarStart: 'Naar het startscherm',
+  stripPlakprobleem: 'Plakken lukte niet. Je tekst staat klaar op Dicteren.',
+  stripNaarStart: 'Naar Dicteren',
   annulerenMetEsc: 'Annuleren (Esc)',
 
   // Zijbalk en startscherm (ADR 0014)
   hoofdmenu: 'Hoofdmenu',
   menuBestanden: 'Bestanden',
   menuVergadering: 'Opnemen',
-  lokaalRegel: 'Alles blijft op deze pc. Alleen het downloaden van een model gaat via internet.',
+  lokaalRegel:
+    'Alles blijft op deze computer. Alleen het downloaden van een model gaat via internet.',
   dicterenRustUitleg:
     'Houd ingedrukt en praat, of tik kort om te starten en te stoppen. De tekst verschijnt waar je typt.',
   dicterenGeenToets: 'Zodra er een sneltoets is, dicteer je met die toets in elk programma.',
   pilStoppen: 'Stoppen en uitschrijven',
+  // Het menu van het systeemvak (Rust bouwt het; de interface geeft de teksten door).
+  systeemvakOpnameLoopt: 'Opname loopt',
+  systeemvakStartenEerstAfmaken: 'Opname starten (eerst het verslag afmaken)',
+  systeemvakKopieer: 'Laatste dictaat kopiëren',
+  systeemvakAfsluiten: 'Afsluiten',
+  // De tooltip van het pictogram tijdens een opname; `{tijd}` vult Rust in (systeemvak.rs).
+  systeemvakTipOnline: 'Mondig neemt een vergadering op ({tijd})',
+  systeemvakTipRuimte: 'Mondig neemt een vergadering in de ruimte op ({tijd})',
+  systeemvakTipAlleen: 'Mondig neemt een notitie op ({tijd})',
   pilLokaal: 'Lokaal',
   pilUitschrijven: 'Bezig met uitschrijven…',
   pilGeplakt: 'Geplakt',
@@ -388,10 +428,15 @@ export const nl = {
   pilGeenTekst: 'Geen tekst herkend',
   pilGeenGeluid: 'Geen geluid gehoord',
   pilVerdacht: 'Bijna geen spraak gehoord, controleer de tekst',
-  pilRest: (seconden: number): string => `Nog ${String(seconden)} s, dan stopt het dicteren`,
+  pilRest: (seconden: number): string =>
+    `Nog ${String(seconden)} ${seconden === 1 ? 'seconde' : 'seconden'}, dan stopt het dicteren`,
   pilPlakMislukt: 'Plakken lukte niet in dit venster',
-  pilPlakBeheer: 'Dit venster draait met beheerrechten, plak de tekst zelf',
+  pilPlakBeheer: 'Dit venster draait met beheerrechten, de tekst staat op het klembord',
+  pilTypenOnderbroken: 'Gestopt met typen, de rest staat op het klembord',
+  pilGeenTekstveld: 'Geen tekstveld gevonden, de tekst staat op het klembord',
+  pilTypenMislukt: 'Plakken en typen lukten niet, de tekst staat op het klembord',
   pilPlakOnzeker: 'Niet zeker of de tekst is geplakt',
+  pilPlakGeenToegang: 'Mondig mag nog niet plakken, de tekst staat op het klembord',
   pilGekopieerd: 'Gekopieerd, plak met Ctrl+V',
   plakInMondig: 'De tekst staat hieronder, want Mondig stond vooraan toen hij klaar was.',
   pilInMondig: 'De tekst staat in Mondig',
@@ -475,9 +520,11 @@ export const nl = {
   bestandenSleepUitleg: 'Een gesprek, een Teams-opname, een spraakbericht. Ook meerdere tegelijk.',
   bestandenLoslaten: 'Laat los, dan begint Mondig',
   bestandenLoslatenUitleg: 'Ze worden op deze computer uitgeschreven, na elkaar.',
+  bestandenNietGepakt:
+    'Mondig kon dit bestand niet pakken. Sleep het eerst naar het bureaublad en dan hierheen.',
   bestandenKiezen: 'Bestanden kiezen',
   bestandenMapOpenen: 'Map openen',
-  bestandenUitschriftenOpenen: 'Uitschriften openen',
+  bestandenUitschriftenOpenen: 'Map openen',
   bestandenKomtIn: (map: string): string => `Het uitschrift komt in ${map}.`,
   bestandenOpslaanIn: (map: string): string => `Opslaan gaat naar ${map}.`,
   bestandenMeerToevoegen: 'Meer toevoegen',
@@ -500,8 +547,13 @@ export const nl = {
   bestandAnnuleren: (naam: string): string => `${naam} annuleren`,
   bestandUitRijKort: 'Uit de rij halen',
   bestandUitRij: (naam: string): string => `${naam} uit de rij halen`,
-  bestandWeghalenKort: 'Weghalen',
-  bestandWeghalen: (naam: string): string => `${naam} weghalen`,
+  bestandWeghalenKort: 'Uit de lijst verwijderen',
+  bestandWeghalenKortOpgeslagen: 'Uit de lijst verwijderen. Het opgeslagen bestand blijft staan.',
+  bestandWeghalenVraag: 'Uitschrift uit de lijst verwijderen?',
+  bestandWeghalenOnopgeslagen:
+    'Dit uitschrift is nog niet opgeslagen. Verwijder je het, dan is de tekst weg. Je opname zelf blijft staan.',
+  bestandOpgeslagenBlijft: 'Uit de lijst verwijderd. Het opgeslagen bestand blijft in je map.',
+  bestandWeghalen: (naam: string): string => `${naam} uit de lijst verwijderen`,
   bestandProcentSchermlezer: (naam: string, p: number): string => `${naam}: ${String(p)} procent`,
   bestandKlaarSchermlezer: (naam: string): string => `${naam} is uitgeschreven.`,
   bestandFoutSchermlezer: (naam: string, melding: string): string => `${naam}: ${melding}`,
@@ -516,18 +568,17 @@ export const nl = {
   formaatSrt: 'Ondertitels',
   formaatVtt: 'Ondertitels voor het web',
   bouwsteenDatum: 'Datum',
-  bouwsteenNaam: 'Naam van de opname',
-  bouwsteenLabel: 'Label',
+  bouwsteenKlant: 'Klant',
+  bouwsteenOnderwerp: 'Onderwerp',
   bouwsteenTijd: 'Tijd',
   bouwsteenModel: 'Model',
   mapDocumenten: 'Documenten',
   mapGeen: 'Nog geen map gekozen',
-  opslaanInKop: 'Map',
+  opslaanInKop: 'Map voor uitschriften',
   opslaanInHulp: 'Voor uitschriften en verslagen.',
   mapKiezenAria: (map: string): string => `Opslaan in ${map}. Andere map kiezen`,
   bestandsnaamKop: 'Bestandsnaam',
-  bestandsnaamHulp:
-    'Zet onderdelen aan of uit. Sleep ze, of gebruik Alt + pijl links of rechts, voor de volgorde.',
+  bestandsnaamHulp: 'Versleep de blokjes, of gebruik Alt + pijltjes. Lege blokjes vallen weg.',
   bestandsnaamPlek: (naam: string, plek: number, totaal: number): string =>
     `${naam} staat nu op plek ${String(plek)} van ${String(totaal)}`,
   bestandsnaamVoorbeeld: (naam: string): string => `Voorbeeld: ${naam}`,
@@ -542,25 +593,25 @@ export const nl = {
   bewaakAanKop: 'Nieuwe opnames vanzelf uitschrijven',
   bewaakAanHulp:
     'Mondig kijkt in deze map en schrijft nieuwe opnames uit, zolang Mondig draait. De opname zelf blijft zoals hij was. Wat er nu al in de map staat, blijft liggen.',
-  bewaakMapKop: 'Map',
+  bewaakMapKop: 'Map om in de gaten te houden',
   bewaakMapHulp: 'Bijvoorbeeld de map waar Teams of OneDrive je opnames neerzet.',
   bewaakMapGeen: 'Kies een map',
   bewaakMapKiezenAria: (map: string): string => `Map in de gaten houden: ${map}. Andere map kiezen`,
   bewaakSubmappenKop: 'Ook submappen',
   bewaakSubmappenHulp: 'Mondig kijkt dan ook in de mappen binnen deze map.',
-  bewaakOverslaanKop: 'Overslaan als er al een transcript is',
+  bewaakOverslaanKop: 'Overslaan als er al een uitschrift is',
   bewaakOverslaanHulp:
-    'Mondig zoekt in je transcriptmap en naast de opname naar een transcript met dezelfde naam.',
-  bewaakNaastKop: 'Transcript naast de opname zetten',
+    'Mondig zoekt in je map voor uitschriften en naast de opname naar een uitschrift met dezelfde naam.',
+  bewaakNaastKop: 'Uitschrift naast de opname zetten',
   bewaakNaastHulp:
-    'In plaats van in je transcriptmap komt het transcript in dezelfde map als de opname.',
+    'In plaats van in je map voor uitschriften komt het uitschrift in dezelfde map als de opname.',
   bewaakProbleemMapOntbreekt:
     'Deze map is niet te vinden. Mondig kijkt weer mee zodra hij terug is.',
   bewaakProbleemZelfdeAlsOpslag:
-    'Dit is de map waarin Mondig je transcripten bewaart. Kies een andere map om in de gaten te houden.',
+    'Dit is de map waarin Mondig je uitschriften opslaat. Kies een andere map om in de gaten te houden.',
   bewaakKiezenEerst: 'Kies eerst een map om in de gaten te houden.',
   bestandUitMap: 'uit de bewaakte map',
-  bestandOvergeslagen: 'overgeslagen, er is al een transcript',
+  bestandOvergeslagen: 'overgeslagen, er is al een uitschrift',
   bewaakProbleemTeVeel:
     'In deze map staan meer bestanden dan Mondig kan volgen. Kies een kleinere map, of zet de submappen uit.',
   wachtrijRest: (tijd: string, aantal: number): string =>
@@ -572,22 +623,38 @@ export const nl = {
   opslaanMenu: 'Ander formaat of andere plek',
   opslaanAnderePlek: 'Opslaan op een andere plek…',
   opslaanBezig: 'Bezig met opslaan…',
-  labelKop: 'Label',
-  labelHulp: 'Komt in de bestandsnaam en in de gegevens van het document.',
-  labelVoorbeeld: 'Bijvoorbeeld een zaaknummer',
+  // De kaart "Naam van het bestand" (UI-E): boven het uitschrift en in het verslag.
+  naamkaartKop: 'Naam van het bestand',
+  naamveldDatum: 'Datum',
+  naamveldKlant: 'Klant',
+  naamveldOnderwerp: 'Onderwerp',
+  naamkaartWordt: 'Wordt',
+  klantSuggestiesLabel: 'Suggesties voor klant',
+  klantSuggestiesAantal: (n: number): string =>
+    n === 1 ? '1 suggestie' : `${String(n)} suggesties`,
+  // Klantnamen onder Instellingen, Opslaan (UI-E)
+  klantnamenKop: 'Klantnamen',
+  klantnamenHulp: 'Mondig onthoudt ze als suggestie, alleen op deze computer.',
+  klantnamenGeen: 'Mondig onthoudt nog geen klantnamen.',
+  klantnamenAantal: (n: number): string => (n === 1 ? '1 klantnaam' : `${String(n)} klantnamen`),
+  klantnamenVraag: (n: number): string =>
+    n === 1 ? '1 klantnaam verwijderen?' : `${String(n)} klantnamen verwijderen?`,
+  klantnamenUitleg: 'Opgeslagen bestanden en verslagen blijven zoals ze zijn.',
+  klantnamenVerwijderd: 'De klantnamen zijn verwijderd.',
   opgeslagenKop: 'Opgeslagen',
   opgeslagenAlsIn: (naam: string, map: string): string => `als ${naam} in ${map}`,
   opgeslagenOpenen: 'Openen',
-  opgeslagenMapTonen: 'Map tonen',
+  toonInVerkenner: 'Tonen in Verkenner',
+  toonInFinder: 'Toon in Finder',
   bestaatAlKop: 'Er staat al een bestand met deze naam',
   opslaanAlsNummer: (nummer: string): string => `Opslaan als ${nummer}`,
   vervangen: 'Vervangen',
   verwijderenKnop: 'Verwijderen…',
-  verwijderKop: 'Transcript verwijderen?',
+  verwijderKop: 'Uitschrift verwijderen?',
   verwijderMetBestanden: (namen: string): string =>
-    `Mondig haalt het transcript weg en verwijdert de bestanden die het opsloeg: ${namen}. Dit kun je niet ongedaan maken.`,
+    `Mondig verwijdert het uitschrift en de bestanden die het opsloeg: ${namen}. Dit kun je niet ongedaan maken.`,
   verwijderZonderBestanden:
-    'Mondig haalt het transcript weg. Er zijn geen bestanden van opgeslagen.',
+    'Mondig verwijdert het uitschrift. Er zijn geen bestanden van opgeslagen.',
   verwijderBevestig: 'Verwijderen',
   bestandInMap: (naam: string, map: string): string => `${naam} in ${map}`,
   verwijderInGebruik: (namen: string): string =>
@@ -595,28 +662,27 @@ export const nl = {
   verwijderMislukt: (namen: string): string => `Niet verwijderd: ${namen}. Probeer het opnieuw.`,
   verwijderdMelding: (aantal: number): string =>
     aantal === 1
-      ? 'Transcript en 1 bestand verwijderd.'
-      : `Transcript en ${String(aantal)} bestanden verwijderd.`,
-  verwijderdZonderBestanden: 'Transcript weggehaald.',
+      ? 'Uitschrift en 1 bestand verwijderd.'
+      : `Uitschrift en ${String(aantal)} bestanden verwijderd.`,
+  verwijderdZonderBestanden: 'Uitschrift verwijderd.',
   verwijderGebleven: (namen: string): string =>
     `Bleef staan, want gewijzigd of verplaatst na het opslaan: ${namen}.`,
   bestandOpgeslagenAls: (naam: string): string => `opgeslagen als ${naam}`,
   bestandOpgeslagenVerouderd: (naam: string): string =>
     `opgeslagen als ${naam}, zonder je laatste wijzigingen`,
   bestandBewaarFout: (melding: string): string => `Automatisch opslaan lukte niet: ${melding}`,
-  transcriptRegelsLabel: 'Het transcript',
+  transcriptRegelsLabel: 'Het uitschrift',
   transcriptGeenTekst: 'Er is geen tekst herkend.',
-  transcriptNietGevonden: 'Dit transcript is er niet meer.',
+  transcriptNietGevonden: 'Dit uitschrift is er niet meer.',
   // Vergadering (sprint 4b-C)
   sprekerJij: 'Jij',
   sprekerAnderen: 'Anderen',
-  vergaderSoortLabel: 'Soort opname',
-  vergaderOnline: 'Online',
-  vergaderOnlineUitleg:
-    'Teams, Zoom of Meet. Jouw stem en die van de anderen worden apart opgenomen.',
+  vergaderSoortLabel: 'Wat ga je opnemen?',
+  vergaderOnline: 'Online vergadering',
+  vergaderOnlineUitleg: 'Teams, Zoom of Meet. Jouw stem en die van de anderen apart.',
   vergaderRuimte: 'In de ruimte',
-  vergaderRuimteUitleg: 'Iedereen in één ruimte, met de microfoon van deze computer.',
-  vergaderGeluidVan: 'Geluid van',
+  vergaderRuimteUitleg: 'Een gesprek aan tafel of een interview, met één microfoon.',
+  vergaderGeluidVan: 'Geluid van de computer',
   vergaderApparatenFout:
     'Mondig kon de luidsprekers niet ophalen. De standaard luidspreker wordt gebruikt.',
   vergaderTipOnline:
@@ -637,10 +703,10 @@ export const nl = {
   vergaderSysteemStil:
     'Er komt al een minuut geen geluid van de computer binnen. Speelt de vergadering via een ander apparaat?',
   vergaderStopUitschrijven: 'Stoppen en uitschrijven',
-  vergaderWeggooienKop: 'Opname weggooien?',
+  vergaderWeggooienKop: 'Opname verwijderen?',
   vergaderWeggooienTekst:
-    'Mondig wist de opname met alles wat er al is opgenomen. Dit kun je niet ongedaan maken.',
-  vergaderWeggooienBevestig: 'Ja, weggooien',
+    'Mondig verwijdert de opname met alles wat er al is opgenomen. Dit kun je niet ongedaan maken.',
+  vergaderWeggooienBevestig: 'Ja, verwijderen',
   vergaderAfronden: 'Mondig rondt de opname af…',
   vergaderHerstellen: 'Mondig herstelt de opname…',
   vergaderUitschrijvenKop: 'Uitschrijven…',
@@ -648,22 +714,21 @@ export const nl = {
   vergaderUitschrijvenHulp:
     'Je kunt Mondig gewoon gebruiken. Het verslag staat hier klaar zodra het is uitgeschreven.',
   vergaderLater: 'Later uitschrijven',
-  vergaderLaterHulp: 'De opname blijft dan bewaard tot je hem uitschrijft of weggooit.',
-  vergaderingVan: (dag: string, tijd: string): string => `Vergadering van ${dag}, ${tijd}`,
+  // De termijn komt uit de instelling (`null`: nog niet geladen).
+  vergaderLaterHulp: (dagen: number | null): string =>
+    dagen === null
+      ? 'De opname blijft bewaard. Schrijf hem binnen de bewaartermijn uit.'
+      : `De opname blijft ${String(dagen)} ${dagen === 1 ? 'dag' : 'dagen'} bewaard. Schrijf hem binnen die tijd uit.`,
+  titelVergadering: 'Vergadering',
   vergaderMinuten: (n: number): string => (n === 1 ? '1 minuut' : `${String(n)} minuten`),
-  vergaderInDeRuimte: 'Fysieke vergadering',
+  vergaderInDeRuimte: 'In de ruimte',
   vergaderEchoMelding:
     'Een deel van wat de anderen zeiden kwam ook via je microfoon binnen. Die dubbele tekst is weggelaten. Met een koptelefoon wordt het verslag het best.',
   vergaderMeldingSluiten: 'Melding sluiten',
   vergaderBeurtenLabel: 'Het verslag',
   vergaderNaamAria: (naam: string): string => `${naam}, naam wijzigen`,
   vergaderNaamGeven: (kant: string): string => `Naam geven aan ${kant}`,
-  vergaderNaamKop: 'Naam',
   vergaderNaamVoorbeeld: 'Bijvoorbeeld Wethouder De Vries',
-  vergaderNaamLeeg: (kant: string): string => `Laat het veld leeg om terug te gaan naar ${kant}.`,
-  vergaderNaamBereikLabel: 'Voor welke beurten',
-  vergaderNaamBeurt: 'Alleen deze beurt',
-  vergaderNaamKant: (kant: string): string => `Alle beurten van ${kant}`,
   vergaderSpreker: (nummer: number): string => `Spreker ${String(nummer)}`,
   vergaderNaamOpslaan: 'Opslaan',
   vergaderNaamGegeven: (naam: string): string => `Naam gegeven: ${naam}.`,
@@ -671,11 +736,16 @@ export const nl = {
   // Sprekers herkennen (4b-D, fase D-2)
   vergaderNaamSprekerKop: 'Naam van deze spreker',
   vergaderNaamSprekerHulp: (standaard: string): string =>
-    `Geldt voor alle beurten van deze spreker. Laat het veld leeg om terug te gaan naar ${standaard}.`,
+    `Geldt voor alle beurten van deze spreker. Heeft een andere spreker dezelfde naam, dan worden ze samengevoegd. Laat het veld leeg om terug te gaan naar ${standaard}.`,
   vergaderBeurtVanKop: 'Deze beurt is van',
   vergaderBeurtVanAria: (naam: string): string => `Geef deze beurt aan ${naam}`,
   vergaderNieuweSpreker: 'Nieuwe spreker',
   vergaderPlusSpreker: '+ Spreker',
+  vergaderSprekerAanwijzen: 'Spreker aanwijzen',
+  vergaderSprekerAanwijzenAria: (tijd: string): string =>
+    `Spreker aanwijzen bij de alinea van ${tijd}`,
+  vergaderSprekerAanwijzenHulp:
+    'Kies van wie deze alinea is, of maak een nieuwe spreker. Een naam geven kan daarna bij de spreker.',
   vergaderSamenvoegenKop: 'Is dit dezelfde persoon?',
   vergaderSamenvoegenHulp: (naam: string): string =>
     `Voeg ${naam} samen met een andere spreker. Alle beurten van ${naam} worden dan van die spreker.`,
@@ -684,6 +754,13 @@ export const nl = {
   vergaderNieuweSprekerGegeven: 'De beurt is nu van een nieuwe spreker.',
   vergaderSamengevoegd: (van: string, naar: string): string =>
     `${van} en ${naar} zijn samengevoegd.`,
+  vergaderZijnNu: (namen: string[], naam: string): string => {
+    const laatste = namen.at(-1) ?? '';
+    const lijst = namen.length > 1 ? `${namen.slice(0, -1).join(', ')} en ${laatste}` : laatste;
+    return `${lijst} zijn nu ${naam}.`;
+  },
+  vergaderOngedaanMaken: 'Ongedaan maken',
+  vergaderOngedaanGemaakt: 'Ongedaan gemaakt.',
   vergaderSprekersHerkennen: 'Sprekers herkennen…',
   vergaderSprekersSchermlezer: 'Mondig herkent nu de sprekers.',
   sprekersKop: 'Sprekers herkennen',
@@ -700,9 +777,9 @@ export const nl = {
   sprekersBezig: 'Sprekermodel wordt opgehaald…',
   sprekersBezigStand: (stand: string): string => `Sprekermodel wordt opgehaald… ${stand}`,
   sprekersOpslaanFout: 'De instelling kon niet worden bewaard.',
-  vergaderAudioBezig: 'Bezig met bewaren…',
-  vergaderAudioBewaard: (naam: string): string => `Opname bewaard als ${naam}.`,
-  vergaderAudioBewarenMenu: 'Opname bewaren als geluidsbestand…',
+  vergaderAudioBezig: 'Bezig met opslaan…',
+  vergaderAudioBewaard: (naam: string): string => `Opname opgeslagen als ${naam}.`,
+  vergaderAudioBewarenMenu: 'Opname opslaan als geluidsbestand…',
   verslagSluiten: 'Sluiten',
   verslagSluitenTitel: 'Terug naar Opnemen. Het verslag blijft bewaard.',
   verslagNieuweOpname: 'Nieuwe opname',
@@ -730,46 +807,59 @@ export const nl = {
   dictatenKop: 'Je dictaten',
   dictatenBewaard: (termijn: string): string => `${termijn} bewaard`,
   dictatenTermijnNiet: 'Niet bewaren',
+  dictatenTermijnLaatste10: 'Laatste 10',
   dictatenTermijn24u: '24 uur',
   dictatenTermijn7d: '7 dagen',
+  dictatenTermijn30d: '30 dagen',
   dictatenMenu: 'Meer opties voor je dictaten',
-  dictatenHoeLang: 'Hoe lang bewaren…',
-  dictatenAllesWissen: 'Alles wissen…',
-  dictatenAllesWissenKop: 'Alle dictaten wissen?',
+  dictatenTermijnGezet: (tekst: string): string => `Dictaten bewaren: ${tekst}`,
+  dictatenAllesWissen: 'Alles verwijderen…',
+  dictatenAllesWissenKop: 'Alle dictaten verwijderen?',
   dictatenWisVraag: (aantal: number): string =>
     aantal === 1
-      ? 'Je bewaarde dictaat wordt gewist.'
-      : `Je ${String(aantal)} bewaarde dictaten worden gewist.`,
-  dictatenWisBevestig: 'Alles wissen',
+      ? 'Je bewaarde dictaat wordt verwijderd.'
+      : `Je ${String(aantal)} bewaarde dictaten worden verwijderd.`,
+  dictatenWisBevestig: 'Alles verwijderen',
   dictatenNietBewarenKop: 'Niet meer bewaren?',
-  dictatenNietBewarenBevestig: 'Wissen en niet meer bewaren',
+  dictatenKorterKop: 'Korter bewaren?',
+  dictatenKorterBevestig: 'Verwijderen en korter bewaren',
+  dictatenMenuBewaren: 'Dictaten bewaren',
+  meerTonen: 'Meer tonen',
+  lijstTelling: (getoond: number, totaal: number): string =>
+    `${String(getoond)} van ${String(totaal)}`,
+  dictatenMeerGetoond: (aantal: number): string =>
+    aantal === 1 ? '1 dictaat erbij getoond' : `${String(aantal)} dictaten erbij getoond`,
+  dictatenNietBewarenBevestig: 'Verwijderen en niet meer bewaren',
   dictatenDagVandaag: 'Vandaag',
   dictatenDagGisteren: 'Gisteren',
   dictatenKopieerAria: (tijd: string): string => `Dictaat van ${tijd} kopiëren`,
   dictatenVerwijderAria: (tijd: string): string => `Dictaat van ${tijd} verwijderen`,
   dictatenGekopieerd: 'Gekopieerd',
   dictatenVerwijderd: 'Dictaat verwijderd',
-  dictatenAlleGewist: 'Alle dictaten zijn gewist',
+  dictatenAlleGewist: 'Alle dictaten zijn verwijderd',
   dictatenLeegKop: 'Hier komt wat je dicteert',
   dictatenLeegTekst: (termijn: string): string =>
     `Dicteer in Word, Outlook of je browser. Wat je zegt, blijft hier ${termijn} staan, zodat je het terugvindt als het plakken niet lukte.`,
+  dictatenLeegTekstLaatste10:
+    'Dicteer in Word, Outlook of je browser. Mondig houdt hier je tien nieuwste dictaten, zodat je ze terugvindt als het plakken niet lukte.',
   dictatenNietBewaard: 'Mondig bewaart je dictaten niet; dit verdwijnt als je Mondig sluit.',
   dictatenWijzigen: 'Wijzigen',
   dictatenBewarenKop: 'Dictaten bewaren',
-  dictatenBewarenHulp: 'Zodat je ze op Dicteren terugvindt. Alleen op deze computer.',
+  dictatenBewarenHulp:
+    'Zodat je ze op Dicteren terugvindt. Alleen op deze computer. Bij Laatste 10 houdt Mondig altijd de tien nieuwste, hoe oud ook.',
 
   // Dictaten opschonen (ADR 0027): Instellingen, de tweede sneltoets, de pil en de geschiedenis
   opschonenKop: 'Dictaten opschonen',
   opschonenKeuzeUit: 'Uit',
   opschonenKeuzeSneltoets: 'Met een eigen sneltoets',
   opschonenKeuzeElk: 'Bij elk dictaat',
-  opschonenUitleg: 'Een taalmodel maakt van je dictaat lopende zinnen met leestekens.',
+  opschonenUitleg: 'Een AI-dienst maakt van je dictaat lopende zinnen met leestekens.',
   opschonenUitlegNaar: (naam: string, label: string): string =>
-    `Een taalmodel maakt van je dictaat lopende zinnen met leestekens. Je tekst gaat naar ${naam} (${label}). Namen en andere persoonsgegevens worden niet vervangen. De letterlijke tekst blijft op deze computer.`,
+    `Een AI-dienst maakt van je dictaat lopende zinnen met leestekens. Je tekst gaat naar ${naam} (${label}). Namen en andere persoonsgegevens worden niet vervangen. De letterlijke tekst blijft op deze computer.`,
   opschonenUitlegLokaal:
-    'Een taalmodel maakt van je dictaat lopende zinnen met leestekens. Je tekst blijft op deze computer (Lokaal). Werkt alleen vlot met een goede videokaart.',
-  opschonenGeenAanbieder: 'Kies eerst een taalmodel onder Notulen.',
-  opschonenNaarNotulen: 'Naar Notulen',
+    'Een AI-dienst maakt van je dictaat lopende zinnen met leestekens. Je tekst blijft op deze computer (Lokaal). Werkt alleen vlot met een goede videokaart.',
+  opschonenGeenAanbieder: 'Kies eerst een AI-dienst.',
+  opschonenNaarNotulen: 'Naar AI-dienst',
   opschonenVraagTekst: (naam: string, label: string): string =>
     `Je dictaten gaan naar ${naam} (${label}) om op te schonen. Namen en andere persoonsgegevens worden niet vervangen. De letterlijke tekst blijft op deze computer.`,
   opschonenAanzetten: 'Aanzetten',
@@ -801,7 +891,7 @@ export const nl = {
   dictatenLetterlijkKopierenAria: (tijd: string): string =>
     `Letterlijke tekst van het dictaat van ${tijd} kopiëren`,
   dictatenLetterlijkGekopieerd: 'Letterlijke tekst gekopieerd',
-  bewaarKop: 'Opnames en verslagen wissen na',
+  bewaarKop: 'Opnames en verslagen verwijderen na',
   bewaarHulp: 'Wat je opslaat als bestand, blijft in je map.',
   bewaar1: '1 dag',
   bewaar7: '7 dagen',
@@ -810,7 +900,7 @@ export const nl = {
     'Mondig kan niet nagaan of deze opname nog loopt. Staat Mondig ergens anders open, sluit dat dan eerst.',
   vergaderHerstelUitschrijven: 'Herstellen',
   vergaderUitschrijvenKnop: 'Uitschrijven',
-  vergaderLijstWeggooienVraag: 'Deze opname weggooien? Dit kun je niet ongedaan maken.',
+  vergaderLijstWeggooienVraag: 'Deze opname verwijderen? Dit kun je niet ongedaan maken.',
   vergaderLijstKnopAria: (knop: string, wanneer: string): string =>
     `${knop}, opname van ${wanneer}`,
   vergaderGestartSchermlezer: 'De opname is gestart.',
@@ -818,20 +908,19 @@ export const nl = {
   vergaderProcentSchermlezer: (p: number): string => `Uitschrijven: ${String(p)} procent`,
   vergaderKlaarSchermlezer: 'Het verslag is klaar.',
   vergaderFoutSchermlezer: (melding: string): string => `Fout: ${melding}`,
-  vergaderWeggegooidSchermlezer: 'De opname is weggegooid.',
+  vergaderWeggegooidSchermlezer: 'De opname is verwijderd.',
   vergaderLaterSchermlezer: 'Het uitschrijven is gestopt. De opname blijft bewaard.',
   vergaderGeslotenSchermlezer:
     'Het verslag is gesloten. Je vindt het terug onder Eerder opgenomen.',
   // Opnemen (fase UX-D): de soort Alleen ik, het startscherm en de lijst die nog wacht
   vergaderAlleen: 'Alleen ik',
-  vergaderAlleenUitleg: 'Je gedachten inspreken. Mondig schrijft het na afloop uit.',
-  notitieVan: (dag: string, tijd: string): string => `Notitie van ${dag}, ${tijd}`,
+  vergaderAlleenUitleg: 'Je gedachten of een notitie. Uitgeschreven na afloop.',
+  titelNotitie: 'Notitie',
+  verslagTitelNu: (titel: string): string => `Het verslag heet nu ${titel}.`,
   vergaderTestgeluid: 'Testgeluid afspelen',
   vergaderTestgeluidBezig: 'Testgeluid speelt…',
   vergaderTestgeluidFout: 'Het testgeluid speelde niet af.',
   vergaderNogUitTeSchrijven: 'Nog uit te schrijven',
-  vergaderWachtendWistRegel: (dagen: number): string =>
-    `Mondig wist ze na ${String(dagen)} ${dagen === 1 ? 'dag' : 'dagen'}.`,
   // Vanaf een uur: "1 uur 4 min" (ontwerp N-0), anders "52 min".
   vergaderMinutenKort: (n: number): string => {
     if (n < 60) return `${String(n)} min`;
@@ -841,34 +930,35 @@ export const nl = {
       : `${String(Math.floor(n / 60))} uur ${String(rest)} min`;
   },
   vergaderOnderbroken: 'onderbroken',
-  vergaderWistKortVandaag: 'wordt vandaag gewist',
-  vergaderWistKortMorgen: 'wordt morgen gewist',
-  vergaderWistOp: (moment: string): string => `Wordt automatisch gewist op ${moment}.`,
+  vergaderWistKortVandaag: 'wordt vandaag verwijderd',
+  vergaderWistKortMorgen: 'wordt morgen verwijderd',
+  vergaderWistOp: (moment: string): string => `Wordt automatisch verwijderd op ${moment}.`,
   vergaderAlleTonen: (n: number): string => `Alle ${String(n)} tonen`,
-  vergaderMinderTonen: 'Minder tonen',
+  vergaderOpnamesErbij: (aantal: number): string =>
+    aantal === 1 ? '1 opname erbij getoond' : `${String(aantal)} opnames erbij getoond`,
+  vergaderVerslagenErbij: (aantal: number): string =>
+    aantal === 1 ? '1 verslag erbij getoond' : `${String(aantal)} verslagen erbij getoond`,
   // Verslagen bewaren en Eerder opgenomen (N-C3, ADR 0022)
   vergaderEerderOpgenomen: 'Eerder opgenomen',
   vergaderEerderLabel: 'Eerder opgenomen vergaderingen en notities',
   verslagAlleenIk: 'alleen ik',
   vergaderDagMorgen: 'morgen',
   vergaderBewaartRegel: (dagen: number): string =>
-    `Mondig bewaart ze ${String(dagen)} ${dagen === 1 ? 'dag' : 'dagen'}.`,
+    `Mondig verwijdert opnames na ${String(dagen)} ${dagen === 1 ? 'dag' : 'dagen'}.`,
   vergaderBewaartWijzigen: 'Wijzigen',
   verslagMeerAria: (titel: string): string => `Meer voor ${titel}`,
   verslagMeer: 'Meer',
-  verslagWissenMenu: 'Verslag wissen…',
-  verslagWissenKop: 'Verslag wissen?',
+  verslagWissenMenu: 'Verslag verwijderen…',
+  verslagWissenKop: 'Verslag verwijderen?',
   verslagWissenTekst:
-    'Mondig wist het verslag en de opname. Wat je als bestand hebt opgeslagen, blijft in je map. Dit kun je niet ongedaan maken.',
-  verslagWissenBevestig: 'Ja, wissen',
-  verslagGewistSchermlezer: 'Het verslag is gewist.',
+    'Mondig verwijdert het verslag en de opname. Wat je als bestand hebt opgeslagen, blijft in je map. Dit kun je niet ongedaan maken.',
+  verslagWissenBevestig: 'Ja, verwijderen',
+  verslagGewistSchermlezer: 'Het verslag is verwijderd.',
   verslagTochSluiten: 'Toch sluiten',
-  verslagNaamWijzigen: 'Naam wijzigen',
-  verslagNaamLabel: 'Naam van het verslag',
-  verslagNaamWijzigenAria: (titel: string): string => `Naam wijzigen, ${titel}`,
-  verslagNaamGegeven: (naam: string): string => `Het verslag heet nu ${naam}.`,
-  verslagNaamTerug: 'Het verslag heeft weer de titel die Mondig maakt.',
-  verslagBewaardTot: (dag: string): string => `Mondig bewaart dit verslag tot ${dag}`,
+  verslagVerwijderdOp: (datum: string): string => `Wordt op ${datum} verwijderd`,
+  verslagVerwijderdVandaagOm: (tijd: string): string => `Wordt vandaag om ${tijd} verwijderd`,
+  verslagVerwijderdMorgenOm: (tijd: string): string => `Wordt morgen om ${tijd} verwijderd`,
+  verslagVerwijderdVandaag: 'Wordt vandaag verwijderd',
   vergaderMeerMenuNu: 'Meer voor deze opname',
   vergaderVerwijderen: 'Verwijderen',
   vergaderVerwijderAria: (wanneer: string): string => `Opname van ${wanneer} verwijderen`,
@@ -883,18 +973,18 @@ export const nl = {
         ? `Ook nog 1 opname bij ${soort}`
         : `Ook nog ${String(aantal)} opnames bij ${soort}`;
     if (wist === null) return basis;
-    if (aantal === 1) return `${basis}, wordt ${wist} gewist`;
-    return `${basis}, ${String(aantalWist)} ${aantalWist === 1 ? 'wordt' : 'worden'} ${wist} gewist`;
+    if (aantal === 1) return `${basis}, wordt ${wist} verwijderd`;
+    return `${basis}, ${String(aantalWist)} ${aantalWist === 1 ? 'wordt' : 'worden'} ${wist} verwijderd`;
   },
   vergaderAudioNaast: (naam: string): string => `De opname staat ernaast als ${naam}.`,
   vergaderAudioNaastFout: (melding: string): string =>
     `Het verslag is opgeslagen, maar de opname niet: ${melding}`,
-  audioNaastKop: 'Opname ook bewaren als geluidsbestand',
+  audioNaastKop: 'Opname ook opslaan als geluidsbestand',
   audioNaastHulp:
-    'Bij het opslaan van een verslag komt de opname als WAV ernaast, met dezelfde naam.',
-  mapOpenenKort: 'Openen',
+    'Bij het opslaan van een verslag komt de opname als geluidsbestand (.wav) ernaast, met dezelfde naam.',
+  mapOpenenKort: 'Map openen',
   mapOpenenAria: (map: string): string => `${map} openen in de Verkenner`,
-  vergaderOpnameWeggooien: 'Opname weggooien…',
+  vergaderOpnameWeggooien: 'Opname verwijderen…',
 
   // Modellen (sprint 5-A)
   menuModellen: 'Modellen',
@@ -929,8 +1019,7 @@ export const nl = {
   functieTeWeinigRuimte: (grootte: string): string => `Te weinig ruimte: nog ${grootte} nodig.`,
   kaartVolgt: (rol: string): string => `${rol} volgt zodra de download klaar is.`,
   sprekersModelAanwezig: 'Staat op deze computer. Herkent tot 4 sprekers.',
-  sprekersModelNiet: (grootte: string): string =>
-    `Nog niet gedownload (${grootte}). Herkent tot 4 sprekers.`,
+  sprekersModelNiet: 'Nog niet gedownload. Herkent tot 4 sprekers.',
   naHervattenGebruik: (dicteren: boolean, opnames: boolean): string =>
     dicteren && opnames
       ? 'Wordt gebruikt voor dicteren en opnames zodra de download klaar is.'
@@ -957,8 +1046,8 @@ export const nl = {
   labelNieuw: 'Nieuw',
   labelLokaal: 'Lokaal',
   inGebruikVoorDicteren: 'in gebruik voor dicteren',
-  inGebruikVoorBestanden: 'in gebruik voor opnames',
-  inGebruikVoorBeide: 'in gebruik voor dicteren en opnames',
+  inGebruikVoorBestanden: 'in gebruik voor opnames en bestanden',
+  inGebruikVoorBeide: 'in gebruik voor dicteren, opnames en bestanden',
   gedeeltelijkGedownload: (binnen: string, totaal: string): string =>
     `${binnen} van ${totaal} is al binnen`,
   verderDownloadenGrootte: (rest: string): string => `Verder downloaden (nog ${rest})`,
@@ -1028,7 +1117,7 @@ export const nl = {
       case 'whisper-large-v3-turbo-q8':
         return {
           naam: 'Whisper turbo',
-          zin: 'De nauwkeurigste, en de enige voor Turks en Arabisch. Te traag om mee te dicteren, en traag zonder snelle videokaart.',
+          zin: 'Extra nauwkeurig, maar langzamer, en de enige voor Turks en Arabisch. Te traag om mee te dicteren, en traag zonder snelle videokaart.',
           dicterenTijd: 'na ongeveer 12 seconden',
           uurOpname: 'ongeveer 26 minuten',
           extra: 'Voor Turks, Arabisch en talen buiten de 25. Alleen te kiezen voor bestanden.'
@@ -1055,7 +1144,7 @@ export const nl = {
   verslagPauzeren: (tijd: string): string => `Pauzeren, regel van ${tijd}`,
   verslagAfspelenMislukt: 'Het afspelen lukte niet. Probeer het opnieuw.',
   verslagLaden: 'Het geluid wordt klaargezet.',
-  verslagGeenGeluidOpname: 'Afspelen kan niet: de opname is gewist.',
+  verslagGeenGeluidOpname: 'Afspelen kan niet: de opname is verwijderd.',
   verslagGeenGeluidBestand: 'Afspelen kan niet: het bronbestand is verplaatst of verwijderd.',
   verslagSnelheidKop: 'Snelheid',
   verslagSnelheidTitel: 'Snelheid van afspelen',
@@ -1101,7 +1190,7 @@ export const nl = {
   // Opnieuw uitschrijven (N-C4, ADR 0023)
   opnieuwMenu: 'Opnieuw uitschrijven…',
   opnieuwGewistMenu: 'Opnieuw uitschrijven',
-  opnieuwGewistReden: 'Kan niet meer: de opname is gewist.',
+  opnieuwGewistReden: 'Kan niet meer: de opname is verwijderd.',
   opnieuwKop: 'Opnieuw uitschrijven',
   opnieuwUitleg: (rol: string | null): string =>
     rol === null
@@ -1149,6 +1238,10 @@ export const nl = {
       ? '1 markering staat niet meer in de tekst; lees het verslag na.'
       : `${String(aantal)} markeringen staan niet meer in de tekst; lees het verslag na.`,
   opnieuwTerugzetten: 'Vorige versie terugzetten',
+  opnieuwTerugzettenKop: 'Vorige versie terugzetten?',
+  opnieuwTerugzettenTekst:
+    'Het verslag wordt weer zoals het was voor het opnieuw uitschrijven. Namen en verbeterde tekst die je sindsdien aanpaste, gaan daarbij ook terug. Je markeringen van persoonsgegevens blijven.',
+  opnieuwTerugzettenBevestig: 'Ja, terugzetten',
   opnieuwTeruggezet: 'De vorige versie staat weer terug.',
   opnieuwVeranderdAria: 'veranderd bij opnieuw uitschrijven',
   persoonZelfKop: 'Zelf iets markeren',
@@ -1172,10 +1265,11 @@ export const nl = {
   persoonSoortAria: (soort: string): string => `gemarkeerd als ${soort}`,
 
   // Notulen (T3, ADR 0024 tot en met 0026): Instellingen en het tabblad Notulen van het verslag
-  groepNotulen: 'Notulen',
+  groepNotulen: 'AI-dienst',
+  groepNotulenUitleg: 'Voor notulen en het opschonen van dictaten.',
   notulenKop: 'Notulen maken met',
   notulenHulp:
-    'Kies waar de tekst van een verslag heen gaat. Niets ingesteld: dan maakt Mondig geen notulen.',
+    'Kies waar de tekst heen gaat. Ollama is een gratis programma dat AI op je eigen computer draait. Niets ingesteld: dan maakt Mondig geen notulen.',
   notulenKeuzeGeen: 'Niet ingesteld',
   notulenKeuzeMistral: 'Mistral (Europees)',
   notulenKeuzeOllama: 'Ollama op deze computer',
@@ -1189,8 +1283,8 @@ export const nl = {
   notulenSleutelTesten: 'Testen',
   notulenSleutelTestBezig: 'Aan het testen...',
   notulenSleutelTestOk: 'De sleutel werkt.',
-  notulenSleutelWissen: 'Wissen',
-  notulenSleutelGewist: 'De sleutel is gewist.',
+  notulenSleutelWissen: 'Verwijderen',
+  notulenSleutelGewist: 'De sleutel is verwijderd.',
   notulenSleutelVervangen: 'Een nieuwe sleutel invullen',
   notulenTrainingVinkje: 'Training staat uit voor deze sleutel.',
   notulenTrainingWaarom: 'Waarom vraagt Mondig dit?',
@@ -1216,7 +1310,7 @@ export const nl = {
   notulenMaken: 'Notulen maken',
   notulenNietIngesteld: 'Notulen maken is nog niet ingesteld.',
   notulenOnvolledig: 'Notulen maken is nog niet klaar voor gebruik.',
-  notulenNaarInstellingen: 'Naar Instellingen',
+  notulenInstellen: 'Notulen instellen',
   notulenVraagKop: 'Waar gaat de tekst heen?',
   notulenVraagTekst: (aanbieder: string, vervangen: boolean): string =>
     `De tekst van dit verslag gaat naar ${aanbieder}. ${
@@ -1229,7 +1323,7 @@ export const nl = {
   notulenStoppen: 'Stoppen',
   notulenGestopt: 'Het maken van de notulen is gestopt. Het verslag is niet veranderd.',
   notulenSamenvatting: 'Samenvatting',
-  notulenSamenvattingNota: 'Gemaakt door een taalmodel, lees na.',
+  notulenSamenvattingNota: 'Gemaakt door een AI-dienst, lees na.',
   notulenBesluiten: 'Besluiten',
   notulenGeenBesluiten: 'Geen besluiten.',
   notulenActiepunten: 'Actiepunten',

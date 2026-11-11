@@ -31,7 +31,7 @@ describe('Dictaten opschonen in Instellingen', () => {
     const tekst = html();
     expect(tekst).toContain('Je tekst gaat naar Mistral (Europees).');
     expect(tekst).toContain('niet vervangen');
-    expect(tekst).not.toContain('Kies eerst een taalmodel');
+    expect(tekst).not.toContain('Kies eerst een AI-dienst');
   });
 
   it('zegt bij Ollama dat de tekst op de computer blijft en dat het een goede videokaart vraagt', () => {
@@ -40,10 +40,10 @@ describe('Dictaten opschonen in Instellingen', () => {
     expect(tekst).toContain('Werkt alleen vlot met een goede videokaart.');
   });
 
-  it('is zonder aanbieder niet te bedienen en verwijst naar Notulen', () => {
+  it('is zonder aanbieder niet te bedienen en verwijst naar de AI-dienst', () => {
     const tekst = html({ aanbieder: null, naam: null, label: null, model: null });
-    expect(tekst).toContain('Kies eerst een taalmodel onder Notulen.');
-    expect(tekst).toContain('Naar Notulen');
+    expect(tekst).toContain('Kies eerst een AI-dienst.');
+    expect(tekst).toContain('Naar AI-dienst');
     expect(tekst).toContain('#notulen');
     expect(tekst).toMatch(/<select[^>]*disabled/);
   });

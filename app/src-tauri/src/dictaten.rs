@@ -34,7 +34,7 @@ use crate::sneltoets::{INSTELLINGEN, lees_instelling};
 /// Het event waarmee de interface hoort dat de lijst of de termijn veranderde.
 const GEWIJZIGD: &str = "dictaten-gewijzigd";
 
-/// Sleutel in de store: `niet`, `24u` of `7d`. Ontbreekt hij, dan geldt 24 uur.
+/// Sleutel in de store: `niet`, `laatste10`, `24u`, `7d` of `30d`. Ontbreekt hij, dan geldt 24 uur.
 const SLEUTEL: &str = "dictaten_bewaren";
 
 /// Zo vaak ruimt Mondig verlopen dictaten op, naast het opruimen bij het starten.
@@ -89,9 +89,16 @@ fn schrijffout() -> Foutmelding {
     )
 }
 
+fn onbekende_keuze() -> Foutmelding {
+    Foutmelding::nieuw(
+        "Deze keuze bestaat niet. Kies Niet bewaren, Laatste 10, 24 uur, 7 dagen of 30 dagen.",
+        Vervolg::Geen,
+    )
+}
+
 fn wisfout() -> Foutmelding {
     Foutmelding::nieuw(
-        "Mondig kon niet alles wissen. Probeer het opnieuw.",
+        "Mondig kon niet alles verwijderen. Probeer het opnieuw.",
         Vervolg::OpnieuwProberen,
     )
 }
@@ -142,12 +149,21 @@ fn bewaar_op_schijf(
     if let Some(laatste) = slot(geheugen).as_mut()
         && laatste.reeks == reeks
     {
-        laatste.id = Some(id);
+        laatste.id = Some(id.clone());
+    }
+    let id_bewaard = id;
+    // Laatste 10 kent geen tijdgrens: na elk nieuw dictaat gaat alles behalve de tien
+    // nieuwste direct weg, niet pas bij de ronde van het volgende uur.
+    // Het net bewaarde dictaat telt altijd mee, ook als de klok achteruit liep.
+    if termijn.max_aantal().is_some() {
+        let gewist = dictaten::wis_verlopen_behalve(basis, termijn, nu_ms, &id_bewaard);
+        vergeet_gewiste(geheugen, &gewist.ids, basis, termijn, nu_ms);
     }
     Ok(())
 }
 
-/// Zet het nieuwste dictaat dat nog op schijf staat in het geheugen (met 24 uur of 7 dagen).
+/// Zet het nieuwste dictaat dat nog op schijf staat in het geheugen (bij elke stand behalve
+/// Niet bewaren).
 fn vul_aan(geheugen: &Geheugen, basis: &Path, termijn: Termijn, nu_ms: u64) {
     if termijn == Termijn::Niet {
         return;
@@ -160,7 +176,7 @@ fn vul_aan(geheugen: &Geheugen, basis: &Path, termijn: Termijn, nu_ms: u64) {
     });
 }
 
-/// Bij het starten: met 24 uur of 7 dagen is het nieuwste bewaarde dictaat het laatste.
+/// Bij het starten: behalve bij Niet bewaren is het nieuwste bewaarde dictaat het laatste.
 fn herstel_geheugen(geheugen: &Geheugen, basis: Option<&Path>, termijn: Termijn, nu_ms: u64) {
     let Some(basis) = basis else {
         return;
@@ -217,7 +233,7 @@ fn verwijder_in(
     Ok(())
 }
 
-/// Alles wissen: alle bestanden, en met 24 uur of 7 dagen ook het geheugen (wat nog staat
+/// Alles wissen: alle bestanden, en behalve bij Niet bewaren ook het geheugen (wat nog staat
 /// omdat wissen mislukte, wordt dan het laatste dictaat).
 fn wis_alles_in(geheugen: &Geheugen, basis: &Path, termijn: Termijn, nu_ms: u64) -> Gewist {
     let gewist = dictaten::wis_alles(basis);
@@ -349,33 +365,54 @@ pub(crate) struct LaatsteStand {
     id: Option<String>,
 }
 
+/// Hoeveel dictaten de lijst de eerste keer toont als de interface niets vraagt.
+const STANDAARD_LIMIET: usize = 10;
+
 /// Wat de interface van de geschiedenis nodig heeft.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DictatenStand {
-    /// `niet`, `24u` of `7d`.
+    /// `niet`, `laatste10`, `24u`, `7d` of `30d`.
     termijn: &'static str,
-    /// Nieuwste eerst; wat verlopen is staat er niet in. Leeg bij Niet bewaren.
+    /// Een deel van de lijst (vanaf `begin`, hoogstens `limiet`), nieuwste eerst; wat verlopen
+    /// is staat er niet in. Leeg bij Niet bewaren.
     dictaten: Vec<Dictaat>,
+    /// Hoeveel dictaten er in totaal gelden, voor de telling "10 van 37". Bij Laatste 10 nooit
+    /// meer dan tien; 0 bij Niet bewaren.
+    totaal: usize,
     /// Het aantal dictaatbestanden dat nu op schijf staat, ook wat nog moet verlopen: zoveel
-    /// gaat weg bij Niet bewaren of Alles wissen.
+    /// gaat weg bij Alles wissen.
     bewaard: usize,
     /// Het laatste dictaat in het geheugen.
     laatste: Option<LaatsteStand>,
 }
 
-/// De termijn en de lijst, voor Dicteren en voor de bevestigvraag in Instellingen.
+/// De termijn en een deel van de lijst, voor Dicteren en voor de bevestigvraag in Instellingen.
+/// Zonder argumenten: de nieuwste tien. Zo hoeft niet alle tekst over de brug.
 #[expect(
     clippy::needless_pass_by_value,
     reason = "Tauri geeft een commando de AppHandle per waarde mee; een verwijzing kan niet"
 )]
 #[tauri::command]
-pub(crate) fn dictaten_stand(app: AppHandle) -> DictatenStand {
+pub(crate) fn dictaten_stand(
+    app: AppHandle,
+    begin: Option<usize>,
+    limiet: Option<usize>,
+) -> DictatenStand {
     let termijn = lees_termijn(&app);
     let basis = map();
-    let dictaten = match (termijn, basis.as_deref()) {
-        (Termijn::Niet, _) | (_, None) => Vec::new(),
-        (termijn, Some(basis)) => dictaten::lijst(basis, termijn, dictaten::nu_ms()),
+    let deel = match (termijn, basis.as_deref()) {
+        (Termijn::Niet, _) | (_, None) => dictaten::Deel {
+            dictaten: Vec::new(),
+            totaal: 0,
+        },
+        (termijn, Some(basis)) => dictaten::lijst_deel(
+            basis,
+            termijn,
+            dictaten::nu_ms(),
+            begin.unwrap_or(0),
+            limiet.unwrap_or(STANDAARD_LIMIET),
+        ),
     };
     let laatste = slot(&app.state::<DicteerStaat>().laatste_dictaat)
         .as_ref()
@@ -385,14 +422,31 @@ pub(crate) fn dictaten_stand(app: AppHandle) -> DictatenStand {
         });
     DictatenStand {
         termijn: termijn.sleutel(),
-        dictaten,
+        dictaten: deel.dictaten,
+        totaal: deel.totaal,
         bewaard: basis.as_deref().map_or(0, dictaten::aantal),
         laatste,
     }
 }
 
+/// Hoeveel dictaten er wegvallen als de gebruiker deze termijn kiest, voor de bevestigvraag.
+/// Wist niets. Een onbekende termijn is een fout.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Tauri geeft een commando de argumenten per waarde mee; een verwijzing kan niet"
+)]
+#[tauri::command]
+pub(crate) fn dictaten_wegval(termijn: String) -> Result<usize, Foutmelding> {
+    let nieuw = Termijn::uit_sleutel(&termijn).ok_or_else(onbekende_keuze)?;
+    Ok(map().map_or(0, |basis| {
+        let _slot = schijf_slot();
+        dictaten::wegvallend(&basis, nieuw, dictaten::nu_ms())
+    }))
+}
+
 /// Bewaart een andere termijn en past hem meteen toe: korter wist wat ouder is, Niet bewaren
-/// wist alles (de interface heeft daar eerst een bevestigvraag voor gesteld).
+/// wist alles, Laatste 10 wist alles behalve de tien nieuwste (de interface heeft daar eerst een
+/// bevestigvraag voor gesteld).
 #[expect(
     clippy::needless_pass_by_value,
     reason = "Tauri geeft een commando de argumenten per waarde mee; een verwijzing kan niet"
@@ -400,10 +454,7 @@ pub(crate) fn dictaten_stand(app: AppHandle) -> DictatenStand {
 #[tauri::command]
 pub(crate) fn dictaten_bewaren_zet(app: AppHandle, termijn: String) -> Result<(), Foutmelding> {
     let Some(nieuw) = Termijn::uit_sleutel(&termijn) else {
-        return Err(Foutmelding::nieuw(
-            "Deze keuze bestaat niet. Kies Niet bewaren, 24 uur of 7 dagen.",
-            Vervolg::Geen,
-        ));
+        return Err(onbekende_keuze());
     };
     let mislukt = {
         let _slot = schijf_slot();
@@ -463,7 +514,7 @@ pub(crate) fn dictaat_verwijder(app: AppHandle, id: String) -> Result<(), Foutme
     uitkomst.map_err(|fout| Foutmelding::nieuw(fout.to_string(), Vervolg::Geen))
 }
 
-/// Wist alle bewaarde dictaten, en met 24 uur of 7 dagen het laatste dictaat in het geheugen.
+/// Wist alle bewaarde dictaten, en behalve bij Niet bewaren het laatste dictaat in het geheugen.
 #[expect(
     clippy::needless_pass_by_value,
     reason = "Tauri geeft een commando de AppHandle per waarde mee; een verwijzing kan niet"
@@ -542,15 +593,18 @@ mod tests {
     fn een_ontbrekende_of_ongeldige_instelling_geeft_24_uur() {
         assert_eq!(termijn_uit(None), Termijn::Dag);
         assert_eq!(termijn_uit(Some("")), Termijn::Dag);
-        assert_eq!(termijn_uit(Some("30d")), Termijn::Dag);
+        assert_eq!(termijn_uit(Some("30 dagen")), Termijn::Dag);
+        assert_eq!(termijn_uit(Some("onbekend")), Termijn::Dag);
         assert_eq!(termijn_uit(Some("niet")), Termijn::Niet);
         assert_eq!(termijn_uit(Some("24u")), Termijn::Dag);
         assert_eq!(termijn_uit(Some("7d")), Termijn::Week);
+        assert_eq!(termijn_uit(Some("30d")), Termijn::Maand);
+        assert_eq!(termijn_uit(Some("laatste10")), Termijn::Laatste10);
     }
 
     #[test]
-    fn het_systeemvak_heeft_tekst_in_alle_drie_de_standen() {
-        for termijn in [Termijn::Niet, Termijn::Dag, Termijn::Week] {
+    fn het_systeemvak_heeft_tekst_in_alle_vijf_de_standen() {
+        for termijn in Termijn::ALLE {
             let map = Map::nieuw();
             let mem = geheugen();
             assert_eq!(tekst_voor_tray(&mem), None, "{termijn:?} begint leeg");
@@ -576,6 +630,84 @@ mod tests {
         );
         leg_vast(&mem, Some(&map.0), Termijn::Niet, "Niet bewaard.", 5 * DAG).unwrap();
         assert_eq!(laatste_id(&mem), None);
+    }
+
+    #[test]
+    fn laatste_10_wist_na_elk_nieuw_dictaat_alles_behalve_de_tien_nieuwste() {
+        let map = Map::nieuw();
+        let mem = geheugen();
+        for i in 0..12_u64 {
+            leg_vast(
+                &mem,
+                Some(&map.0),
+                Termijn::Laatste10,
+                &format!("n{i}"),
+                5 * DAG + i,
+            )
+            .unwrap();
+        }
+        let lijst = dictaten::lijst(&map.0, Termijn::Laatste10, 5 * DAG + 100);
+        assert_eq!(lijst.len(), 10);
+        // Echt van schijf, niet alleen uit de lijst gefilterd.
+        assert_eq!(dictaten::aantal(&map.0), 10);
+        assert_eq!(lijst[0].tekst, "n11");
+        assert_eq!(lijst[9].tekst, "n2");
+        // Het laatste dictaat in het geheugen is het nieuwste en houdt zijn id.
+        assert_eq!(tekst_voor_tray(&mem).as_deref(), Some("n11"));
+        assert_eq!(laatste_id(&mem), Some(lijst[0].id.clone()));
+    }
+
+    #[test]
+    fn laatste_10_houdt_het_nieuwe_dictaat_ook_als_de_klok_achteruit_liep() {
+        let map = Map::nieuw();
+        let mem = geheugen();
+        for i in 0..10_u64 {
+            leg_vast(
+                &mem,
+                Some(&map.0),
+                Termijn::Laatste10,
+                &format!("n{i}"),
+                50 * DAG + 1_800_000 + i,
+            )
+            .unwrap();
+        }
+        // De klok liep een half uur terug: het nieuwe dictaat lijkt het oudste, maar blijft.
+        leg_vast(&mem, Some(&map.0), Termijn::Laatste10, "nieuw", 50 * DAG).unwrap();
+        assert_eq!(dictaten::aantal(&map.0), 10);
+        assert_eq!(tekst_voor_tray(&mem).as_deref(), Some("nieuw"));
+        assert!(laatste_id(&mem).is_some_and(|id| map.0.join(id).exists()));
+    }
+
+    #[test]
+    fn overschakelen_wist_meteen_en_het_geheugen_volgt() {
+        let map = Map::nieuw();
+        let mem = geheugen();
+        let nu = 60 * DAG;
+        // 12 dictaten van de afgelopen 12 dagen, het nieuwste het laatste.
+        for i in 0..12_u64 {
+            leg_vast(
+                &mem,
+                Some(&map.0),
+                Termijn::Maand,
+                &format!("d{i}"),
+                nu - (12 - i) * DAG,
+            )
+            .unwrap();
+        }
+        assert_eq!(dictaten::aantal(&map.0), 12);
+        // 30 dagen naar Laatste 10: de twee oudste gaan.
+        assert_eq!(dictaten::wegvallend(&map.0, Termijn::Laatste10, nu), 2);
+        let gewist = ruim_op_in(&mem, &map.0, Termijn::Laatste10, nu);
+        assert_eq!(gewist.aantal, 2);
+        assert_eq!(dictaten::aantal(&map.0), 10);
+        // 7 dagen: wat een week of ouder is gaat (de grens telt als weg): hier vier.
+        assert_eq!(ruim_op_in(&mem, &map.0, Termijn::Week, nu).aantal, 4);
+        // 24 uur: het nieuwste is precies een dag oud en valt er dus ook af; het geheugen blijft leeg
+        // omdat er niets meer staat.
+        let gewist = ruim_op_in(&mem, &map.0, Termijn::Dag, nu);
+        assert_eq!(gewist.aantal, 6);
+        assert_eq!(dictaten::aantal(&map.0), 0);
+        assert_eq!(tekst_voor_tray(&mem), None);
     }
 
     #[test]

@@ -57,11 +57,11 @@ enum VergaderActie {
         #[arg(long)]
         map: Option<PathBuf>,
     },
-    /// Gooit een opname weg, met alle audio.
+    /// Verwijdert een opname, met alle audio.
     Wis {
         /// De map van de opname, zoals `vergader` die toont.
         opname: PathBuf,
-        /// Gooi de opname ook weg als Mondig niet kan nagaan of ze nog loopt (het slotbestand
+        /// Verwijder de opname ook als Mondig niet kan nagaan of ze nog loopt (het slotbestand
         /// is niet te openen). Een opname die zeker loopt, blijft geweigerd.
         #[arg(long)]
         toch: bool,
@@ -99,13 +99,13 @@ pub(crate) fn voer_uit(opties: &VergaderOpties) -> Result<ExitCode, Melding> {
         Some(VergaderActie::Apparaten) => toon_apparaten(),
         Some(VergaderActie::Herstel { map }) => herstel(map.as_deref()),
         Some(VergaderActie::Wis { opname, toch }) => {
-            let gewist = if *toch {
+            let verwijderd = if *toch {
                 vergadering::wis_toch(opname)
             } else {
                 vergadering::wis(opname)
             };
-            gewist.map_err(|f| Melding(f.melding))?;
-            uit(&format!("Weggegooid: {}", opname.display()))?;
+            verwijderd.map_err(|f| Melding(f.melding))?;
+            uit(&format!("Verwijderd: {}", opname.display()))?;
             Ok(ExitCode::SUCCESS)
         }
         Some(VergaderActie::Uitschrijven(args)) => schrijf_uit(args),
@@ -675,11 +675,11 @@ fn schrijf_uit(args: &UitschrijfArgs) -> Result<ExitCode, Melding> {
         Uitvoer::Beurten => {
             for beurt in &gesprek.beurten {
                 let tijd = tijd(Duration::from_millis(beurt.start_ms));
-                // In de ruimte zonder herkende sprekers en bij Alleen ik: alleen alinea's.
-                uit(&if gesprek.met_sprekers() {
-                    format!("[{tijd}] {}: {}", beurt.spreker(), beurt.tekst)
-                } else {
-                    format!("[{tijd}] {}", beurt.tekst)
+                // Zonder sprekers, bij Alleen ik en bij een alinea die in de ruimte niemand
+                // aanwees: alleen de alinea.
+                uit(&match gesprek.verslaglabel(beurt) {
+                    Some(naam) => format!("[{tijd}] {naam}: {}", beurt.tekst),
+                    None => format!("[{tijd}] {}", beurt.tekst),
                 })?;
             }
         }
@@ -722,7 +722,7 @@ fn json_van(map: &Path, model: &str, taal: &str, gesprek: &Gesprek) -> serde_jso
             "kant": b.kant,
             // Het nummer van de spreker (vanaf 1) als de sprekers herkend zijn, anders null.
             "sprekernummer": b.sprekernummer,
-            "spreker": gesprek.met_sprekers().then(|| b.spreker()),
+            "spreker": gesprek.verslaglabel(b),
             "start_ms": b.start_ms,
             "eind_ms": b.eind_ms,
             "tekst": b.tekst,

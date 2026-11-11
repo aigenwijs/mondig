@@ -7,6 +7,7 @@
   import { t } from '#lib';
   import {
     alsWijzigFout,
+    haalSneltoetsInfo,
     haalSneltoetsStatus,
     maakVolgorde,
     sneltoetsControleer,
@@ -14,20 +15,20 @@
     sneltoetsVangStop,
     sneltoetsWijzig,
     type SneltoetsFoutSoort,
+    type SneltoetsInfo,
     type SneltoetsSoort,
     type SneltoetsStatus
   } from '#lib/sneltoets.js';
-  import { STANDAARD_OPSCHOONTOETS } from '#lib/opschonen.js';
   import { luisterNaarSneltoetsenGewijzigd } from '#lib/gebeurtenissen.js';
   import {
     LEGE_VANG,
-    STANDAARD_SNELTOETS,
     bouwToets,
     drukIn,
     isAfgerond,
     labelVanToets,
     laatLos,
     liveLabel,
+    liveVoorlezen,
     type Vangstand
   } from '#lib/sneltoetsvangen.js';
   import { foutVak, rij, rijBediening, rijLabel, vlak } from '#lib/stijl.js';
@@ -42,8 +43,10 @@
   // nieuwe toets in zijn teksten gebruikt.
   //
   // `soort="opschonen"` is de tweede sneltoets onder "Dictaten opschonen" (ADR 0027): dezelfde
-  // bediening, met een eigen standaard (Ctrl+Shift+Spatie). Rust weigert hem als hij gelijk is
-  // aan de gewone toets.
+  // bediening, met een eigen standaard. Rust weigert hem als hij gelijk is aan de gewone toets.
+  //
+  // Het platform en de standaarden komen uit Rust (`sneltoets_info`): op de Mac zijn de toetsen
+  // andere (Option+Spatie) en staan ze als symbolen (⌥Spatie).
   interface Props {
     variant?: 'rij' | 'kaart';
     soort?: SneltoetsSoort;
@@ -52,14 +55,29 @@
     onder?: Snippet;
     /** Alleen bij de kaart: de tweede sneltoets (opgeschoond), als die aan staat. */
     tweede?: string | null;
+    /** Dezelfde tweede sneltoets voluit voor een schermlezer (op de Mac `Option Shift Spatie`). */
+    tweedeVoorlezen?: string | null;
   }
-  let { variant = 'rij', soort = 'dicteren', bijStatus, onder, tweede = null }: Props = $props();
+  let {
+    variant = 'rij',
+    soort = 'dicteren',
+    bijStatus,
+    onder,
+    tweede = null,
+    tweedeVoorlezen = null
+  }: Props = $props();
 
   // De soort verandert niet tijdens het leven van dit onderdeel.
   // svelte-ignore state_referenced_locally
   const isOpschonen = soort === 'opschonen';
   const id = isOpschonen ? 'opschoontoets' : 'sneltoets';
-  const standaardToets = isOpschonen ? STANDAARD_OPSCHOONTOETS : STANDAARD_SNELTOETS;
+
+  // Het platform en de standaard van Rust. Tot het antwoord er is (of buiten de app) geldt
+  // Windows voor de weergave en is er geen standaard om naar te herstellen.
+  let info = $state<SneltoetsInfo | null>(null);
+  const platform = $derived(info?.platform ?? 'windows');
+  const mac = $derived(platform === 'mac');
+  const standaardToets = $derived(isOpschonen ? info?.standaardOpschonen : info?.standaard);
 
   type Modus = 'rust' | 'vangt' | 'bezig';
 
@@ -83,21 +101,26 @@
     bijStatus?.(status);
   });
 
-  const standaardLabel = labelVanToets(standaardToets);
-  const live = $derived(liveLabel(vang.vast.length > 0 ? vang.vast : vang.piek));
-  const isStandaard = $derived(status?.actief === standaardLabel);
+  const standaardLabel = $derived(
+    (isOpschonen ? info?.standaardOpschonenLabel : info?.standaardLabel) ?? ''
+  );
+  const live = $derived(liveLabel(vang.vast.length > 0 ? vang.vast : vang.piek, platform));
+  const liveSr = $derived(liveVoorlezen(vang.vast.length > 0 ? vang.vast : vang.piek, platform));
+  // Zonder standaard (nog geladen, of buiten de app) valt er niets te herstellen.
+  const isStandaard = $derived(info === null || status?.actief === standaardLabel);
 
   function foutTekst(fout: SneltoetsFoutSoort, toets: string): string {
     switch (fout) {
       case 'windowsToets':
         return t().sneltoetsFoutWindows;
       case 'losseToets':
-        return t().sneltoetsFoutLosseToets;
+        return t().sneltoetsFoutLosseToets(mac);
       case 'shiftAlleen':
-        return t().sneltoetsFoutShiftAlleen;
+        return t().sneltoetsFoutShiftAlleen(mac);
       case 'leeg':
       case 'geenHoofdtoets':
-        return t().sneltoetsFoutHoofdtoets;
+        // Het voorbeeld is de standaardtoets van dit platform, uit Rust.
+        return t().sneltoetsFoutHoofdtoets(info?.standaardLabel ?? 'Ctrl+Spatie');
       case 'meerdereHoofdtoetsen':
         return t().sneltoetsFoutMeerdere;
       case 'escNietToegestaan':
@@ -106,7 +129,7 @@
       case 'gereserveerd':
         return t().sneltoetsFoutGereserveerd;
       case 'werktNiet':
-        return t().sneltoetsFoutWerktNiet(toets);
+        return t().sneltoetsFoutWerktNiet(toets, mac);
     }
   }
 
@@ -232,7 +255,7 @@
       hint = foutTekst(oordeel.fout, toets);
       return;
     }
-    const label = labelVanToets(toets);
+    const label = labelVanToets(toets, platform);
     if (oordeel.uitkomst === 'waarschuwing') {
       void vraagBevestiging(oordeel.toets, toets, label);
       return;
@@ -250,6 +273,8 @@
       // De toets is nog opgeschort; wijzigen naar de standaard zet hem meteen goed.
       modus = 'bezig';
     }
+    // Zonder standaard van Rust (nog niet geladen) valt er niets te herstellen.
+    if (standaardToets === undefined) return;
     await instellen(standaardToets, standaardLabel);
   }
 
@@ -302,6 +327,11 @@
 
   onMount(() => {
     ververs();
+    void haalSneltoetsInfo()
+      .then((antwoord) => {
+        info = antwoord;
+      })
+      .catch(() => undefined);
     // De andere sneltoets of de keuze "Dictaten opschonen" kan deze stand veranderen.
     let weg = false;
     let stop: (() => void) | null = null;
@@ -342,7 +372,9 @@
         {#if modus !== 'vangt'}
           <div class="flex min-w-0 flex-[1_1_100%] flex-wrap items-center gap-x-5 gap-y-2.5">
             {#if status?.actief}
-              <span class="sr-only">{t().sneltoetsUitleg(status.actief)}</span>
+              <span class="sr-only"
+                >{t().sneltoetsUitleg(status.actiefVoorlezen ?? status.actief)}</span
+              >
               <span aria-hidden="true"><Toetsen label={status.actief} groot /></span>
               <span
                 id="sneltoets-hulp"
@@ -379,7 +411,9 @@
               <span
                 class="flex basis-full items-center gap-2 text-klein text-gedempt max-[639px]:order-4"
               >
-                <span class="sr-only">{t().opschoonToetsOpDicterenAria(tweede)}</span>
+                <span class="sr-only"
+                  >{t().opschoonToetsOpDicterenAria(tweedeVoorlezen ?? tweede)}</span
+                >
                 <span class="flex items-center gap-2" aria-hidden="true">
                   <Toetsen label={tweede} />
                   <span>{t().opschoonToetsOpDicteren}</span>
@@ -408,7 +442,8 @@
         {#if modus !== 'vangt'}
           <div class={rijBediening}>
             {#if status?.actief}
-              <Toetsen label={status.actief} />
+              <span class="sr-only">{status.actiefVoorlezen ?? status.actief}</span>
+              <span aria-hidden="true"><Toetsen label={status.actief} /></span>
             {:else}
               <b class="font-semibold">-</b>
             {/if}
@@ -468,7 +503,10 @@
       >
         {t().sneltoetsVang}
         <span class="flex min-h-[34px] items-center justify-center" lang="nl">
-          {#if live}<Toetsen label={live} groot />{/if}
+          {#if live}
+            <span class="sr-only">{liveSr}</span>
+            <span aria-hidden="true"><Toetsen label={live} groot /></span>
+          {/if}
         </span>
         {#if hint}
           <span class="block font-medium text-fout-tekst">{hint}</span>

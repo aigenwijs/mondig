@@ -7,9 +7,12 @@
 // een id wordt streng gecontroleerd. Elke wijziging stuurt `dictaten-gewijzigd`, en de
 // interface haalt de lijst dan opnieuw op, precies als bij Rust.
 //
+// De lijst komt in delen, zoals bij Rust: `dictaten_stand` krijgt een begin en een limiet en
+// geeft ook het totaal. Laatste 10 houdt de tien nieuwste en wist de rest direct.
+//
 // Scenario's (`?mock=`, naast de andere opties):
 //   (niets)        24 uur, met voorbeelddictaten van vandaag en gisteren
-//   dictatenweek   7 dagen, met ook een dictaat van drie dagen terug
+//   dictatenweek   7 dagen, met 38 dictaten verspreid over de week (genoeg voor "Meer tonen")
 //   dictatenleeg   24 uur, nog niets bewaard (de eerste keer)
 //   dictatenniet   Niet bewaren: niets op schijf en na een herstart ook niets in het geheugen
 //   dictatenwisfout  Verwijderen en Alles wissen mislukken
@@ -28,7 +31,7 @@ import type {
   DictatenTermijn,
   LaatsteDictaat
 } from '../dictaten';
-import { termijnUit } from '../dictaten';
+import { LIJST_EERSTE, termijnUit } from '../dictaten';
 import type { OpgeschoondDoor } from '../opschonen';
 import { ONBEKEND } from './mock-bestanden';
 
@@ -36,12 +39,31 @@ const UUR = 3_600_000;
 const MINUUT = 60_000;
 const DUUR_MS: Record<DictatenTermijn, number> = {
   niet: 0,
+  // Laatste 10 heeft geen tijdgrens; het aantal regelt `teWissen`.
+  laatste10: Number.POSITIVE_INFINITY,
   '24u': 24 * UUR,
-  '7d': 7 * 24 * UUR
+  '7d': 7 * 24 * UUR,
+  '30d': 30 * 24 * UUR
 };
+
+const ONBEKENDE_KEUZE =
+  'Deze keuze bestaat niet. Kies Niet bewaren, Laatste 10, 24 uur, 7 dagen of 30 dagen.';
 
 /** Dezelfde regel als `is_dictaatnaam` in Rust: alleen onze eigen bestandsnamen. */
 const GELDIG_ID = /^dictaat-[a-z0-9.-]+\.json$/;
+
+function getalArg(args: InvokeArgs | undefined, naam: string): number | null {
+  if (
+    args &&
+    !Array.isArray(args) &&
+    !(args instanceof ArrayBuffer) &&
+    !(args instanceof Uint8Array)
+  ) {
+    const waarde = args[naam];
+    if (typeof waarde === 'number') return waarde;
+  }
+  return null;
+}
 
 function tekstArg(args: InvokeArgs | undefined, naam: string): string | null {
   if (
@@ -78,6 +100,23 @@ function voorbeelden(nu: number, week: boolean): BewaardDictaat[] {
       nu - 3 * 24 * UUR,
       'Graag de offerte voor de training van november nog deze week naar de gemeente sturen.'
     ]);
+    // Een lange week: ruim meer dan tien dictaten, zodat "Meer tonen" te zien is. Alles ligt
+    // binnen de 7 dagen, op vaste afstand van nu.
+    const zinnen = [
+      'Herinner me eraan de agenda voor het overleg van dinsdag door te sturen.',
+      'De begroting moet nog langs de controller voor we hem naar de raad sturen.',
+      'Bel de beheerder van het buurthuis over de sleutel voor zaterdag.',
+      'Notitie: de subsidieaanvraag moet voor het einde van de maand binnen zijn.',
+      'Vraag aan Jeroen of de cijfers van het derde kwartaal al klaar zijn.',
+      'Het concept van de brief aan de omwonenden mag een stuk korter.'
+    ];
+    for (let i = 0; i < 33; i += 1) {
+      lijst.push([
+        nu - Math.round((1.6 + i * 0.14) * 24 * UUR),
+        `${zinnen[i % zinnen.length] ?? ''} (${String(i + 1)})`
+      ]);
+    }
+    lijst.sort((a, b) => b[0] - a[0]);
   }
   return lijst.map(([tijdUnixMs, tekst], i) => ({
     id: `dictaat-${String(tijdUnixMs)}-${String(i)}.json`,
@@ -126,14 +165,23 @@ export function maakDictatenMock(opties: Set<string>): DictatenMock {
     void emit('dictaten-gewijzigd');
   };
 
-  const verlopen = (d: BewaardDictaat, nu: number): boolean =>
-    d.tijdUnixMs + DUUR_MS[termijn] <= nu || d.tijdUnixMs > nu + UUR;
+  const nieuwsteEerst = (a: BewaardDictaat, b: BewaardDictaat): number =>
+    b.tijdUnixMs - a.tijdUnixMs || (a.id < b.id ? 1 : -1);
 
-  const lijst = (): BewaardDictaat[] => {
-    const nu = Date.now();
-    return bewaard
-      .filter((d) => !verlopen(d, nu))
-      .sort((a, b) => b.tijdUnixMs - a.tijdUnixMs || (a.id < b.id ? 1 : -1));
+  /** Wat bij `doel` mag blijven: niet verlopen en, bij Laatste 10, hoogstens de tien nieuwste. */
+  const geldend = (doel: DictatenTermijn, nu: number): BewaardDictaat[] => {
+    const over = bewaard
+      .filter((d) => d.tijdUnixMs + DUUR_MS[doel] > nu && d.tijdUnixMs <= nu + UUR)
+      .sort(nieuwsteEerst);
+    return doel === 'laatste10' ? over.slice(0, 10) : over;
+  };
+
+  const lijst = (): BewaardDictaat[] => geldend(termijn, Date.now());
+
+  /** Wat zou wegvallen als `doel` gold: zoals `te_wissen` in Rust. */
+  const teWissen = (doel: DictatenTermijn, nu: number): BewaardDictaat[] => {
+    const blijft = new Set(geldend(doel, nu).map((d) => d.id));
+    return bewaard.filter((d) => !blijft.has(d.id));
   };
 
   /** Zoals `vergeet_gewiste` in Rust: weg als precies dat bestand verdween (op id), met het
@@ -146,11 +194,11 @@ export function maakDictatenMock(opties: Set<string>): DictatenMock {
     }
   };
 
-  /** Een wisronde zoals `ruim_op_in`: weg wat verlopen is. */
+  /** Een wisronde zoals `ruim_op_in`: weg wat verlopen is, en bij Laatste 10 de rest. */
   const ruimOp = (): void => {
-    const nu = Date.now();
-    const weg = bewaard.filter((d) => verlopen(d, nu));
-    bewaard = bewaard.filter((d) => !verlopen(d, nu));
+    const weg = teWissen(termijn, Date.now());
+    const ids = new Set(weg.map((d) => d.id));
+    bewaard = bewaard.filter((d) => !ids.has(d.id));
     vergeetGewiste(weg.map((d) => d.id));
   };
 
@@ -161,17 +209,27 @@ export function maakDictatenMock(opties: Set<string>): DictatenMock {
   return {
     handel(cmd, args) {
       switch (cmd) {
-        case 'dictaten_stand':
+        case 'dictaten_stand': {
+          const alle = termijn === 'niet' ? [] : lijst();
+          const begin = getalArg(args, 'begin') ?? 0;
+          const limiet = getalArg(args, 'limiet') ?? LIJST_EERSTE;
           return {
             termijn,
-            dictaten: termijn === 'niet' ? [] : lijst(),
+            dictaten: alle.slice(begin, begin + limiet),
+            totaal: alle.length,
             bewaard: bewaard.length,
             laatste: geheugen
           } satisfies DictatenAntwoord;
+        }
+        case 'dictaten_wegval': {
+          const doel = tekstArg(args, 'termijn');
+          if (doel === null || termijnUit(doel) !== doel) return fout(ONBEKENDE_KEUZE);
+          return teWissen(termijnUit(doel), Date.now()).length;
+        }
         case 'dictaten_bewaren_zet': {
           const gekozen = tekstArg(args, 'termijn');
           if (gekozen === null || termijnUit(gekozen) !== gekozen) {
-            return fout('Deze keuze bestaat niet. Kies Niet bewaren, 24 uur of 7 dagen.');
+            return fout(ONBEKENDE_KEUZE);
           }
           termijn = termijnUit(gekozen);
           ruimOp();
@@ -184,7 +242,7 @@ export function maakDictatenMock(opties: Set<string>): DictatenMock {
             return fout('Dit dictaat bestaat niet.');
           }
           if (opties.has('dictatenwisfout')) {
-            return fout('Mondig kon het dictaat niet wissen.');
+            return fout('Mondig kon het dictaat niet verwijderen.');
           }
           bewaard = bewaard.filter((d) => d.id !== id);
           vergeetGewiste([id]);
@@ -193,7 +251,7 @@ export function maakDictatenMock(opties: Set<string>): DictatenMock {
         }
         case 'dictaten_wis_alles':
           if (opties.has('dictatenwisfout')) {
-            return fout('Mondig kon niet alles wissen. Probeer het opnieuw.');
+            return fout('Mondig kon niet alles verwijderen. Probeer het opnieuw.');
           }
           bewaard = [];
           // Zoals `wis_alles_in`: met 24 uur of 7 dagen ook het geheugen; bij Niet bewaren niet.
@@ -225,6 +283,9 @@ export function maakDictatenMock(opties: Set<string>): DictatenMock {
         );
         // Zoals in Rust: het id komt in het geheugen zodra het bestand geschreven is.
         geheugen = { tekst, id };
+        // Zoals in Rust: bij Laatste 10 gaat na elk nieuw dictaat alles behalve de tien
+        // nieuwste direct weg.
+        if (termijn === 'laatste10') ruimOp();
       }
       melding();
     },

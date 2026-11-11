@@ -5,8 +5,8 @@
 //! het geluid, en gaat "Verslag wissen" met één `wis` over beide.
 //!
 //! Wat erin staat: de versie van het bestand, het gesprek (beurten met tekst, tijden, kant,
-//! spreker en naam), het model waarmee het is uitgeschreven, de naam die de gebruiker het
-//! gaf, de markeringen van persoonsgegevens, en als ze er zijn de notulen (ADR 0026, optioneel
+//! spreker en naam), het model waarmee het is uitgeschreven, de velden van de bestandsnaam
+//! die de gebruiker invulde (klant, onderwerp en datum), de markeringen van persoonsgegevens, en als ze er zijn de notulen (ADR 0026, optioneel
 //! veld `notulen`; een bestand zonder dat veld blijft gewoon leesbaar). Er staat niets in wat niet al in de tekst of
 //! het geluid zit.
 //!
@@ -35,33 +35,101 @@ const OPZIJ: &str = "verslag.kapot.json";
 /// De versie van het bestand dat deze code schrijft en nog kan lezen.
 pub const VERSIE: u32 = 1;
 
+/// De velden van de bestandsnaam die de gebruiker bij een verslag invulde (ADR 0022, aanvulling
+/// UI-E). Ze staan plat in `verslag.json`: `klant`, `onderwerp` en `datum`. Het onderwerp heette
+/// vroeger `naam`; die oude sleutel wordt bij het lezen het onderwerp. Een oudere versie van de
+/// app kent de nieuwe velden niet en raakt ze kwijt als zij het verslag herschrijft.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Naamvelden {
+    /// Voor wie het is; leeg valt weg uit de naam.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub klant: String,
+    /// Waar het over gaat. `None`: nooit aangeraakt, dan geldt het soortwoord ("Vergadering").
+    /// `Some("")`: de gebruiker wiste het, dan valt het weg.
+    #[serde(default, alias = "naam", skip_serializing_if = "Option::is_none")]
+    pub onderwerp: Option<String>,
+    /// De datum zoals de gebruiker hem typte. `None`: de datum van het begin van het gesprek.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub datum: Option<String>,
+}
+
+impl Naamvelden {
+    /// Schoon en begrensd, zoals de naam van een verslag altijd was ([`schone_verslagnaam`]).
+    /// Een veld dat leeg wordt, blijft een leeg veld: `Some("")` is niet hetzelfde als `None`.
+    #[must_use]
+    fn hersteld(self) -> Self {
+        let schoon = |tekst: &str| schone_verslagnaam(tekst).unwrap_or_default();
+        Self {
+            klant: schoon(&self.klant),
+            onderwerp: self.onderwerp.as_deref().map(schoon),
+            datum: self.datum.as_deref().map(schoon),
+        }
+    }
+
+    /// De titel van het verslag (keuze A van UI-E): de niet-lege waarden van Klant en Onderwerp met
+    /// " · " ertussen, bijvoorbeeld "Gemeente Vlaardingen · Intake". `soortwoord` is het onderwerp
+    /// zolang de gebruiker dat niet aanraakte. `None` als de gebruiker niets invulde (geen klant
+    /// en het onderwerp nooit aangeraakt) of beide leeg maakte: dan blijft de titel die Mondig
+    /// zelf maakt.
+    #[must_use]
+    pub fn titel(&self, soortwoord: &str) -> Option<String> {
+        if self.klant.trim().is_empty() && self.onderwerp.is_none() {
+            return None;
+        }
+        let onderwerp = self.onderwerp.as_deref().unwrap_or(soortwoord);
+        let delen: Vec<&str> = [self.klant.as_str(), onderwerp]
+            .into_iter()
+            .map(str::trim)
+            .filter(|d| !d.is_empty())
+            .collect();
+        (!delen.is_empty()).then(|| delen.join(" · "))
+    }
+}
+
 /// Wat de lijst "Eerder opgenomen" van een verslag nodig heeft. Staat vooraan in het bestand,
 /// naast de versie, zodat de lijst de tekst niet hoeft in te lezen ([`lees_samenvatting`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Samenvatting {
-    /// De naam die de gebruiker het verslag gaf.
-    pub naam: Option<String>,
+    /// Klant, onderwerp en datum van de bestandsnaam (zie [`Naamvelden`]).
+    #[serde(flatten)]
+    pub naamvelden: Naamvelden,
     /// Online, in de ruimte of Alleen ik.
     pub soort: Vergadersoort,
     /// De duur van het gesprek in milliseconden.
     pub duur_ms: u64,
     /// Hoeveel sprekers er zijn, als ze herkend zijn ([`aantal_sprekers`]).
     pub sprekers: Option<usize>,
+    /// Het pad van het bestand dat de gebruiker het laatst van dit verslag opsloeg, voor
+    /// "Tonen in Verkenner" in de lijst. Optioneel veld: een bestand van voor deze toevoeging
+    /// blijft leesbaar (`default`), en een oudere versie van de app negeert het veld. Een pad dat
+    /// geen geldige tekst is, wordt niet bewaard. Het pad komt nooit in een logboek.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opgeslagen: Option<String>,
 }
 
 /// Hoeveel sprekers een gesprek heeft, als ze herkend zijn; anders `None`, want "Jij en Anderen"
-/// is geen telling van mensen. Dezelfde telling als `aantalSprekers` in de interface.
+/// is geen telling van mensen. Het telt de verschillende namen die het verslag toont (zonder
+/// verschil in hoofdletters). Een kaal "Anderen" (zonder nummer en zonder eigen naam) op een kant
+/// met herkende sprekers telt niet mee; een kant zonder nummers (online Jij) wel. Dezelfde
+/// telling als `aantalSprekers` in de interface.
 #[must_use]
 pub fn aantal_sprekers(gesprek: &Gesprek) -> Option<usize> {
     if !gesprek.beurten.iter().any(|b| b.sprekernummer.is_some()) {
         return None;
     }
-    let sprekers: BTreeSet<(bool, Option<u8>)> = gesprek
+    let met_nummers = |kant: Kant| {
+        gesprek
+            .beurten
+            .iter()
+            .any(|b| b.kant == kant && b.sprekernummer.is_some())
+    };
+    let namen: BTreeSet<String> = gesprek
         .beurten
         .iter()
-        .map(|b| (b.kant == Kant::Anderen, b.sprekernummer))
+        .filter(|b| b.sprekernummer.is_some() || b.naam.is_some() || !met_nummers(b.kant))
+        .map(|b| b.spreker().to_lowercase())
         .collect();
-    Some(sprekers.len())
+    Some(namen.len())
 }
 
 /// Een verslag zoals het op schijf komt, door verwijzing: schrijven kost zo geen kopie van de
@@ -76,8 +144,9 @@ pub struct Bewaren<'a> {
     pub model_id: &'a str,
     /// De korte naam van dat model, voor in het verslag.
     pub model: &'a str,
-    /// De naam die de gebruiker het verslag gaf; `None` is de titel die Mondig zelf maakt.
-    pub naam: Option<&'a str>,
+    /// Klant, onderwerp en datum van de bestandsnaam.
+    #[serde(flatten)]
+    pub naamvelden: &'a Naamvelden,
     /// De markeringen van persoonsgegevens.
     pub markeringen: &'a Markeringen,
     /// De notulen, als die er zijn (ADR 0026 punt 5), ook als deze versie ze niet kan lezen.
@@ -96,26 +165,42 @@ impl<'a> Bewaren<'a> {
         gesprek: &'a Gesprek,
         model_id: &'a str,
         model: &'a str,
-        naam: Option<&'a str>,
+        naamvelden: &'a Naamvelden,
         markeringen: &'a Markeringen,
         notulen: Option<&'a OpgeslagenNotulen>,
     ) -> Self {
         Self {
             versie: VERSIE,
             samenvatting: Samenvatting {
-                naam: naam.map(str::to_string),
+                naamvelden: naamvelden.clone(),
                 soort: gesprek.soort,
                 duur_ms: u64::try_from(gesprek.duur.as_millis()).unwrap_or(u64::MAX),
                 sprekers: aantal_sprekers(gesprek),
+                opgeslagen: None,
             },
             gesprek,
             model_id,
             model,
-            naam,
+            naamvelden,
             markeringen,
             notulen,
         }
     }
+
+    /// Onthoudt waar de gebruiker het verslag het laatst als bestand opsloeg. Wie het verslag
+    /// opnieuw schrijft, geeft het bekende pad mee, zodat het nooit stil verdwijnt.
+    #[must_use]
+    pub fn met_opgeslagen(mut self, pad: Option<&Path>) -> Self {
+        self.samenvatting.opgeslagen = pad.and_then(Path::to_str).map(str::to_string);
+        self
+    }
+}
+
+/// Alleen het deel van de samenvatting dat [`lees`] nodig heeft.
+#[derive(Default, Deserialize)]
+struct SamenvattingPad {
+    #[serde(default)]
+    opgeslagen: Option<String>,
 }
 
 /// Een verslag zoals [`lees`] het teruggeeft.
@@ -129,9 +214,10 @@ pub struct Bewaard {
     pub model_id: String,
     /// De korte naam van dat model.
     pub model: String,
-    /// De naam die de gebruiker het verslag gaf, schoongemaakt en begrensd.
-    #[serde(default)]
-    pub naam: Option<String>,
+    /// Klant, onderwerp en datum van de bestandsnaam, schoongemaakt en begrensd. Een bestand van
+    /// voor UI-E heeft `naam`; dat is nu het onderwerp.
+    #[serde(flatten)]
+    pub naamvelden: Naamvelden,
     /// De markeringen van persoonsgegevens, hersteld tot wat [`Markeringen::markeer`] toestaat.
     pub markeringen: Markeringen,
     /// De notulen, als die er zijn. Ontbreekt het veld (een verslag van voor de notulen), dan
@@ -139,6 +225,18 @@ pub struct Bewaard {
     /// [`OpgeslagenNotulen::Onleesbaar`] en gaan zo ook weer naar schijf.
     #[serde(default)]
     pub notulen: Option<OpgeslagenNotulen>,
+    /// Zie [`Samenvatting::opgeslagen`]; lees het met [`Bewaard::opgeslagen`].
+    #[serde(default)]
+    samenvatting: SamenvattingPad,
+}
+
+impl Bewaard {
+    /// Het pad van het bestand dat de gebruiker het laatst van dit verslag opsloeg, als het
+    /// bekend is. Of het er nog staat, weet dit niet.
+    #[must_use]
+    pub fn opgeslagen(&self) -> Option<&Path> {
+        self.samenvatting.opgeslagen.as_deref().map(Path::new)
+    }
 }
 
 /// De bytes van `verslag.json`. Aparte stap, zodat de aanroeper onder zijn slot kan
@@ -172,7 +270,7 @@ pub fn schrijf(map: &Path, verslag: &Bewaren<'_>) -> io::Result<()> {
 
 /// Leest het verslag uit `map`. `None` als er geen leesbaar verslag staat: het bestand ontbreekt,
 /// is onleesbaar of beschadigd, of komt van een nieuwere versie dan deze code kent. Wat er staat
-/// is hersteld: de naam is schoon en begrensd, de markeringen volgen de regels van
+/// is hersteld: de velden van de naam zijn schoon en begrensd, de markeringen volgen de regels van
 /// [`Markeringen::markeer`].
 #[must_use]
 pub fn lees(map: &Path) -> Option<Bewaard> {
@@ -181,7 +279,7 @@ pub fn lees(map: &Path) -> Option<Bewaard> {
     if !(1..=VERSIE).contains(&verslag.versie) {
         return None;
     }
-    verslag.naam = verslag.naam.as_deref().and_then(schone_verslagnaam);
+    verslag.naamvelden = std::mem::take(&mut verslag.naamvelden).hersteld();
     verslag.markeringen.herstel();
     Some(verslag)
 }
@@ -202,7 +300,7 @@ pub fn lees_samenvatting(map: &Path) -> Option<Samenvatting> {
         return None;
     }
     let mut samenvatting = kop.samenvatting;
-    samenvatting.naam = samenvatting.naam.as_deref().and_then(schone_verslagnaam);
+    samenvatting.naamvelden = std::mem::take(&mut samenvatting.naamvelden).hersteld();
     Some(samenvatting)
 }
 
@@ -258,15 +356,28 @@ mod tests {
         m
     }
 
-    fn bewaar(map: &Path, g: &Gesprek, m: &Markeringen, naam: Option<&str>) {
-        schrijf(map, &Bewaren::nieuw(g, "canary", "Canary", naam, m, None)).unwrap();
+    /// Naamvelden met alleen een onderwerp, zoals een verslag met een eigen naam vroeger had.
+    fn onderwerp(tekst: Option<&str>) -> Naamvelden {
+        Naamvelden {
+            onderwerp: tekst.map(str::to_string),
+            ..Naamvelden::default()
+        }
+    }
+
+    fn bewaar(map: &Path, g: &Gesprek, m: &Markeringen, velden: &Naamvelden) {
+        schrijf(map, &Bewaren::nieuw(g, "canary", "Canary", velden, m, None)).unwrap();
     }
 
     #[test]
     fn een_verslag_komt_na_schrijven_en_lezen_gelijk_terug() {
         let map = tempfile::tempdir().unwrap();
         let (g, m) = (gesprek(), markeringen());
-        bewaar(map.path(), &g, &m, Some("Overleg speelveld"));
+        let velden = Naamvelden {
+            klant: "Gemeente Vlaardingen".to_string(),
+            onderwerp: Some("Overleg speelveld".to_string()),
+            datum: Some("2026-10-30".to_string()),
+        };
+        bewaar(map.path(), &g, &m, &velden);
         let terug = lees(map.path()).unwrap();
         assert_eq!(terug.versie, VERSIE);
         assert!(terug.gesprek == g, "het gesprek is niet gelijk");
@@ -275,7 +386,7 @@ mod tests {
         assert_eq!(terug.gesprek.duur, Duration::from_millis(3_600));
         assert_eq!(terug.model_id, "canary");
         assert_eq!(terug.model, "Canary");
-        assert_eq!(terug.naam.as_deref(), Some("Overleg speelveld"));
+        assert_eq!(terug.naamvelden, velden);
         // De markeringen: Vervangen, het zelf gemarkeerde stuk en het weggehaalde gegeven.
         assert!(terug.markeringen == m);
         assert!(terug.markeringen.vervangen());
@@ -295,19 +406,104 @@ mod tests {
     }
 
     #[test]
-    fn zonder_eigen_naam_blijft_de_naam_leeg() {
+    fn zonder_eigen_velden_blijven_ze_leeg_en_staan_ze_niet_in_het_bestand() {
         let map = tempfile::tempdir().unwrap();
-        bewaar(map.path(), &gesprek(), &Markeringen::default(), None);
-        assert_eq!(lees(map.path()).unwrap().naam, None);
+        bewaar(
+            map.path(),
+            &gesprek(),
+            &Markeringen::default(),
+            &Naamvelden::default(),
+        );
+        assert_eq!(lees(map.path()).unwrap().naamvelden, Naamvelden::default());
+        let tekst = fs::read_to_string(map.path().join(BESTAND)).unwrap();
+        for sleutel in ["\"klant\"", "\"onderwerp\"", "\"datum\""] {
+            assert!(!tekst.contains(sleutel), "{sleutel} in {tekst}");
+        }
+    }
+
+    #[test]
+    fn een_gewist_onderwerp_is_iets_anders_dan_een_onderwerp_dat_nooit_is_aangeraakt() {
+        let map = tempfile::tempdir().unwrap();
+        let (g, m) = (gesprek(), Markeringen::default());
+        bewaar(map.path(), &g, &m, &onderwerp(Some("")));
+        assert_eq!(
+            lees(map.path()).unwrap().naamvelden.onderwerp.as_deref(),
+            Some("")
+        );
+        bewaar(map.path(), &g, &m, &onderwerp(None));
+        assert_eq!(lees(map.path()).unwrap().naamvelden.onderwerp, None);
+    }
+
+    #[test]
+    fn een_oude_naam_wordt_het_onderwerp() {
+        let map = tempfile::tempdir().unwrap();
+        let (g, m) = (gesprek(), Markeringen::default());
+        bewaar(map.path(), &g, &m, &onderwerp(Some("Overleg speelveld")));
+        // Zoals een verslag van voor UI-E: de sleutel heet `naam`, ook in de samenvatting.
+        let tekst = fs::read_to_string(map.path().join(BESTAND)).unwrap();
+        let oud = tekst.replace("\"onderwerp\"", "\"naam\"");
+        assert_ne!(oud, tekst);
+        fs::write(map.path().join(BESTAND), &oud).unwrap();
+        let terug = lees(map.path()).unwrap();
+        assert_eq!(
+            terug.naamvelden.onderwerp.as_deref(),
+            Some("Overleg speelveld")
+        );
+        assert_eq!(terug.naamvelden.klant, "");
+        assert_eq!(terug.naamvelden.datum, None);
+        assert_eq!(
+            lees_samenvatting(map.path())
+                .unwrap()
+                .naamvelden
+                .onderwerp
+                .as_deref(),
+            Some("Overleg speelveld")
+        );
+        // Een oude naam die `null` was (geen eigen naam) blijft "nooit aangeraakt".
+        let leeg = oud.replace("\"naam\":\"Overleg speelveld\"", "\"naam\":null");
+        fs::write(map.path().join(BESTAND), leeg).unwrap();
+        assert_eq!(lees(map.path()).unwrap().naamvelden.onderwerp, None);
+    }
+
+    #[test]
+    fn de_titel_volgt_klant_en_onderwerp() {
+        let velden = |klant: &str, onderwerp: Option<&str>| Naamvelden {
+            klant: klant.to_string(),
+            onderwerp: onderwerp.map(str::to_string),
+            datum: None,
+        };
+        // Beide ingevuld: met een middenpunt ertussen.
+        assert_eq!(
+            velden("Gemeente Vlaardingen", Some("Intake")).titel("Vergadering"),
+            Some("Gemeente Vlaardingen · Intake".to_string())
+        );
+        // Alleen een klant: het onderwerp is dan het soortwoord.
+        assert_eq!(
+            velden("Gemeente Vlaardingen", None).titel("Vergadering"),
+            Some("Gemeente Vlaardingen · Vergadering".to_string())
+        );
+        // Alleen een onderwerp.
+        assert_eq!(
+            velden("", Some("Overleg speelveld")).titel("Vergadering"),
+            Some("Overleg speelveld".to_string())
+        );
+        // Niets ingevuld, of alles leeg gemaakt: de titel die Mondig zelf maakt.
+        assert_eq!(velden("", None).titel("Vergadering"), None);
+        assert_eq!(velden("  ", Some("")).titel("Vergadering"), None);
+        // De klant zonder onderwerp (gewist).
+        assert_eq!(
+            velden("Gemeente", Some("")).titel("Notitie"),
+            Some("Gemeente".to_string())
+        );
     }
 
     #[test]
     fn schrijven_vervangt_het_vorige_verslag() {
         let map = tempfile::tempdir().unwrap();
         let (mut g, m) = (gesprek(), Markeringen::default());
-        bewaar(map.path(), &g, &m, None);
+        bewaar(map.path(), &g, &m, &Naamvelden::default());
         g.zet_tekst(1, "Goedemiddag.").unwrap();
-        bewaar(map.path(), &g, &m, None);
+        bewaar(map.path(), &g, &m, &Naamvelden::default());
         assert_eq!(
             lees(map.path()).unwrap().gesprek.beurten[1].tekst,
             "Goedemiddag."
@@ -325,7 +521,12 @@ mod tests {
             assert!(lees(map.path()).is_none(), "{rommel:?}");
         }
         // Een hogere versie of versie 0 telt niet, ook als de rest klopt.
-        bewaar(map.path(), &gesprek(), &Markeringen::default(), None);
+        bewaar(
+            map.path(),
+            &gesprek(),
+            &Markeringen::default(),
+            &Naamvelden::default(),
+        );
         let json = fs::read_to_string(map.path().join(BESTAND)).unwrap();
         assert!(lees(map.path()).is_some());
         for versie in [0, VERSIE + 1, 99] {
@@ -346,7 +547,7 @@ mod tests {
         let (g, m) = (gesprek(), Markeringen::default());
         let resultaat = schrijf(
             &map.path().join("bestaat-niet"),
-            &Bewaren::nieuw(&g, "x", "x", None, &m, None),
+            &Bewaren::nieuw(&g, "x", "x", &Naamvelden::default(), &m, None),
         );
         assert!(resultaat.is_err());
     }
@@ -360,18 +561,39 @@ mod tests {
             map.path(),
             &g,
             &Markeringen::default(),
-            Some("Overleg speelveld"),
+            &onderwerp(Some("Overleg speelveld")),
         );
         let samenvatting = lees_samenvatting(map.path()).unwrap();
         assert_eq!(
             samenvatting,
             Samenvatting {
-                naam: Some("Overleg speelveld".to_string()),
+                naamvelden: onderwerp(Some("Overleg speelveld")),
                 soort: Vergadersoort::Online,
                 duur_ms: 3_600,
                 sprekers: Some(2),
+                opgeslagen: None,
             }
         );
+        // Anderen zonder nummer is geen extra spreker.
+        let mut zonder = g.clone();
+        zonder.beurten.push(Beurt {
+            sprekernummer: None,
+            naam: None,
+            ..g.beurten[1].clone()
+        });
+        assert_eq!(aantal_sprekers(&zonder), Some(2));
+        // Zonder nummer maar met een eigen naam ("Jan") is wel een spreker; dezelfde naam als
+        // een andere spreker niet nog eens.
+        zonder.beurten.push(Beurt {
+            naam: Some("Jan".to_string()),
+            ..zonder.beurten[2].clone()
+        });
+        assert_eq!(aantal_sprekers(&zonder), Some(3));
+        zonder.beurten.push(Beurt {
+            naam: Some("wethouder".to_string()),
+            ..zonder.beurten[2].clone()
+        });
+        assert_eq!(aantal_sprekers(&zonder), Some(3));
         // De samenvatting staat vooraan, direct na de versie.
         let tekst = fs::read_to_string(map.path().join(BESTAND)).unwrap();
         assert!(
@@ -391,17 +613,67 @@ mod tests {
     }
 
     #[test]
+    fn het_opgeslagen_pad_gaat_mee_en_een_oud_bestand_zonder_veld_blijft_leesbaar() {
+        #[derive(Deserialize)]
+        #[expect(dead_code, reason = "alleen om te lezen zoals een oude versie")]
+        struct OudeSamenvatting {
+            naam: Option<String>,
+            soort: Vergadersoort,
+            duur_ms: u64,
+            sprekers: Option<usize>,
+        }
+        #[derive(Deserialize)]
+        #[expect(dead_code, reason = "alleen om te lezen zoals een oude versie")]
+        struct OudeKop {
+            versie: u32,
+            samenvatting: OudeSamenvatting,
+        }
+
+        let map = tempfile::tempdir().unwrap();
+        let (g, m) = (gesprek(), Markeringen::default());
+        // Zonder pad: het veld staat niet in het bestand, en oud en nieuw lezen hetzelfde.
+        bewaar(map.path(), &g, &m, &Naamvelden::default());
+        let oud = fs::read_to_string(map.path().join(BESTAND)).unwrap();
+        assert!(!oud.contains("opgeslagen"), "{oud}");
+        assert!(lees(map.path()).unwrap().opgeslagen().is_none());
+        assert!(lees_samenvatting(map.path()).unwrap().opgeslagen.is_none());
+        // Met pad: terug in de lijst en bij het openen.
+        let pad = map.path().join("Verslag 2026-11-10.docx");
+        schrijf(
+            map.path(),
+            &Bewaren::nieuw(&g, "canary", "Canary", &Naamvelden::default(), &m, None)
+                .met_opgeslagen(Some(&pad)),
+        )
+        .unwrap();
+        assert_eq!(lees(map.path()).unwrap().opgeslagen(), Some(pad.as_path()));
+        assert_eq!(
+            lees_samenvatting(map.path()).unwrap().opgeslagen.as_deref(),
+            pad.to_str()
+        );
+        // De rest van het verslag verandert er niet door.
+        assert!(lees(map.path()).unwrap().gesprek == g);
+        // Het pad blijft vooraan, bij de samenvatting, zodat de lijst de tekst niet leest.
+        let nieuw = fs::read_to_string(map.path().join(BESTAND)).unwrap();
+        assert!(
+            nieuw.starts_with("{\"versie\":1,\"samenvatting\":{"),
+            "{nieuw}"
+        );
+        // Een oudere app negeert het veld: dezelfde structuur als de oude, plus één sleutel.
+        assert!(serde_json::from_str::<OudeKop>(&nieuw).is_ok());
+    }
+
+    #[test]
     fn een_met_de_hand_bewerkt_bestand_wordt_bij_het_lezen_hersteld() {
         let map = tempfile::tempdir().unwrap();
         let mut m = Markeringen::default();
         m.markeer("Jan de Vries").unwrap();
-        bewaar(map.path(), &gesprek(), &m, Some("x"));
+        bewaar(map.path(), &gesprek(), &m, &onderwerp(Some("x")));
         let tekst = fs::read_to_string(map.path().join(BESTAND)).unwrap();
         let lang = "a".repeat(150);
         let kapot = tekst
             .replace(
-                "\"naam\":\"x\"",
-                &format!("\"naam\":\"  Naam \\n  met   {}  \"", "b".repeat(150)),
+                "\"onderwerp\":\"x\"",
+                &format!("\"onderwerp\":\"  Naam \\n  met   {}  \"", "b".repeat(150)),
             )
             .replace(
                 "\"eigen\":[\"jan de vries\"]",
@@ -412,13 +684,14 @@ mod tests {
         fs::write(map.path().join(BESTAND), kapot).unwrap();
         let hersteld = lees(map.path()).unwrap();
         // De naam is schoon en begrensd (de samenvatting in de lijst ook).
-        let naam = hersteld.naam.unwrap();
+        let naam = hersteld.naamvelden.onderwerp.unwrap();
         assert!(naam.starts_with("Naam met bbb"), "{naam}");
         assert_eq!(naam.chars().count(), 100);
         assert_eq!(
             lees_samenvatting(map.path())
                 .unwrap()
-                .naam
+                .naamvelden
+                .onderwerp
                 .unwrap()
                 .chars()
                 .count(),
@@ -449,7 +722,7 @@ mod tests {
         let map = tempfile::tempdir().unwrap();
         let mut g = gesprek();
         g.zet_tekst(1, "Dag, ik ben Jan de Fries.").unwrap();
-        bewaar(map.path(), &g, &markeringen(), None);
+        bewaar(map.path(), &g, &markeringen(), &Naamvelden::default());
         let terug = lees(map.path()).unwrap();
         assert!(terug.gesprek.beurten[1].verbeterd);
         assert!(!terug.gesprek.beurten[0].verbeterd);

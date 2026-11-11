@@ -103,13 +103,19 @@ pub(crate) fn instelling_adres(geblokkeerd: bool) -> &'static str {
     }
 }
 
-/// De vervolgactie "Microfooninstelling openen".
+/// De vervolgactie "Microfooninstelling openen". Op de Mac altijd Privacy en beveiliging,
+/// Microfoon: daar staat of Mondig de microfoon mag gebruiken (mijlpaal M1).
 #[tauri::command]
 pub(crate) fn microfooninstelling_open() {
     let adres = instelling_adres(is_geblokkeerd());
     #[cfg(windows)]
     win32::open_adres(adres);
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        let _ = adres;
+        let _ = mondig_mac::rechten::open_adres(mondig_mac::ADRES_MICROFOON);
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     let _ = adres;
 }
 

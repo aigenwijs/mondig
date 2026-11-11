@@ -1,0 +1,4 @@
+#!/bin/sh
+# Weigert een push als de controle niet groen was op deze code. De logica staat in Node,
+# zodat ze getest is: zie scripts/controle.mjs. Git geeft de pushregels op stdin.
+exec node scripts/controle.mjs --hook "$@"

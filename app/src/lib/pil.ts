@@ -31,7 +31,7 @@ export type PilToestand =
   /** Net losgelaten, nog geen seconde bezig: de meter stil, zonder draaiend teken. */
   | { type: 'afronden' }
   | { type: 'verwerkt' }
-  /** Het dictaat gaat naar het taalmodel om op te schonen (ADR 0027), met het label erbij. */
+  /** Het dictaat gaat naar de AI-dienst om op te schonen (ADR 0027), met het label erbij. */
   | { type: 'opschonen'; label: Label }
   | { type: 'klaar'; soort: KlaarSoort; duurMs: number }
   /**

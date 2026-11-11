@@ -55,6 +55,10 @@
 //! Met `MONDIG_NEP_PIDBESTAND` schrijft het proces bij het starten zijn proces-id in dat
 //! bestand, zodat een test kan zien of een tweede bestand hetzelfde proces gebruikte.
 //!
+//! Met `MONDIG_NEP_TIJDLIJN` schrijft de modus `stukken` per stuk een regel met het tijdstip
+//! (milliseconden sinds 1970), of de annulering al gezien is en hoe lang het slapen echt
+//! duurde. Zo kan een falende test laten zien waar de tijd bleef.
+//!
 //! Een uitschrijving uit het geheugen (`TranscribeerGeluid`) volgt dezelfde modi als een
 //! uitschrijving van een bestand.
 //!
@@ -233,6 +237,26 @@ impl Werker for Nep {
     }
 }
 
+/// Voegt een regel toe aan het bestand uit `MONDIG_NEP_TIJDLIJN`, met het tijdstip in
+/// milliseconden sinds 1970 ervoor (dezelfde klok als de test, zodat die de regels naast
+/// zijn eigen tijdstippen kan leggen).
+fn tijdlijn(tekst: &str) {
+    use std::io::Write;
+    let Some(pad) = std::env::var_os("MONDIG_NEP_TIJDLIJN") else {
+        return;
+    };
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis());
+    if let Ok(mut bestand) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(pad)
+    {
+        let _ = writeln!(bestand, "{ms} {tekst}");
+    }
+}
+
 /// Een getal uit een omgevingsvariabele, of de standaardwaarde.
 fn getal(naam: &str, standaard: u64) -> u64 {
     std::env::var(naam)
@@ -249,7 +273,12 @@ impl Nep {
         let stuktijd = Duration::from_millis(getal("MONDIG_NEP_STUKTIJD_MS", 50));
         let mut segmenten = Vec::new();
         for stuk in 0..stukken {
-            if annulering.is_some_and(Annulering::is_geannuleerd) {
+            let geannuleerd = annulering.is_some_and(Annulering::is_geannuleerd);
+            tijdlijn(&format!(
+                "stuk {} begint, geannuleerd: {geannuleerd}",
+                stuk + 1
+            ));
+            if geannuleerd {
                 return Antwoord::Geannuleerd;
             }
             if fout_na_twee && stuk == 2 {
@@ -258,7 +287,13 @@ impl Nep {
                     melding: "Nep: het bestand is halverwege beschadigd.".into(),
                 };
             }
+            let slaap = std::time::Instant::now();
             std::thread::sleep(stuktijd);
+            tijdlijn(&format!(
+                "stuk {} geslapen: {} ms",
+                stuk + 1,
+                slaap.elapsed().as_millis()
+            ));
             segmenten.push(Segment::nieuw(
                 stuk * 1000,
                 (stuk + 1) * 1000,

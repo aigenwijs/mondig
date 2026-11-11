@@ -1,23 +1,44 @@
 # Concept-release op de drie platforms. Handmatig starten; de release blijft een
 # concept en een prerelease tot de build is getest. Nog zonder
 # handtekeningen: die komen in fase 5.
+#
+# Starten: Actions > Release > Run workflow, kies de branch main en vul de tag in (bijvoorbeeld
+# v0.6.0), of: gh workflow run release.yml --ref main -f tag=v0.6.0. De tag moet al op main staan.
+# De workflow draait vanaf main, maar bouwt de code van de tag. Zo repareer je een fout in dit
+# workflowbestand op main en start je opnieuw op dezelfde tag, zonder de tag te verplaatsen.
+# Dat geldt alleen voor dit bestand: de scripts en de bundelinstellingen komen uit de tag.
+# Acties staan op een commit (SHA) met de versie als commentaar; Dependabot werkt ze bij.
 name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag van de uitgave, bijvoorbeeld v0.6.0. De tag moet al op main staan."
+        type: string
+        required: true
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Eerste poort: alleen vanaf main, en alle versies moeten gelijk zijn.
+  # Eerste poort: de workflow start vanaf main, de tag hoort bij de versie in de code, is geen
+  # ontwikkelversie en staat op main. De tag komt altijd via env in de opdracht, nooit rechtstreeks.
   controle:
-    name: Controle (alleen main, versies gelijk)
+    name: Controle (tag op main, geen ontwikkelversie)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    outputs:
+      # De commit die hier gekeurd is. De jobs hierna bouwen precies die commit, ook als de tag
+      # tussendoor verhangen wordt.
+      sha: ${{ steps.commit.outputs.sha }}
     steps:
       - name: Alleen vanaf main
         if: github.ref != 'refs/heads/main'
@@ -25,18 +46,87 @@ jobs:
           echo "::error::Een release maak je alleen vanaf main (nu: ${GITHUB_REF})."
           exit 1
 
-      - uses: actions/checkout@v7
+      # Vóór het ophalen, zodat een tikfout een duidelijke melding geeft in plaats van een
+      # git-fout over een onbekende ref.
+      - name: Tag heeft de vorm vX.Y.Z
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::\"${TAG}\" is geen tag van een uitgave. Verwacht: v gevolgd door de versie, bijvoorbeeld v0.6.0."
+            exit 1
+          fi
 
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Commit van de tag vastleggen
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # Eerst dit, dan pas een script uit de tag draaien: code die niet op main staat voeren we
+      # niet uit.
+      - name: Tag staat op main
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          git fetch --quiet origin main
+          if ! git merge-base --is-ancestor HEAD FETCH_HEAD; then
+            echo "::error::De tag ${TAG} staat niet op main. Een uitgave maak je van een commit op main."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
 
-      - name: Versies gelijk
-        run: node scripts/versie.mjs
+      - name: Versie hoort bij de tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: node scripts/versie.mjs --uitgave "$TAG"
+
+  # Het concept wordt één keer aangemaakt, vóór de builds. Zonder deze job zoekt elke build zelf
+  # naar het concept en maakt er een aan als het ontbreekt; drie builds tegelijk kunnen dan elk
+  # een eigen concept maken.
+  concept:
+    name: Concept-release aanmaken
+    needs: controle
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      release_id: ${{ steps.concept.outputs.release_id }}
+    steps:
+      - name: Concept aanmaken of het bestaande gebruiken
+        id: concept
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --draft --prerelease --verify-tag \
+              --title "Mondig ${TAG}" \
+              --notes "Concept: nog niet handmatig getest. Zie de bijlagen voor de installers."
+          fi
+          # Een opnieuw gestarte run vult het bestaande concept aan. Een uitgave die al
+          # gepubliceerd is overschrijven we niet.
+          if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" != "true" ]; then
+            echo "::error::Voor ${TAG} bestaat al een gepubliceerde uitgave. Een nieuwe uitgave krijgt een nieuw versienummer."
+            exit 1
+          fi
+          id="$(gh release view "$TAG" --json databaseId --jq .databaseId)"
+          test -n "$id"
+          echo "release_id=${id}" >> "$GITHUB_OUTPUT"
 
   bouwen:
     name: Bouwen (${{ matrix.platform }})
-    needs: controle
+    needs: [controle, concept]
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -48,7 +138,9 @@ jobs:
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.controle.outputs.sha }}
 
       - name: Linux-pakketten voor Tauri
         if: matrix.platform == 'ubuntu-22.04'
@@ -62,17 +154,17 @@ jobs:
       - name: Rust installeren (versie uit rust-toolchain.toml)
         run: rustup toolchain install
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       # transcribe.cpp bouwt de Vulkan-module en vraagt daarvoor de headers, glslc en
       # vulkan-1.lib (ADR 0011), zoals in ci.yml.
       - name: Vulkan-SDK installeren
         if: matrix.platform == 'windows-latest'
-        uses: jakoch/install-vulkan-sdk-action@v1
+        uses: jakoch/install-vulkan-sdk-action@7fe84289ddbf750f7eff9f8e4588e600e1dd06c8 # v1.8.1
         with:
           cache: true
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -83,42 +175,55 @@ jobs:
         run: npm ci
 
       # De build maakt eerst de vermeldingen van derden voor in de app (ADR 0016).
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-about@0.9.3
 
       # Werkproces bouwen en samen met de rekenmodules en de C++-runtime klaarzetten
-      # voor de installer (ADR 0012). Mac en Linux volgen in sprint 3e.
-      - name: Werkproces bundelen (Windows)
-        if: matrix.platform == 'windows-latest'
+      # voor de installer (ADR 0012). Op de Mac gaat het werkproces (Metal) mee in de .app
+      # (ADR 0029). Linux volgt later.
+      - name: Werkproces bundelen (Windows en macOS)
+        if: matrix.platform == 'windows-latest' || matrix.platform == 'macos-latest'
         run: node scripts/engine-bundelen.mjs
 
-      - uses: tauri-apps/tauri-action@v1
+      # transcribe.cpp compileert de Metal-shaders met `xcrun metal`; zie ci.yml.
+      - name: Metal-compiler controleren
+        if: matrix.platform == 'macos-latest'
+        run: |
+          if ! xcrun -sdk macosx metal --version; then
+            xcodebuild -downloadComponent MetalToolchain
+            xcrun -sdk macosx metal --version
+          fi
+
+      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: app
-          # Alleen Windows krijgt de bundelconfig met het werkproces; Mac en Linux
-          # blijven ongewijzigd tot sprint 3e.
-          args: ${{ matrix.platform == 'windows-latest' && '--config src-tauri/tauri.bundel.conf.json' || '' }}
-          tagName: v__VERSION__
-          releaseName: 'Mondig v__VERSION__'
-          releaseBody: 'Concept: nog niet handmatig getest. Zie de bijlagen voor de installers.'
-          releaseDraft: true
-          prerelease: true
+          # Windows en macOS krijgen een bundelconfig met het werkproces; Linux blijft
+          # ongewijzigd. Op de Mac: alleen app en dmg, ad-hoc ondertekend (ADR 0029).
+          args: ${{ matrix.platform == 'windows-latest' && '--config src-tauri/tauri.bundel.conf.json' || matrix.platform == 'macos-latest' && '--config src-tauri/tauri.bundel.macos.conf.json' || '' }}
+          # De installers gaan naar het concept uit de job hierboven; met een releaseId zoekt
+          # of maakt de actie zelf geen release meer.
+          releaseId: ${{ needs.concept.outputs.release_id }}
+          tagName: ${{ inputs.tag }}
 
   bijlagen:
     name: Licenties en SBOM
-    needs: bouwen
+    needs: [controle, bouwen]
+    permissions:
+      contents: write
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.controle.outputs.sha }}
 
       - name: Rust installeren (versie uit rust-toolchain.toml)
         run: rustup toolchain install
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -129,7 +234,7 @@ jobs:
         working-directory: app
         run: npm ci
 
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-about@0.9.3,cargo-cyclonedx@0.5.9
 
@@ -155,7 +260,5 @@ jobs:
       - name: Aan de concept-release hangen
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          versie="$(sed -n '/^\[workspace.package\]/,/^\[/{s/^version *= *"\(.*\)"/\1/p}' Cargo.toml)"
-          test -n "$versie"
-          gh release upload "v${versie}" THIRD_PARTY_NOTICES.md mondig-sbom.cdx.json --clobber
+          TAG: ${{ inputs.tag }}
+        run: gh release upload "$TAG" THIRD_PARTY_NOTICES.md mondig-sbom.cdx.json --clobber

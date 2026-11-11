@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alsWijzigFout, maakVolgorde } from './sneltoets';
+import { alsWijzigFout, haalSneltoetsInfo, maakVolgorde } from './sneltoets';
 
 describe('maakVolgorde', () => {
   it('houdt het laatste antwoord voor het huidige', () => {
@@ -36,5 +36,11 @@ describe('alsWijzigFout', () => {
     expect(alsWijzigFout(null)).toBeNull();
     expect(alsWijzigFout({ melding: 'x', vervolg: 'geen' })).toBeNull();
     expect(alsWijzigFout({ soort: 'geweigerd' })).toBeNull();
+  });
+});
+
+describe('haalSneltoetsInfo', () => {
+  it('bestaat niet buiten de app (gewone browser)', async () => {
+    expect(await haalSneltoetsInfo()).toBeNull();
   });
 });

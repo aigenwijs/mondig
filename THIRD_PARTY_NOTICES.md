@@ -18,7 +18,7 @@ https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files.
 - BSD 3-Clause "New" or "Revised" License (21 onderdelen)
 - Unicode License v3 (20 onderdelen)
 - Mozilla Public License 2.0 (18 onderdelen)
-- Apache License 2.0 (9 onderdelen)
+- Apache License 2.0 (10 onderdelen)
 - BSD 2-Clause "Simplified" License (1 onderdelen)
 - Community Data License Agreement Permissive 2.0 (1 onderdelen)
 - zlib License (1 onderdelen)
@@ -944,6 +944,7 @@ Apache License
 Gebruikt door:
 
 - audio-codec-algorithms 0.8.1 (https://github.com/karip/audio-codec-algorithms)
+- constant_time_eq 0.6.1 (https://codeberg.org/cesarb/constant_time_eq)
 - dunce 1.0.5 (https://gitlab.com/kornelski/dunce)
 - ryu 1.0.23 (https://github.com/dtolnay/ryu)
 
@@ -5760,6 +5761,41 @@ DEALINGS IN THE SOFTWARE.
 
 Gebruikt door:
 
+- zeroize_derive 1.5.0 (https://github.com/RustCrypto/utils)
+
+```text
+Copyright (c) 2019-2026 The RustCrypto Project Developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+```
+
+## MIT License
+
+Gebruikt door:
+
 - rubato 5.0.0 (https://github.com/HEnquist/rubato)
 
 ```text
@@ -6847,7 +6883,7 @@ SOFTWARE.
 
 Gebruikt door:
 
-- ureq-proto 0.6.5 (https://github.com/algesten/ureq-proto)
+- ureq-proto 0.7.1 (https://github.com/algesten/ureq-proto)
 
 ```text
 Copyright 2022 Martin Algesten
@@ -7349,7 +7385,7 @@ SOFTWARE.
 
 Gebruikt door:
 
-- ureq 3.5.0 (https://github.com/algesten/ureq)
+- ureq 3.5.1 (https://github.com/algesten/ureq)
 
 ```text
 MIT License
@@ -8177,7 +8213,6 @@ Gebruikt door:
 - windows-registry 0.6.1 (https://github.com/microsoft/windows-rs)
 - windows-result 0.4.1 (https://github.com/microsoft/windows-rs)
 - windows-strings 0.5.1 (https://github.com/microsoft/windows-rs)
-- windows-sys 0.52.0 (https://github.com/microsoft/windows-rs)
 - windows-sys 0.59.0 (https://github.com/microsoft/windows-rs)
 - windows-sys 0.61.2 (https://github.com/microsoft/windows-rs)
 - windows-targets 0.52.6 (https://github.com/microsoft/windows-rs)
@@ -8799,7 +8834,7 @@ SOFTWARE.
 Gebruikt door:
 
 - tracing-core 0.1.36 (https://github.com/tokio-rs/tracing)
-- zip 9.2.1 (https://github.com/zip-rs/zip2)
+- zip 9.4.2 (https://github.com/zip-rs/zip2)
 
 ```text
 The MIT License (MIT)
@@ -8928,10 +8963,10 @@ Gebruikt door:
 
 - aho-corasick 1.1.5 (https://github.com/BurntSushi/aho-corasick)
 - byteorder 1.5.0 (https://github.com/BurntSushi/byteorder)
-- jiff-core 0.1.1 (https://github.com/BurntSushi/jiff)
+- jiff-core 0.1.4 (https://github.com/BurntSushi/jiff)
 - jiff-tzdb-platform 0.1.3 (https://github.com/BurntSushi/jiff)
 - jiff-tzdb 0.1.9 (https://github.com/BurntSushi/jiff)
-- jiff 0.2.38 (https://github.com/BurntSushi/jiff)
+- jiff 0.2.40 (https://github.com/BurntSushi/jiff)
 - memchr 2.8.3 (https://github.com/BurntSushi/memchr)
 - walkdir 2.5.0 (https://github.com/BurntSushi/walkdir)
 

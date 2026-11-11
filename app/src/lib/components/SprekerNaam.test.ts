@@ -9,6 +9,7 @@ function beurt(deel: Partial<BeurtInfo> = {}): BeurtInfo {
     kant: 'anderen',
     sprekernummer: null,
     spreker: 'Anderen',
+    sprekerGetoond: deel.spreker === undefined ? 'Anderen' : deel.spreker,
     eigenNaam: false,
     startMs: 0,
     eindMs: 1000,
@@ -21,7 +22,10 @@ function beurt(deel: Partial<BeurtInfo> = {}): BeurtInfo {
 
 const geef = (): Promise<string | null> => Promise.resolve(null);
 
-function html(b: BeurtInfo, extra: { kanAanSpreker?: boolean } = {}): string {
+function html(
+  b: BeurtInfo,
+  extra: { kanAanSpreker?: boolean; aanwijzen?: 'rij' | 'kolom' } = {}
+): string {
   return render(SprekerNaam, { props: { beurt: b, geef, ...extra } }).body;
 }
 
@@ -54,5 +58,45 @@ describe('het label van een beurt', () => {
       html(beurt({ sprekernummer: 1, spreker: 'Spreker 1' }), { kanAanSpreker: true })
     ).not.toContain('+ Spreker');
     expect(html(beurt())).not.toContain('+ Spreker');
+  });
+});
+
+describe('een spreker aanwijzen bij een alinea zonder spreker', () => {
+  const alinea = beurt({ kant: 'jij', spreker: null, startMs: 65_000 });
+
+  it('naast de alinea is een kleine knop met een eigen naam voor de schermlezer, geen label', () => {
+    const uit = html(alinea, { kanAanSpreker: true, aanwijzen: 'rij' });
+    expect(uit).toContain('aria-label="Spreker aanwijzen bij de alinea van 1:05"');
+    expect(uit).toContain('title="Spreker aanwijzen"');
+    // Altijd bereikbaar met het toetsenbord: een gewone knop, alleen onzichtbaar tot aanwijzen.
+    expect(uit).toContain('<button');
+    expect(uit).toContain('group-focus-within/rij:opacity-100');
+    expect(uit).toContain('focus-visible:opacity-100');
+    expect(uit).not.toContain('naam wijzigen');
+    expect(uit).not.toContain('Jij');
+  });
+
+  it('in de labelkolom is het een gestippeld "+ Spreker" dat er altijd staat, zonder "Jij"', () => {
+    const uit = html(alinea, { kanAanSpreker: true, aanwijzen: 'kolom' });
+    expect(uit).toContain('+ Spreker');
+    expect(uit).toContain('border-dashed');
+    expect(uit).not.toContain('opacity-0');
+    expect(uit).toContain('aria-label="Spreker aanwijzen bij de alinea van 1:05"');
+    expect(uit).not.toContain('Jij');
+  });
+
+  it('is er niet zonder aanwijzen: dan blijft het label, met een merkteken voor de focus', () => {
+    const uit = html(beurt({ kant: 'jij', spreker: 'Jij' }), { kanAanSpreker: true });
+    expect(uit).not.toContain('Spreker aanwijzen');
+    expect(uit).toContain('aria-label="Jij, naam wijzigen"');
+    expect(uit).toContain('data-label-beurt="3"');
+  });
+});
+
+describe('een naam geven', () => {
+  it('heeft geen keuze meer voor alleen deze beurt: de naam geldt voor de hele spreker', () => {
+    const uit = render(SprekerNaam, { props: { beurt: beurt(), geef } }).body;
+    expect(uit).not.toContain('Alleen deze beurt');
+    expect(uit).not.toContain('type="radio"');
   });
 });

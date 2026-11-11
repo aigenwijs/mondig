@@ -41,6 +41,17 @@ export interface BestandenStand {
   lijst: BestandInfo[];
   /** Een fout van het laatste toevoegen, bijvoorbeeld bij slepen zonder model. */
   fout: Foutmelding | null;
+  /** De laatste drop leverde geen bestand op (geen pad en geen belofte, ADR 0030). */
+  nietGepakt: boolean;
+}
+
+/**
+ * De fout die het scherm bij een stand toont: de fout van het toevoegen, of bij een drop die
+ * niets opleverde de uitleg wat wel kan.
+ */
+export function foutVanStand(stand: BestandenStand, t: Berichten): Foutmelding | null {
+  if (stand.fout) return stand.fout;
+  return stand.nietGepakt ? { melding: t.bestandenNietGepakt, vervolg: 'geen' } : null;
 }
 
 /** Is `nieuw` nieuwer dan de stand met dit volgnummer? */
@@ -76,8 +87,12 @@ export interface BestandTranscript {
   /** Wat bij het lezen opviel, zoals een afgebroken bestand, of `null`. */
   waarschuwing: string | null;
   regels: TranscriptRegel[];
-  /** Het label van de gebruiker, zoals een zaaknummer. */
-  label: string;
+  /** De klant die de gebruiker invulde; leeg zonder klant. */
+  klant: string;
+  /** Het onderwerp voor de bestandsnaam: wat de gebruiker invulde, anders de naam van de opname. */
+  onderwerp: string;
+  /** De datum voor de bestandsnaam (2026-10-30): wat de gebruiker invulde, anders die van het transcript. */
+  datum: string;
   /** Staat het bronbestand er nog, zodat een regel kan worden afgespeeld (V-1)? */
   audioAanwezig: boolean;
   /** De stand van "Persoonsgegevens markeren en vervangen" (V-2). */
@@ -196,6 +211,39 @@ export function verwerkingTekst(ms: number, t: Berichten): string {
 export function naamZonderExtensie(naam: string): string {
   const punt = naam.lastIndexOf('.');
   return punt > 0 ? naam.slice(0, punt) : naam;
+}
+
+/**
+ * Welke knop een rij op Bestanden krijgt (ontwerpsysteem §2): een kruisje voor annuleren
+ * (het bestand loopt) en voor uit de rij halen (wachtend, mislukt of geannuleerd), de
+ * prullenbak alleen voor een klaar bestand.
+ */
+export type RijKnopSoort = 'annuleren' | 'uitRij' | 'verwijderen';
+
+export function rijKnop(toestand: Toestand): {
+  soort: RijKnopSoort;
+  icoon: 'kruis' | 'prullenbak';
+} {
+  switch (toestand.type) {
+    case 'verwerkt':
+      return { soort: 'annuleren', icoon: 'kruis' };
+    case 'klaar':
+      return { soort: 'verwijderen', icoon: 'prullenbak' };
+    case 'wacht':
+    case 'luistert':
+    case 'fout':
+    case 'geannuleerd':
+      return { soort: 'uitRij', icoon: 'kruis' };
+  }
+}
+
+/**
+ * Vraagt de prullenbak eerst bevestiging? Alleen bij een klaar uitschrift dat nog niet is
+ * opgeslagen: dan is de tekst weg. Is het opgeslagen, dan blijft dat bestand staan en volgt een
+ * melding; de andere toestanden (kruisje) verliezen niets.
+ */
+export function vraagBijWeghalen(info: Pick<BestandInfo, 'toestand' | 'opgeslagen'>): boolean {
+  return info.toestand.type === 'klaar' && !info.opgeslagen;
 }
 
 /**

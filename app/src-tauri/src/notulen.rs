@@ -87,22 +87,22 @@ pub(crate) fn bepaal_start(
     let geen = |melding: &str| Err(Foutmelding::nieuw(melding, Vervolg::Geen));
     match gekozen.aanbieder {
         None => geen(
-            "Je hebt nog niet gekozen waar Mondig notulen maakt. Dat kies je bij Instellingen, onder Notulen.",
+            "Je hebt nog niet gekozen waar Mondig notulen maakt. Dat kies je bij Instellingen, onder AI-dienst.",
         ),
         Some(Voorinstelling::Mistral) if !gekozen.training_uit => geen(
-            "Zet bij Instellingen, onder Notulen, het vinkje dat training uit staat voor je sleutel. Zonder dat maakt Mondig geen notulen via Mistral.",
+            "Zet bij Instellingen, onder AI-dienst, het vinkje dat training uit staat voor je sleutel. Zonder dat maakt Mondig geen notulen via Mistral.",
         ),
         Some(Voorinstelling::Mistral) if !sleutel_staat => geen(
-            "Er is nog geen sleutel voor Mistral ingevuld. Vul hem in bij Instellingen, onder Notulen.",
+            "Er is nog geen sleutel voor Mistral ingevuld. Vul hem in bij Instellingen, onder AI-dienst.",
         ),
         Some(Voorinstelling::Mistral) => {
             Ok((Voorinstelling::Mistral, gekozen.mistral_model.clone()))
         }
         Some(Voorinstelling::OllamaLokaal) => match &gekozen.ollama_model {
             Some(model) => Ok((Voorinstelling::OllamaLokaal, model.clone())),
-            None => {
-                geen("Kies bij Instellingen, onder Notulen, welk model van Ollama Mondig gebruikt.")
-            }
+            None => geen(
+                "Kies bij Instellingen, onder AI-dienst, welk model van Ollama Mondig gebruikt.",
+            ),
         },
     }
 }

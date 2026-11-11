@@ -12,6 +12,14 @@
   import { startDictatenStand } from '#lib/dictatenstand.svelte.js';
   import { modellenStand, startModellenStand } from '#lib/modellenstand.svelte.js';
   import { sprekers } from '#lib/sprekers.svelte.js';
+  import {
+    sprekerlabels,
+    vergaderingZetLabels,
+    vergaderingZetSoortwoorden
+  } from '#lib/vergadering.js';
+  import { soortwoord } from '#lib/verslagtitel.js';
+  import { systeemvakZetLabels, systeemvaklabels } from '#lib/systeemvak.js';
+  import { t } from '#lib';
   import { luisterNaarNavigatie } from '#lib/gebeurtenissen.js';
   import { bekendeRoute } from '#lib/navigatie.js';
   import type { LayoutProps } from './$types';
@@ -36,6 +44,26 @@
   // waar de gebruiker om vroeg. Dat blijft kloppen als hij intussen naar een ander scherm ging.
   $effect(() => {
     void sprekers.volg();
+  });
+
+  // Kopiëren en Opslaan gebruiken de sprekernamen in de taal van de app ("You", "Others", "Speaker
+  // 1"). Rust kent die taal niet, dus de interface geeft ze door, bij het starten en bij een
+  // taalwissel. De pil heeft geen verslag en slaat dit over.
+  $effect(() => {
+    if (isPil) return;
+    const labels = sprekerlabels(t());
+    void vergaderingZetLabels(labels).catch(() => undefined);
+    // Het standaardonderwerp en de titel in het document volgen ook de taal van de app.
+    void vergaderingZetSoortwoorden(soortwoord('online', t()), soortwoord('alleen', t())).catch(
+      () => undefined
+    );
+  });
+
+  // Het menu in het systeemvak staat in Rust, dat de taal ook niet kent: dezelfde route. Alleen
+  // het hoofdvenster geeft ze door, anders zetten twee vensters elkaar steeds om.
+  $effect(() => {
+    if (isPil) return;
+    void systeemvakZetLabels(systeemvaklabels(t())).catch(() => undefined);
   });
 
   onMount(() => {

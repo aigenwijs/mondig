@@ -6,7 +6,7 @@
 //! met een tab en een hangende inspringing, zodat de tekst netjes onder elkaar blijft.
 //!
 //! De gegevens staan ook in de documenteigenschappen: in Word in `docProps/core.xml` (titel,
-//! beschrijving, trefwoord, taal, datum) en `docProps/custom.xml` (Bron, Duur, Model, Label,
+//! beschrijving, trefwoord, taal, datum) en `docProps/custom.xml` (Bron, Duur, Model, Klant,
 //! Verwerking), in LibreOffice in `meta.xml` (dezelfde velden als `meta:user-defined`).
 //!
 //! Bij een gesprek (regels met een spreker) staat het label vet voor de tekst ("**Jij:** tekst"),
@@ -102,17 +102,17 @@ fn docx_document_rels() -> String {
     )
 }
 
-fn docx_core(document: &Document, taal: Taalcode) -> String {
+fn docx_core(document: &Document, notulen: Option<&Notulenblok>, taal: Taalcode) -> String {
     let taal = taal.volledig;
     let trefwoord = document
-        .label()
+        .klant()
         .map(|l| format!("<cp:keywords>{}</cp:keywords>", xml(&l)))
         .unwrap_or_default();
     let datum = iso_utc(&document.moment);
     format!(
         r#"{KOP}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>{titel}</dc:title><dc:subject>Transcript</dc:subject>{trefwoord}<dc:description>{beschrijving}</dc:description><dc:language>{taal}</dc:language><dcterms:created xsi:type="dcterms:W3CDTF">{datum}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">{datum}</dcterms:modified></cp:coreProperties>"#,
         titel = xml(&document.titel()),
-        beschrijving = xml(&document.beschrijving()),
+        beschrijving = xml(&document.beschrijving_met(notulen)),
     )
 }
 
@@ -122,10 +122,10 @@ fn docx_app() -> String {
     )
 }
 
-fn docx_custom(document: &Document) -> String {
+fn docx_custom(document: &Document, notulen: Option<&Notulenblok>) -> String {
     let mut eigenschappen = String::new();
     // De pid begint bij 2 (ECMA-376 deel 1, sectie 22.3.2); de fmtid is voor alle eigen velden gelijk.
-    for (pid, (sleutel, waarde)) in (2..).zip(document.gegevens()) {
+    for (pid, (sleutel, waarde)) in (2..).zip(document.gegevens_met(notulen)) {
         let _ = write!(
             eigenschappen,
             r#"<property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}" pid="{pid}" name="{sleutel}"><vt:lpwstr>{}</vt:lpwstr></property>"#,
@@ -195,7 +195,7 @@ fn docx_notulen(notulen: &Notulenblok) -> String {
 
 fn docx_document(document: &Document, notulen: Option<&Notulenblok>, tijden: bool) -> String {
     let mut body = w_alinea(Some("Title"), &w_tekst(&document.titel()));
-    for (sleutel, waarde) in document.gegevens() {
+    for (sleutel, waarde) in document.gegevens_met(notulen) {
         body.push_str(&w_alinea(
             Some("MondigGegevens"),
             &w_tekst(&format!("{sleutel}: {waarde}")),
@@ -255,9 +255,13 @@ pub(super) fn docx(
         &[
             ("[Content_Types].xml", docx_content_types(), false),
             ("_rels/.rels", docx_rels(), false),
-            ("docProps/core.xml", docx_core(document, taal), false),
+            (
+                "docProps/core.xml",
+                docx_core(document, notulen, taal),
+                false,
+            ),
             ("docProps/app.xml", docx_app(), false),
-            ("docProps/custom.xml", docx_custom(document), false),
+            ("docProps/custom.xml", docx_custom(document, notulen), false),
             ("word/_rels/document.xml.rels", docx_document_rels(), false),
             ("word/styles.xml", docx_styles(taal), false),
             (
@@ -290,14 +294,14 @@ fn odt_manifest() -> String {
     )
 }
 
-fn odt_meta(document: &Document, taal: Taalcode) -> String {
+fn odt_meta(document: &Document, notulen: Option<&Notulenblok>, taal: Taalcode) -> String {
     let code = taal.volledig;
     let trefwoord = document
-        .label()
+        .klant()
         .map(|l| format!("<meta:keyword>{}</meta:keyword>", xml(&l)))
         .unwrap_or_default();
     let mut eigen = String::new();
-    for (sleutel, waarde) in document.gegevens() {
+    for (sleutel, waarde) in document.gegevens_met(notulen) {
         let _ = write!(
             eigen,
             r#"<meta:user-defined meta:name="{sleutel}">{}</meta:user-defined>"#,
@@ -308,7 +312,7 @@ fn odt_meta(document: &Document, taal: Taalcode) -> String {
     format!(
         r#"{KOP}<office:document-meta xmlns:office="{NS_OFFICE}" xmlns:meta="{NS_META}" xmlns:dc="http://purl.org/dc/elements/1.1/" office:version="{ODF_VERSIE}"><office:meta><meta:generator>Mondig/{VERSIE}</meta:generator><dc:title>{titel}</dc:title><dc:subject>Transcript</dc:subject><dc:description>{beschrijving}</dc:description><dc:language>{code}</dc:language>{trefwoord}<meta:creation-date>{datum}</meta:creation-date><dc:date>{datum}</dc:date>{eigen}</office:meta></office:document-meta>"#,
         titel = xml(&document.titel()),
-        beschrijving = xml(&document.beschrijving()),
+        beschrijving = xml(&document.beschrijving_met(notulen)),
     )
 }
 
@@ -324,7 +328,7 @@ fn odt_content(document: &Document, notulen: Option<&Notulenblok>, tijden: bool)
         format!(r#"<text:p text:style-name="{stijl}">{inhoud}</text:p>"#)
     };
     let mut tekst = alinea("Title", &xml(&document.titel()));
-    for (sleutel, waarde) in document.gegevens() {
+    for (sleutel, waarde) in document.gegevens_met(notulen) {
         tekst.push_str(&alinea(
             "Mondig_20_gegevens",
             &xml(&format!("{sleutel}: {waarde}")),
@@ -415,7 +419,7 @@ pub(super) fn odt(
         &[
             ("mimetype", MIMETYPE.to_string(), true),
             ("META-INF/manifest.xml", odt_manifest(), false),
-            ("meta.xml", odt_meta(document, taal), false),
+            ("meta.xml", odt_meta(document, notulen, taal), false),
             ("styles.xml", odt_styles(taal), false),
             ("content.xml", odt_content(document, notulen, tijden), false),
         ],
@@ -488,10 +492,29 @@ mod tests {
             custom
                 .contains(r#"pid="2" name="Datum"><vt:lpwstr>1 november 2026, 14:32</vt:lpwstr>"#)
         );
-        assert!(custom.contains(r#"name="Verwerking"><vt:lpwstr>Lokaal verwerkt</vt:lpwstr>"#));
+        assert!(custom.contains(r#"name="Verwerking"><vt:lpwstr>Op deze computer</vt:lpwstr>"#));
         let tekst = deel(&delen, "word/document.xml");
         assert!(tekst.contains("<w:t>00:07</w:t></w:r><w:r><w:tab/>"));
         assert!(tekst.contains("de markt &amp; minder &lt;auto&apos;s&gt;."));
+    }
+
+    #[test]
+    fn docx_en_odt_noemen_een_aanbieder_buiten_deze_computer() {
+        use super::super::tests::blok;
+        let extern_blok = blok(Some("Mistral (Europees)"));
+        let delen = lees(&docx(&document(), Some(&extern_blok), true).expect("docx"));
+        let custom = deel(&delen, "docProps/custom.xml");
+        assert!(
+            custom.contains(
+                "Uitschrift op deze computer, notulen door Mistral (Europees)</vt:lpwstr>"
+            )
+        );
+        let tekst = deel(&delen, "word/document.xml");
+        assert!(tekst.contains("notulen door Mistral (Europees)"));
+        let lokaal = lees(&docx(&document(), Some(&blok(None)), true).expect("docx"));
+        assert!(deel(&lokaal, "docProps/custom.xml").contains(">Op deze computer</vt:lpwstr>"));
+        let odt = lees(&odt(&document(), Some(&extern_blok), true).expect("odt"));
+        assert!(deel(&odt, "meta.xml").contains("notulen door Mistral (Europees)"));
     }
 
     #[test]

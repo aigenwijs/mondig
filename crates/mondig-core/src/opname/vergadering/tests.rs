@@ -602,7 +602,7 @@ fn een_map_met_verslag_verloopt_en_wordt_gewist_zoals_een_andere() {
             &gesprek,
             "m",
             "M",
-            Some("Naam"),
+            &verslag::Naamvelden::default(),
             &Markeringen::default(),
             None,
         ),

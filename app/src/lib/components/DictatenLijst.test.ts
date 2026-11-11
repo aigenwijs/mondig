@@ -27,17 +27,25 @@ const dictaten: BewaardDictaat[] = [
 const stil = () => Promise.resolve();
 
 function html(
-  props: Partial<{ dictaten: BewaardDictaat[]; termijn: '24u' | '7d'; beginOpen: string }> = {}
+  props: Partial<{
+    dictaten: BewaardDictaat[];
+    totaal: number;
+    termijn: '24u' | '7d' | 'laatste10' | '30d';
+    beginOpen: string;
+  }> = {}
 ): string {
   return render(DictatenLijst, {
     props: {
       dictaten,
+      totaal: props.dictaten?.length ?? dictaten.length,
       termijn: '24u' as const,
       bewaard: dictaten.length,
       nu,
       bijVerwijder: stil,
       bijWisAlles: stil,
-      bijHoeLang: () => undefined,
+      bijMeerTonen: stil,
+      wegval: () => Promise.resolve(0),
+      bijTermijn: stil,
       ...props
     }
   }).body;
@@ -49,6 +57,8 @@ describe('de lijst Je dictaten', () => {
     expect(uit).toContain('Je dictaten');
     expect(uit).toContain('24 uur bewaard');
     expect(html({ termijn: '7d' })).toContain('7 dagen bewaard');
+    expect(html({ termijn: '30d' })).toContain('30 dagen bewaard');
+    expect(html({ termijn: 'laatste10' })).toContain('Laatste 10 bewaard');
   });
 
   it('groepeert per dag: Vandaag en Gisteren, met de tijd en de tekst per regel', () => {
@@ -102,6 +112,38 @@ describe('de lijst Je dictaten', () => {
     expect(uit).toContain('blijft hier 24 uur staan');
     expect(uit).not.toContain('Vandaag');
     expect(html({ dictaten: [], termijn: '7d' })).toContain('blijft hier 7 dagen staan');
+    expect(html({ dictaten: [], termijn: '30d' })).toContain('blijft hier 30 dagen staan');
+    // Bij Laatste 10 past "blijft hier Laatste 10 staan" niet: een eigen zin.
+    const laatste = html({ dictaten: [], termijn: 'laatste10' });
+    expect(laatste).toContain('tien nieuwste dictaten');
+    expect(laatste).not.toContain('blijft hier');
+  });
+
+  it('toont geen knop Meer tonen en geen telling als alles al zichtbaar is', () => {
+    const uit = html();
+    expect(uit).not.toContain('Meer tonen');
+    expect(uit).not.toContain('id="dictaten-meer"');
+    expect(uit).not.toMatch(/\d+ van \d+/);
+  });
+
+  it('toont Meer tonen met de telling als er meer is dan zichtbaar', () => {
+    const uit = html({ totaal: 37 });
+    expect(uit).toContain('id="dictaten-meer"');
+    expect(uit).toContain('Meer tonen');
+    expect(uit).toContain('3 van 37');
+    // De knop staat onder de lijst.
+    expect(uit.indexOf('Notitie voor het verslag')).toBeLessThan(uit.indexOf('Meer tonen'));
+  });
+
+  it('groepeert per dag over de delen heen: een dag die doorloopt krijgt een kop', () => {
+    const veel: BewaardDictaat[] = Array.from({ length: 12 }, (_, i) => ({
+      id: `dictaat-${String(i)}-0.json`,
+      tijdUnixMs: om(4, 14, 59 - i),
+      tekst: `Dictaat ${String(i)}`
+    }));
+    const uit = html({ dictaten: veel, totaal: 40 });
+    expect((uit.match(/Vandaag/g) ?? []).length).toBe(1);
+    expect(uit).toContain('12 van 40');
   });
 
   it('toont de bevestigvraag niet vanzelf', () => {

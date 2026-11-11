@@ -7,6 +7,7 @@
 # geven, dus de drempel staat hier voorlopig ruimer (DREMPEL). Na de eerste run staat
 # de Linux-meting als artifact "bench-uitkomst"; die wordt de CI-basislijn
 # (eval/basislijn-ci.json) en dan gaat de drempel terug naar 1,0.
+# Acties staan op een commit (SHA) met de versie als commentaar; Dependabot werkt ze bij.
 name: Bench
 
 on:
@@ -31,7 +32,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # transcribe.cpp bouwt ggml met CMake; de Vulkan-module vraagt de headers en glslc
       # (libvulkan-dev, glslc). De meting draait op de processor, dus de module wordt
@@ -45,9 +46,9 @@ jobs:
       - name: Rust installeren (versie uit rust-toolchain.toml)
         run: rustup toolchain install
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
 
@@ -55,13 +56,13 @@ jobs:
         run: cargo build --release -p mondig-cli -p mondig-engine
 
       - name: Modelmap cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/share/com.aigenwijs.spraak/modellen
           key: modellen-${{ hashFiles('crates/mondig-core/src/modellen.json') }}
 
       - name: Testaudio cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/ci-audio
           key: ci-audio-${{ hashFiles('eval/ci-subset.json') }}
@@ -90,7 +91,7 @@ jobs:
 
       - name: Uitkomst bewaren
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bench-uitkomst
           path: ${{ runner.temp }}/bench.json

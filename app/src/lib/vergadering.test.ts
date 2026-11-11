@@ -3,6 +3,7 @@ import {
   aankondiging,
   beginNaam,
   beurtNaam,
+  beurtNaamGetoond,
   dagVan,
   heeftSprekers,
   kanAanSpreker,
@@ -11,6 +12,7 @@ import {
   wistBinnenkort,
   isBewaarDagen,
   bewaarTot,
+  VERSLAGEN_ERBIJ,
   VERSLAGEN_ZICHTBAAR,
   zichtbareVerslagen,
   BEWAAR_DAGEN,
@@ -19,9 +21,15 @@ import {
   isNieuwer,
   kantNaam,
   klokTijd,
+  naamMelding,
+  sprekerlabels,
+  nieuweStap,
+  standaardNaam,
+  type Sprekerstap,
   neemtOp,
   schermVan,
   toontLabels,
+  zonderSpreker,
   metSysteemgeluid,
   vraagtHerinnering,
   zichtbareOpnames,
@@ -31,12 +39,15 @@ import {
   type Vergadersoort,
   SOORTEN,
   WACHTEND_ZICHTBAAR,
+  MAX_SPREKERS,
   type BeurtInfo,
   type OpnameInfo,
   type StandToestand,
   type VerslagInfo,
   type VergaderingStand
 } from './vergadering';
+import { en } from './i18n/en';
+import { nl } from './i18n/nl';
 
 function stand(toestand: VergaderingStand['toestand'], versie = 1): VergaderingStand {
   return { versie, toestand, opnames: [], verslagen: [], fout: null, laatsteSoort: 'online' };
@@ -79,6 +90,7 @@ function beurt(deel: Partial<BeurtInfo> = {}): BeurtInfo {
     kant: 'anderen',
     sprekernummer: null,
     spreker: 'Anderen',
+    sprekerGetoond: deel.spreker === undefined ? 'Anderen' : deel.spreker,
     eigenNaam: false,
     startMs: 0,
     eindMs: 1000,
@@ -120,7 +132,11 @@ const VERSLAG: StandToestand = {
   beurten: [],
   audioAanwezig: true,
   persoon: { vervangen: false, eigen: [] },
-  naam: null,
+  klant: '',
+  onderwerp: 'Vergadering',
+  datum: '2026-11-02',
+  klantGetoond: '',
+  onderwerpGetoond: 'Vergadering',
   wistMs: null,
   bewarenMislukt: false,
   modelId: 'parakeet-ultra-q8',
@@ -131,6 +147,7 @@ const VERSLAG: StandToestand = {
   opnieuw: null,
   naOpnieuw: null,
   vorigeVersie: false,
+  sprekerstap: null,
   notulen: { info: null, onleesbaar: false, maken: null }
 };
 
@@ -196,12 +213,10 @@ describe('de lijst met wachtende opnames', () => {
   // Twaalf opnames, oudste eerst zoals Rust ze geeft: o1 tot en met o12.
   const lijst = Array.from({ length: 12 }, (_, i) => opname(`o${String(i + 1)}`, i + 1));
 
-  it('toont de nieuwste tien, nieuwste eerst', () => {
-    expect(WACHTEND_ZICHTBAAR).toBe(10);
+  it('toont de nieuwste drie, nieuwste eerst', () => {
+    expect(WACHTEND_ZICHTBAAR).toBe(3);
     const zicht = zichtbareOpnames(lijst, false).map((o) => o.id);
-    expect(zicht).toHaveLength(10);
-    expect(zicht[0]).toBe('o12');
-    expect(zicht[9]).toBe('o3');
+    expect(zicht).toEqual(['o12', 'o11', 'o10']);
   });
 
   it('toont na "Alle tonen" alles, nieuwste eerst, zonder de lijst te wijzigen', () => {
@@ -210,8 +225,8 @@ describe('de lijst met wachtende opnames', () => {
     expect(lijst[0]?.id).toBe('o1');
   });
 
-  it('toont bij tien of minder alles', () => {
-    expect(zichtbareOpnames(lijst.slice(0, 10), false)).toHaveLength(10);
+  it('toont bij drie of minder alles', () => {
+    expect(zichtbareOpnames(lijst.slice(0, 3), false)).toHaveLength(3);
     expect(zichtbareOpnames(lijst.slice(0, 2), false)).toHaveLength(2);
     expect(zichtbareOpnames([], false)).toEqual([]);
   });
@@ -379,36 +394,84 @@ describe('het label of de naam van een beurt', () => {
   });
 });
 
+describe('de naam op het label met Vervangen aan', () => {
+  it('toont een gemarkeerd gegeven in een eigen naam zoals de export, en laat de rest staan', () => {
+    const met = beurt({
+      spreker: 'Jan 06 12345678',
+      sprekerGetoond: 'Jan [TELEFOON]',
+      eigenNaam: true
+    });
+    expect(beurtNaamGetoond(met, NAMEN)).toBe('Jan [TELEFOON]');
+    // Het naamveld begint met de echte naam, want daar verbetert de gebruiker.
+    expect(beginNaam(met)).toBe('Jan 06 12345678');
+    // Zonder markering is het gewoon de naam, en een standaardnaam volgt de taal van de app.
+    expect(beurtNaamGetoond(beurt({ spreker: 'Zaal', eigenNaam: true }), NAMEN)).toBe('Zaal');
+    expect(beurtNaamGetoond(beurt(), NAMEN)).toBe('Anderen');
+  });
+});
+
+describe('de sprekerlabels voor Rust', () => {
+  it('geeft de standaardnamen in de taal van de app, per sprekernummer', () => {
+    const nl8 = sprekerlabels(nl);
+    expect(nl8.jij).toBe('Jij');
+    expect(nl8.anderen).toBe('Anderen');
+    expect(nl8.sprekers).toHaveLength(MAX_SPREKERS);
+    expect(nl8.sprekers[0]).toBe('Spreker 1');
+    const en8 = sprekerlabels(en);
+    expect(en8).toEqual({
+      jij: 'You',
+      anderen: 'Others',
+      sprekers: Array.from({ length: MAX_SPREKERS }, (_, i) => `Speaker ${String(i + 1)}`)
+    });
+    // Geen Nederlands label in de Engelse namen.
+    const alle = [en8.jij, en8.anderen, ...en8.sprekers].join(' ');
+    expect(alle).not.toMatch(/Jij|Anderen|Spreker /);
+  });
+});
+
 describe('de lijst Eerder opgenomen', () => {
   const verslag = (id: string, beginMs: number): VerslagInfo => ({
     id,
-    naam: null,
+    klant: '',
+    onderwerp: null,
     soort: 'online',
     beginMs,
     duurMs: 60_000,
     sprekers: null,
     wistMs: null,
-    opnameAanwezig: true
+    opnameAanwezig: true,
+    opgeslagenBekend: false
   });
   // Negen verslagen, in de volgorde van Rust (nieuwste eerst): v9 tot en met v1.
   const lijst = Array.from({ length: 9 }, (_, i) => verslag(`v${String(9 - i)}`, 9 - i));
 
   it('toont de nieuwste vijf, nieuwste eerst', () => {
     expect(VERSLAGEN_ZICHTBAAR).toBe(5);
-    const zicht = zichtbareVerslagen(lijst, false).map((v) => v.id);
+    const zicht = zichtbareVerslagen(lijst).map((v) => v.id);
     expect(zicht).toEqual(['v9', 'v8', 'v7', 'v6', 'v5']);
   });
 
-  it('toont na "Alle N tonen" alles, ook als de volgorde door elkaar staat', () => {
+  it('komt er bij "Meer tonen" steeds tien bij: vijf, vijftien, dan alles', () => {
+    expect(VERSLAGEN_ERBIJ).toBe(10);
+    const zestien = Array.from({ length: 16 }, (_, i) => verslag(`w${String(16 - i)}`, 16 - i));
+    expect(zichtbareVerslagen(zestien, VERSLAGEN_ZICHTBAAR)).toHaveLength(5);
+    const tweede = VERSLAGEN_ZICHTBAAR + VERSLAGEN_ERBIJ;
+    expect(zichtbareVerslagen(zestien, tweede)).toHaveLength(15);
+    // Het derde stuk is groter dan wat er is: alles, nieuwste eerst.
+    const derde = tweede + VERSLAGEN_ERBIJ;
+    expect(zichtbareVerslagen(zestien, derde).map((v) => v.id)).toEqual(zestien.map((v) => v.id));
+  });
+
+  it('sorteert ook als de volgorde door elkaar staat, zonder de lijst te wijzigen', () => {
     const door = [...lijst].reverse();
-    expect(zichtbareVerslagen(door, true).map((v) => v.id)).toEqual(lijst.map((v) => v.id));
+    expect(zichtbareVerslagen(door, 99).map((v) => v.id)).toEqual(lijst.map((v) => v.id));
     expect(door[0]?.id).toBe('v1');
   });
 
   it('toont bij vijf of minder alles', () => {
-    expect(zichtbareVerslagen(lijst.slice(0, 5), false)).toHaveLength(5);
-    expect(zichtbareVerslagen(lijst.slice(0, 2), false)).toHaveLength(2);
-    expect(zichtbareVerslagen([], false)).toEqual([]);
+    expect(zichtbareVerslagen(lijst.slice(0, 5)).length).toBe(5);
+    expect(zichtbareVerslagen(lijst.slice(0, 2))).toHaveLength(2);
+    expect(zichtbareVerslagen([])).toEqual([]);
   });
 });
 
@@ -421,15 +484,14 @@ describe('tot wanneer Mondig een verslag bewaart', () => {
   });
 
   it('noemt vandaag en morgen', () => {
-    expect(bewaarTot(op(4, 23), nu)).toEqual({ soort: 'vandaag' });
-    expect(bewaarTot(nu - 1000, nu)).toEqual({ soort: 'vandaag' });
-    expect(bewaarTot(op(5, 1), nu)).toEqual({ soort: 'morgen' });
+    expect(bewaarTot(op(4, 23), nu)).toBe('vandaag');
+    expect(bewaarTot(nu - 1000, nu)).toBe('vandaag');
+    expect(bewaarTot(op(5, 1), nu)).toBe('morgen');
   });
 
-  it('noemt binnen een week de weekdag, daarna de datum', () => {
-    expect(bewaarTot(op(10), nu)).toEqual({ soort: 'weekdag', ms: op(10) });
-    expect(bewaarTot(op(11), nu)).toEqual({ soort: 'datum', ms: op(11) });
-    expect(bewaarTot(op(30), nu)).toEqual({ soort: 'datum', ms: op(30) });
+  it('noemt alles na morgen later', () => {
+    expect(bewaarTot(op(10), nu)).toBe('later');
+    expect(bewaarTot(op(30), nu)).toBe('later');
   });
 });
 
@@ -496,8 +558,82 @@ describe('sprekers in het verslag', () => {
     const ruimteBeurt = beurt({ kant: 'jij', sprekernummer: 1, spreker: 'Spreker 1' });
     const ruimte = [ruimteBeurt];
     expect(kanAanSpreker('ruimte', ruimte, ruimteBeurt)).toBe(true);
-    // Zonder herkende sprekers blijft alles zoals het was.
+    // Online zonder herkende sprekers blijft alles zoals het was.
     expect(kanAanSpreker('online', [jij], beurt())).toBe(false);
     expect(kanAanSpreker('alleen', ruimte, ruimteBeurt)).toBe(false);
+  });
+
+  it('laat in de ruimte ook zonder herkende sprekers een alinea aan een spreker geven', () => {
+    const alinea = beurt({ kant: 'jij', sprekernummer: null, spreker: 'Jij' });
+    // De eerste spreker maakt de gebruiker zelf; de labelkolom blijft weg tot dan.
+    expect(kanAanSpreker('ruimte', [alinea], alinea)).toBe(true);
+    expect(kanAanSpreker('ruimte', [], alinea)).toBe(true);
+    expect(toontLabels('ruimte', [alinea])).toBe(false);
+    // Alleen ik heeft nooit sprekers, en online "Jij" ook niet.
+    expect(kanAanSpreker('alleen', [alinea], alinea)).toBe(false);
+    expect(kanAanSpreker('online', [alinea], alinea)).toBe(false);
+  });
+
+  it('weet welke alinea in de ruimte niemand aanwees: geen nummer en geen eigen naam', () => {
+    const alinea = beurt({ kant: 'jij', sprekernummer: null, spreker: null, eigenNaam: false });
+    expect(zonderSpreker('ruimte', alinea)).toBe(true);
+    expect(zonderSpreker('ruimte', { ...alinea, sprekernummer: 1 })).toBe(false);
+    expect(zonderSpreker('ruimte', { ...alinea, eigenNaam: true })).toBe(false);
+    // Online heeft "Jij" en "Anderen" een naam, en Alleen ik hoort er niet bij.
+    expect(zonderSpreker('online', alinea)).toBe(false);
+    expect(zonderSpreker('alleen', alinea)).toBe(false);
+  });
+});
+
+describe('de melding na een naam', () => {
+  const t = nl;
+  const stap = (deel: Partial<Sprekerstap>): Sprekerstap => ({
+    volgnummer: 1,
+    kant: 'anderen',
+    samengevoegd: [],
+    naam: null,
+    nummer: null,
+    ...deel
+  });
+
+  it('noemt na leegmaken de naam die er echt staat', () => {
+    expect(naamMelding(stap({ nummer: 2 }), t)).toBe('Terug naar Spreker 2.');
+    expect(naamMelding(stap({}), t)).toBe('Terug naar Anderen.');
+    expect(standaardNaam({ kant: 'jij', sprekernummer: null }, t)).toBe('Jij');
+  });
+
+  it('gebruikt de naam zoals Rust hem teruggaf, niet wat er getypt is', () => {
+    // " NOOR " getypt, Noor bestond al: de melding zegt Noor.
+    expect(naamMelding(stap({ samengevoegd: [1, 2], naam: 'Noor', nummer: 1 }), t)).toBe(
+      'Spreker 1 en Spreker 2 zijn nu Noor.'
+    );
+    // "spreker 1" getypt bij Spreker 2 zonder namen: samen, zonder eigen naam.
+    expect(naamMelding(stap({ samengevoegd: [1, 2], naam: null, nummer: 1 }), t)).toBe(
+      'Spreker 1 en Spreker 2 zijn nu Spreker 1.'
+    );
+    expect(naamMelding(stap({ samengevoegd: [1, 3, null], naam: 'Noor', nummer: 1 }), t)).toBe(
+      'Spreker 1, Spreker 3 en Anderen zijn nu Noor.'
+    );
+    expect(naamMelding(stap({ kant: 'jij', naam: 'Bram' }), t)).toBe('Naam gegeven: Bram.');
+    expect(en.vergaderZijnNu(['Speaker 1', 'Speaker 2'], 'Noor')).toBe(
+      'Speaker 1 and Speaker 2 are now Noor.'
+    );
+  });
+});
+
+describe('een nieuwe stap aan de sprekers', () => {
+  const stap: Sprekerstap = {
+    volgnummer: 7,
+    kant: 'anderen',
+    samengevoegd: [1, 2],
+    naam: 'Noor',
+    nummer: 1
+  };
+  it('alleen als Rust echt een nieuwe stap maakte', () => {
+    expect(nieuweStap(null, stap)).toBe(stap);
+    expect(nieuweStap(6, stap)).toBe(stap);
+    // Opslaan zonder wijziging: dezelfde stap, dus geen nieuwe melding met een oude inhoud.
+    expect(nieuweStap(7, stap)).toBeNull();
+    expect(nieuweStap(7, null)).toBeNull();
   });
 });

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Zonder deze tekst sluit macOS de app bij het eerste microfoonverzoek.
+       Dit is de standaardtaal (Nederlands); Engels staat in infoplist/en.lproj. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Mondig gebruikt de microfoon om je stem op te nemen en op je eigen computer in tekst om te zetten. Er verlaat geen geluid je computer, tenzij je zelf een online aanbieder kiest.</string>
+</dict>
+</plist>

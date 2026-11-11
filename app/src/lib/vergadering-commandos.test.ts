@@ -11,8 +11,10 @@ vi.mock('@tauri-apps/api/core', () => kern);
 
 import {
   vergaderingSluiten,
-  vergaderingVerslagNaam,
+  vergaderingNaamvoorbeeld,
+  vergaderingVerslagNaamvelden,
   vergaderingVerslagOpenen,
+  vergaderingVerslagToonOpgeslagen,
   vergaderingVerslagWissen
 } from './vergadering';
 
@@ -43,13 +45,37 @@ describe("de commando's voor bewaarde verslagen", () => {
     });
   });
 
-  it('geeft het verslag een naam; een lege naam zet de titel terug', async () => {
-    await vergaderingVerslagNaam('Overleg speelveld');
-    expect(kern.invoke).toHaveBeenLastCalledWith('vergadering_verslag_naam', {
-      naam: 'Overleg speelveld'
+  it('toont het opgeslagen bestand van een verslag uit de lijst met alleen zijn id', async () => {
+    await vergaderingVerslagToonOpgeslagen('vergadering-1762');
+    expect(kern.invoke).toHaveBeenLastCalledWith('vergadering_verslag_toon_opgeslagen', {
+      id: 'vergadering-1762'
     });
-    await vergaderingVerslagNaam('');
-    expect(kern.invoke).toHaveBeenLastCalledWith('vergadering_verslag_naam', { naam: '' });
+  });
+
+  it('bewaart klant, onderwerp en datum van het verslag', async () => {
+    await vergaderingVerslagNaamvelden('Gemeente Vlaardingen', 'Intake', '2026-11-02');
+    expect(kern.invoke).toHaveBeenLastCalledWith('vergadering_verslag_naamvelden', {
+      klant: 'Gemeente Vlaardingen',
+      onderwerp: 'Intake',
+      datum: '2026-11-02'
+    });
+    await vergaderingVerslagNaamvelden('', '', '');
+    expect(kern.invoke).toHaveBeenLastCalledWith('vergadering_verslag_naamvelden', {
+      klant: '',
+      onderwerp: '',
+      datum: ''
+    });
+  });
+
+  it('vraagt Rust om de bestandsnaam bij de velden, zonder iets te bewaren', async () => {
+    kern.invoke.mockResolvedValueOnce('2026-11-02 Gemeente Vlaardingen Intake.docx');
+    const naam = await vergaderingNaamvoorbeeld('Gemeente Vlaardingen', 'Intake', '2026-11-02');
+    expect(naam).toBe('2026-11-02 Gemeente Vlaardingen Intake.docx');
+    expect(kern.invoke).toHaveBeenLastCalledWith('vergadering_naamvoorbeeld', {
+      klant: 'Gemeente Vlaardingen',
+      onderwerp: 'Intake',
+      datum: '2026-11-02'
+    });
   });
 
   it('sluit het verslag met één commando, zonder bevestiging of wisopdracht', async () => {

@@ -2,16 +2,49 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 
 /** Antwoord van het Tauri-commando `sneltoets_status`. */
 export interface SneltoetsStatus {
-  /** De actieve toets in gewone taal (`Ctrl+Spatie`), of `null` als geen enkele lukte. */
+  /** De actieve toets in gewone taal (`Ctrl+Spatie`, op de Mac `⌥Spatie`), of `null` als geen enkele lukte. */
   actief: string | null;
+  /** Dezelfde toets voluit voor een schermlezer (op de Mac `Option Spatie`). */
+  actiefVoorlezen?: string | null;
   /** Is de actieve toets een terugvaloptie omdat de gewenste niet vrij was? */
   isTerugval: boolean;
+  /**
+   * Mocht de opgeslagen toets niet op deze computer, zodat Mondig naar de standaard ging (bijv.
+   * Ctrl+Spatie op de Mac)? Dan is `isTerugval` ook waar, maar de melding is een andere.
+   */
+  overgezet?: boolean;
   /** De gewenste toets in gewone taal. */
   gewenst: string;
   /** Alle toetsen die geprobeerd zijn, in gewone taal. */
   geprobeerd: string[];
   /** Alleen bij de tweede toets: staat hij uit omdat hij gelijk is aan de gewone? */
   dubbel?: boolean;
+}
+
+/** Het platform waarop de app draait, zoals Rust het meldt. */
+export type Platform = 'windows' | 'mac' | 'linux';
+
+/** Antwoord van het Tauri-commando `sneltoets_info`: het platform en de standaardtoetsen. */
+export interface SneltoetsInfo {
+  platform: Platform;
+  /** De standaard van de gewone toets, in de schrijfwijze van de plugin. */
+  standaard: string;
+  /** Dezelfde in gewone taal. */
+  standaardLabel: string;
+  /** De standaard van de tweede toets (opschonen), in de schrijfwijze van de plugin. */
+  standaardOpschonen: string;
+  /** Dezelfde in gewone taal. */
+  standaardOpschonenLabel: string;
+}
+
+/**
+ * Het platform en de standaardtoetsen. De regels en de standaarden staan in Rust
+ * (`mondig_core::sneltoets`); de interface haalt ze hier op in plaats van een eigen lijst te
+ * houden. Buiten de app (gewone browser) bestaat dit niet: `null`.
+ */
+export async function haalSneltoetsInfo(): Promise<SneltoetsInfo | null> {
+  if (!isTauri()) return null;
+  return await invoke<SneltoetsInfo>('sneltoets_info');
 }
 
 /**

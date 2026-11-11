@@ -109,8 +109,41 @@ fn main() {
     for sleutel in SLEUTELS {
         println!("cargo:rerun-if-env-changed={sleutel}");
     }
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        koppel_clang_runtime();
+    }
     if let Err(f) = kopieer_alles() {
         eprintln!("build.rs van mondig-engine: {f}");
         std::process::exit(1);
     }
+}
+
+/// Mac: koppelt de runtime van clang, waar `__isPlatformVersionAtLeast` in zit.
+///
+/// ggml-metal schermt nieuwere Metal-functies af met `@available`. Ligt de minimale
+/// macOS-versie (`MACOSX_DEPLOYMENT_TARGET`) lager dan de SDK, dan maakt clang daar een
+/// aanroep naar `libclang_rt.osx.a` van, en die koppelt rustc niet mee (`-nodefaultlibs`).
+/// Zelfde oplossing als Handy (`src-tauri/build.rs`, `link_clang_rt_osx`, MIT).
+fn koppel_clang_runtime() {
+    let uit = std::process::Command::new("clang")
+        .arg("--print-resource-dir")
+        .output();
+    let map = match uit {
+        Ok(uit) if uit.status.success() => {
+            Path::new(String::from_utf8_lossy(&uit.stdout).trim()).join("lib/darwin")
+        }
+        _ => {
+            eprintln!("build.rs van mondig-engine: `clang --print-resource-dir` mislukte");
+            std::process::exit(1);
+        }
+    };
+    if !map.join("libclang_rt.osx.a").is_file() {
+        eprintln!(
+            "build.rs van mondig-engine: libclang_rt.osx.a niet gevonden in {}",
+            map.display()
+        );
+        std::process::exit(1);
+    }
+    println!("cargo:rustc-link-search=native={}", map.display());
+    println!("cargo:rustc-link-lib=static=clang_rt.osx");
 }

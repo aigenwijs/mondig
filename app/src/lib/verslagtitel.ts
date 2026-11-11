@@ -4,12 +4,15 @@ import { duurMinuten, bewaarTot, dagVan, type Vergadersoort } from './vergaderin
 // De teksten rond een bewaard verslag (N-C3, ADR 0022): de titel, de gegevensregel in de lijst
 // "Eerder opgenomen" en de zin "Mondig bewaart dit verslag tot ...". Pure hulpjes, zodat de lijst
 // en het verslag dezelfde tekst tonen en ze zonder scherm te testen zijn.
+//
+// De titel volgt Klant en Onderwerp (UI-E, keuze A): "Gemeente Vlaardingen · Intake". Zijn beide
+// leeg, dan alleen het soortwoord ("Vergadering", "Notitie"), met de datum in de metaregel.
 
 /** De teksten die deze hulpjes nodig hebben. */
 export type VerslagTeksten = Pick<
   Berichten,
-  | 'notitieVan'
-  | 'vergaderingVan'
+  | 'titelVergadering'
+  | 'titelNotitie'
   | 'vergaderWanneer'
   | 'vergaderDagVandaag'
   | 'vergaderDagGisteren'
@@ -18,12 +21,20 @@ export type VerslagTeksten = Pick<
   | 'verslagSprekers'
   | 'verslagAlleenIk'
   | 'vergaderInDeRuimte'
-  | 'verslagBewaardTot'
+  | 'verslagVerwijderdOp'
+  | 'verslagVerwijderdVandaagOm'
+  | 'verslagVerwijderdMorgenOm'
+  | 'verslagVerwijderdVandaag'
 >;
 
 /** Wat een verslag nodig heeft voor zijn titel en zijn gegevensregel. */
 export interface VerslagGegevens {
-  naam: string | null;
+  /** De klant; leeg zonder klant. */
+  klant: string;
+  /**
+   * Het onderwerp: wat de gebruiker invulde, of `null` als hij het nooit aanraakte.
+   */
+  onderwerp: string | null;
   soort: Vergadersoort;
   beginMs: number;
   duurMs: number;
@@ -45,27 +56,29 @@ export function tijdTekst(ms: number, locale: string): string {
   }).format(new Date(ms));
 }
 
-/** De titel die Mondig zelf maakt: "Vergadering van 2 november, 14:00", of "Notitie van ..." bij Alleen ik. */
-export function standaardTitel(
+/** Het soortwoord in de taal van de app: "Vergadering" of "Notitie". */
+export function soortwoord(
   soort: Vergadersoort,
-  beginMs: number,
-  t: Pick<VerslagTeksten, 'notitieVan' | 'vergaderingVan'>,
-  locale: string
+  t: Pick<VerslagTeksten, 'titelVergadering' | 'titelNotitie'>
 ): string {
-  return (soort === 'alleen' ? t.notitieVan : t.vergaderingVan)(
-    datumTekst(beginMs, locale),
-    tijdTekst(beginMs, locale)
-  );
+  return soort === 'alleen' ? t.titelNotitie : t.titelVergadering;
 }
 
-/** De titel van een verslag: de naam die de gebruiker gaf, anders de titel die Mondig zelf maakt. */
+/**
+ * De titel van een verslag (keuze A): de niet-lege waarden van Klant en Onderwerp met " · "
+ * ertussen. Een onderwerp dat nooit is aangeraakt is het soortwoord ("Gemeente Vlaardingen ·
+ * Vergadering"). Zijn beide leeg, dan alleen het soortwoord. Het open verslag geeft de
+ * waarden mee zoals de kop ze toont (met Vervangen aan: de plaatsvervangers).
+ */
 export function verslagTitel(
-  verslag: Pick<VerslagGegevens, 'naam' | 'soort' | 'beginMs'>,
-  t: Pick<VerslagTeksten, 'notitieVan' | 'vergaderingVan'>,
-  locale: string
+  verslag: Pick<VerslagGegevens, 'klant' | 'onderwerp' | 'soort'>,
+  t: Pick<VerslagTeksten, 'titelVergadering' | 'titelNotitie'>
 ): string {
-  const naam = verslag.naam?.trim() ?? '';
-  return naam === '' ? standaardTitel(verslag.soort, verslag.beginMs, t, locale) : naam;
+  const woord = soortwoord(verslag.soort, t);
+  // `null`: nooit aangeraakt, dan is het onderwerp het soortwoord.
+  const onderwerp = verslag.onderwerp?.trim() ?? woord;
+  const delen = [verslag.klant.trim(), onderwerp].filter((d) => d !== '');
+  return delen.length > 0 ? delen.join(' · ') : woord;
 }
 
 /** "vandaag, 14:02", "gisteren, 14:02" of "12 oktober, 14:02". */
@@ -92,7 +105,7 @@ export function hoofdletter(tekst: string, locale: string): string {
 
 /**
  * De gegevens onder de titel in de lijst, zoals het ontwerp ze toont: "Vandaag, 14:00", "52 min" en
- * de sprekers ("3 sprekers"), "alleen ik" of "Fysieke vergadering". Online zonder herkende sprekers
+ * de sprekers ("3 sprekers"), "alleen ik" of "In de ruimte". Online zonder herkende sprekers
  * heeft geen derde deel.
  */
 export function gegevensDelen(
@@ -112,22 +125,30 @@ export function gegevensDelen(
 }
 
 /**
- * "Mondig bewaart dit verslag tot dinsdag": de dag waarop Mondig het wist, als weekdag binnen een
- * week en anders als datum. `null` als Mondig de bewaartermijn niet kent en dus niets wist.
+ * Wanneer Mondig het verslag verwijdert, in gewone woorden: "Wordt vandaag om 14:00 verwijderd",
+ * "Wordt morgen om 14:00 verwijderd" of "Wordt op 12 november verwijderd". `null` als Mondig de
+ * bewaartermijn niet kent en dus niets verwijdert. Is het moment al voorbij (de klok liep terug
+ * of Mondig was uit), dan staat er geen tijd: "Wordt vandaag verwijderd".
  */
 export function bewaarTotTekst(
   wistMs: number | null,
   nu: number,
-  t: Pick<VerslagTeksten, 'verslagBewaardTot' | 'vergaderDagVandaag' | 'vergaderDagMorgen'>,
+  t: Pick<
+    VerslagTeksten,
+    | 'verslagVerwijderdOp'
+    | 'verslagVerwijderdVandaagOm'
+    | 'verslagVerwijderdMorgenOm'
+    | 'verslagVerwijderdVandaag'
+  >,
   locale: string
 ): string | null {
   const tot = bewaarTot(wistMs, nu);
-  if (tot === null) return null;
-  let dag: string;
-  if (tot.soort === 'vandaag') dag = t.vergaderDagVandaag;
-  else if (tot.soort === 'morgen') dag = t.vergaderDagMorgen;
-  else if (tot.soort === 'weekdag') {
-    dag = new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(new Date(tot.ms));
-  } else dag = datumTekst(tot.ms, locale);
-  return t.verslagBewaardTot(dag);
+  if (tot === null || wistMs === null) return null;
+  if (tot === 'vandaag') {
+    return wistMs > nu
+      ? t.verslagVerwijderdVandaagOm(tijdTekst(wistMs, locale))
+      : t.verslagVerwijderdVandaag;
+  }
+  if (tot === 'morgen') return t.verslagVerwijderdMorgenOm(tijdTekst(wistMs, locale));
+  return t.verslagVerwijderdOp(datumTekst(wistMs, locale));
 }

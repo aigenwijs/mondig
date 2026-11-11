@@ -6,6 +6,7 @@
   import { Button } from '#lib/components/ui/button/index.js';
   import DictaatPaneel from '#lib/components/DictaatPaneel.svelte';
   import NieuwKaart from '#lib/components/NieuwKaart.svelte';
+  import ToegangMelding from '#lib/components/ToegangMelding.svelte';
   import { huidigeTaal, t } from '#lib';
   import { leesbareGrootte } from '#lib/grootte.js';
   import { haalModelStatus, type ModelOverzicht } from '#lib/modelstatus.js';
@@ -49,6 +50,9 @@
 <h1 class={paginaTitel}>{t().homeDictate}</h1>
 
 <NieuwKaart />
+
+<!-- Op de Mac: uitleg als Mondig nog niet mag plakken (recht op toegankelijkheid). -->
+<ToegangMelding />
 
 {#if statusFout}
   <div class={foutVak} role="alert">

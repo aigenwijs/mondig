@@ -1,20 +1,20 @@
 /* eslint-disable @typescript-eslint/only-throw-error -- Tauri weigert een commando met een gewone waarde (een foutmelding), geen Error */
 // De dev-mock voor het scherm Vergadering (sprint 4b-C), los van mock.ts. Opties via `?mock=`
 // (komma's ertussen), bijvoorbeeld /vergadering?mock=compleet,opname:
-//   ruimte:       de laatst gekozen soort is Fysieke vergadering
+//   ruimte:       de laatst gekozen soort is In de ruimte
 //   alleen:       de laatst gekozen soort is "Alleen ik" (fase UX-D)
 //   opname:       de opname loopt al (online, 12 minuten en 34 seconden)
-//   opnameruimte: idem, Fysieke vergadering (alleen de microfoon)
+//   opnameruimte: idem, In de ruimte (alleen de microfoon)
 //   opnamealleen: idem, Alleen ik (alleen de microfoon, zonder Jij en Anderen)
 //   stil:         idem, met de waarschuwing dat er geen geluid van de computer binnenkomt
 //   uitschrijven: het uitschrijven loopt al (34 procent, langzaam verder)
 //   verslag:      het verslag van een online vergadering, met labels
-//   verslagruimte: het verslag van een fysieke vergadering
+//   verslagruimte: het verslag van een opname In de ruimte
 //   verslagalleen: het verslag van Alleen ik: "Notitie van", alinea's zonder sprekers
 //   verslagsprekers: het verslag van een online vergadering met herkende sprekers: Anderen is
 //                 Spreker 1 tot en met 3 (de derde is eigenlijk dezelfde persoon als de
 //                 eerste, om samenvoegen te proberen), plus een beurt zonder spreker
-//   verslagruimtesprekers: het verslag van een fysieke vergadering met drie sprekers
+//   verslagruimtesprekers: het verslag van een opname In de ruimte met drie sprekers
 //   sprekers:     bij elk verslag van deze mock zijn de sprekers herkend, en na het uitschrijven
 //                 volgt de stap "Sprekers herkennen" (drie seconden)
 //   klaarmoment:  het uitschrijven staat op 90 procent en rondt in een paar seconden af; daarna staat het
@@ -24,17 +24,19 @@
 //                 melding uit de opname
 //   onafgemaakt:  vier opnames die wachten: een niet goed afgesloten, een voor later bewaard,
 //                 en twee die bijna verlopen (over 20 uur en over 2 uur, met de melding vooraf)
-//   veelwachtend: zes opnames die wachten, waarvan één onderbroken, één van Fysieke
-//                 vergadering en één van Alleen ik (de lijst toont alleen de gekozen soort)
+//   veelwachtend: zes opnames die wachten, waarvan één onderbroken, één In de ruimte
+//                 en één van Alleen ik (de lijst toont alleen de gekozen soort); vier zijn
+//                 online, dus drie in beeld en daaronder "Alle 4 tonen"
 //   driewachtend: precies drie opnames die wachten, één onderbroken (de eis van UX-D)
-//   twaalfwachtend: twaalf online opnames (tien in beeld, de rest achter "Alle 12 tonen")
+//   twaalfwachtend: twaalf online opnames (drie in beeld, de rest achter "Alle 12 tonen")
 //   eerder:       negen bewaarde verslagen onder "Eerder opgenomen" (N-C3): de lijst toont er vijf,
-//                 de rest staat achter "Alle 9 tonen"; het laatste wordt vandaag of morgen gewist
+//                 daaronder "Meer tonen" en "5 van 9"; het laatste wordt vandaag of morgen gewist
+//   eerdervol:    achttien bewaarde verslagen: "Meer tonen" twee keer (5 van 18, 15 van 18)
 //   eerderweinig: drie bewaarde verslagen
 //   bewaarfout:   bij het verslag: de laatste wijzigingen zijn niet bewaard (schijf vol); Sluiten
 //                 weigert, "Toch sluiten" sluit wel
 //   allesoorten:  opnames van alle drie de soorten: online twee (één wordt morgen gewist),
-//                 Fysieke vergadering drie, Alleen ik één (vandaag gewist); voor de regels
+//                 In de ruimte drie, Alleen ik één (vandaag gewist); voor de regels
 //                 "Ook nog ..." onder de lijst
 //   audionaast:   Opslaan zet ook de opname als WAV ernaast (de instelling staat aan)
 //   audiofout:    idem, maar de WAV lukt niet: het verslag staat er wel, met een melding
@@ -48,6 +50,10 @@
 //   geenmeting:   Mondig heeft de snelheid van de modellen nog niet gemeten
 //   gewist:       bij het verslag is de opname gewist: Opnieuw uitschrijven staat grijs
 //   eerdergewist: in Eerder opgenomen is de opname van het derde verslag gewist
+//   eerdergeenbestand: in Eerder opgenomen heeft geen verslag een opgeslagen bestand (geen
+//                 mapknop en geen "Tonen in Verkenner" in het menu)
+//   toonfout:     "Tonen in Verkenner" bij Eerder opgenomen mislukt: het bestand staat niet meer
+//                 op die plek
 //   opnieuwbezig: het verslag wordt opnieuw uitgeschreven (34 procent, blijft staan)
 //   opnieuwklaar: het verslag is net opnieuw uitgeschreven: de melding en gemarkeerde regels
 // Zonder opties werkt alles door te klikken: starten, stoppen (het uitschrijven duurt dan
@@ -61,14 +67,27 @@ import type { BewaarUitslag } from '../bewaren';
 import { maakTestWav } from './mock-audio';
 import {
   mockMarkeringen,
+  mockNaam,
   mockPersoonStand,
+  mockUitvoer,
   nieuwMockPersoon,
   pasMockPersoonToe,
   type MockPersoon
 } from './mock-persoon';
 import { ONBEKEND } from './mock-bestanden';
+import {
+  mockEigenWaarde,
+  mockNaamVoor,
+  mockStandaardDatum,
+  mockSoortwoord,
+  naamstand,
+  onthoudKlant,
+  tekstUit,
+  zetMockSoortwoorden
+} from './mock-naam';
 import { NOTULEN_BEZIG, maakNotulenMock } from './mock-notulen';
 import { aantalSprekers } from '../verslagkop';
+import type { NotulenInfo } from '../notulen';
 import type { Foutmelding, Gebeurtenis } from '../taak';
 import type {
   AfspeelInfo,
@@ -76,10 +95,10 @@ import type {
   Kant,
   Modelrol,
   NaOpnieuw,
-  Naambereik,
   OpnameInfo,
   OpnieuwKeuzes,
   OpnieuwStand,
+  Sprekerstap,
   StandToestand,
   VergaderingStand,
   VerslagInfo,
@@ -87,10 +106,8 @@ import type {
 } from '../vergadering';
 
 const MAP = { pad: 'C:\\Users\\Jan\\Documents\\Mondig', inDocumenten: 'Mondig' };
-const VERSLAG_NAAM = '2026-11-02 Vergadering van 2 november.docx';
 const WAV_NAAM = 'Vergadering 2026-11-02 14.00.wav';
 // Bij Alleen ik heet het een notitie, zoals in Rust (`Vergadersoort::titelwoord`).
-const NOTITIE_NAAM = '2026-11-02 Notitie van 2 november.docx';
 const NOTITIE_WAV = 'Notitie 2026-11-02 14.00.wav';
 const BEWAARFOUT: Foutmelding = {
   melding:
@@ -136,6 +153,7 @@ function beurt(
     kant,
     sprekernummer: null,
     spreker: kant === 'jij' ? 'Jij' : 'Anderen',
+    sprekerGetoond: kant === 'jij' ? 'Jij' : 'Anderen',
     eigenNaam: false,
     startMs,
     eindMs,
@@ -199,6 +217,7 @@ function onlineBeurten(): BeurtInfo[] {
   ];
 }
 
+// Meer dan MAX_PAUZE_MS tussen de alinea's, anders voegt Rust ze al samen.
 function ruimteBeurten(): BeurtInfo[] {
   const zonder = (b: BeurtInfo): BeurtInfo => ({ ...b, spreker: null });
   return [
@@ -215,8 +234,8 @@ function ruimteBeurten(): BeurtInfo[] {
       beurt(
         1,
         'jij',
-        11000,
-        33000,
+        14000,
+        36000,
         'Het voorstel is om de bijeenkomst op een donderdagavond te houden, dan kunnen de meeste bewoners komen. De wijkschool heeft een aula met plek voor zo\u2019n tachtig mensen.'
       )
     ),
@@ -224,8 +243,8 @@ function ruimteBeurten(): BeurtInfo[] {
       beurt(
         2,
         'jij',
-        34000,
-        57000,
+        40000,
+        63000,
         'Dan nodigen we de omwonenden uit met een brief, en we hangen een bericht op in het buurthuis. De speeltuinvereniging vragen we apart, want zij kennen de kinderen en de ouders het best.'
       )
     ),
@@ -233,8 +252,8 @@ function ruimteBeurten(): BeurtInfo[] {
       beurt(
         3,
         'jij',
-        58000,
-        80000,
+        67000,
+        89000,
         'Goed. Ik stuur hen deze week een uitnodiging en laat het weten als ze kunnen. Dan kijken we volgende week naar het programma van de avond.'
       )
     )
@@ -308,8 +327,14 @@ function beurtenVoor(soort: Vergadersoort, metSprekers = false): BeurtInfo[] {
   return notitieBeurten();
 }
 
-/** Voegt opeenvolgende beurten van dezelfde kant, spreker en naam samen en telt opnieuw. */
-function voegBurenSamen(beurten: BeurtInfo[]): BeurtInfo[] {
+/** Zoveel pauze mag er hooguit tussen twee beurten die samengaan (Rust: `MAX_PAUZE`). */
+const MAX_PAUZE_MS = 3000;
+
+/**
+ * Voegt opeenvolgende beurten van dezelfde kant, spreker en naam samen, met hooguit
+ * MAX_PAUZE_MS ertussen zoals Rust, en telt opnieuw.
+ */
+export function voegBurenSamen(beurten: BeurtInfo[]): BeurtInfo[] {
   const uit: BeurtInfo[] = [];
   for (const b of beurten) {
     const vorige = uit[uit.length - 1];
@@ -317,10 +342,12 @@ function voegBurenSamen(beurten: BeurtInfo[]): BeurtInfo[] {
       vorige?.kant === b.kant &&
       vorige.sprekernummer === b.sprekernummer &&
       vorige.spreker === b.spreker &&
-      vorige.eigenNaam === b.eigenNaam
+      vorige.eigenNaam === b.eigenNaam &&
+      b.startMs - vorige.eindMs <= MAX_PAUZE_MS
     ) {
       uit[uit.length - 1] = {
         ...vorige,
+        startMs: Math.min(vorige.startMs, b.startMs),
         eindMs: Math.max(vorige.eindMs, b.eindMs),
         tekst: `${vorige.tekst} ${b.tekst}`
       };
@@ -331,22 +358,46 @@ function voegBurenSamen(beurten: BeurtInfo[]): BeurtInfo[] {
   return uit.map((b, index) => ({ ...b, index }));
 }
 
+/** De stand van voor een wijziging aan de sprekers, voor "Ongedaan maken". */
+interface Momentopname {
+  beurten: BeurtInfo[];
+  notulen: NotulenInfo | null;
+  veranderd: Set<number>;
+}
+
 /** Een bewaard verslag in de mock: wat Rust in verslag.json zet. */
 interface BewaardVerslag {
   info: VerslagInfo;
+  /** De datum voor de bestandsnaam als de gebruiker die aanpaste. */
+  datum: string | null;
   beurten: BeurtInfo[];
   persoon: MockPersoon;
 }
 
-/** De naam van een verslag zoals Rust hem schoonmaakt: witruimte wordt één spatie, hooguit 100 tekens. */
-function schoneVerslagnaam(naam: string): string | null {
-  const schoon = naam
+/** Klant, onderwerp en datum van het open verslag; `null` is "nooit aangeraakt" (de standaard). */
+interface Naamvelden {
+  klant: string;
+  onderwerp: string | null;
+  datum: string | null;
+}
+
+const LEGE_VELDEN: Naamvelden = { klant: '', onderwerp: null, datum: null };
+
+/** Een paar bewaarde verslagen hebben een klant, zoals in het ontwerp (scherm 5). */
+const KLANT_VAN: Record<string, string> = {
+  'eerder-1': 'Gemeente Vlaardingen',
+  'eerder-4': 'Gemeente Meerwijk',
+  'eerder-9': 'Gemeente Vlaardingen'
+};
+
+/** Een veld van de bestandsnaam zoals Rust het schoonmaakt: witruimte wordt één spatie, hooguit 80 tekens. */
+function schoonVeld(tekst: string): string {
+  return tekst
     .replace(/\p{Cc}/gu, '')
     .split(/\s+/)
     .filter(Boolean)
     .join(' ')
-    .slice(0, 100);
-  return schoon.trimEnd() === '' ? null : schoon.trimEnd();
+    .slice(0, 80);
 }
 
 export function maakVergaderMock(
@@ -366,7 +417,7 @@ export function maakVergaderMock(
   let bewaard: BewaardVerslag[] = [];
   // Wat het verslag dat nu open is, nog nodig heeft: zijn id, naam, duur en de bewaarde markeringen.
   let huidigId = '';
-  let verslagNaam: string | null = null;
+  let verslagVelden: Naamvelden = LEGE_VELDEN;
   let verslagDuurMs: number | null = null;
   // De bewaartermijn uit Instellingen (1, 7 of 30 dagen) bepaalt `wistMs` van elke opname.
   let bewaarDagen = 7;
@@ -387,6 +438,14 @@ export function maakVergaderMock(
     verbeterd: number[];
   } | null = null;
   let veranderd = new Set<number>();
+  // De laatste wijziging aan de sprekers, voor "Ongedaan maken": de beurten van ervoor. Elke
+  // andere wijziging laat hem vervallen, zoals in Rust.
+  let stapTerug:
+    | (Momentopname & {
+        info: Sprekerstap;
+      })
+    | null = null;
+  let stapTeller = 0;
   // Zijn de sprekers herkend in de verslagen die deze mock maakt?
   const metSprekers =
     opties.has('sprekers') ||
@@ -412,8 +471,13 @@ export function maakVergaderMock(
           ...t,
           beurten: t.beurten.map((b) => ({
             ...b,
-            markeringen: mockMarkeringen(b.tekst, persoon)
+            markeringen: mockMarkeringen(b.tekst, persoon),
+            // Zoals Rust: de naam zoals Kopiëren en Opslaan hem geven.
+            sprekerGetoond: b.spreker === null ? null : mockNaam(b.spreker, persoon)
           })),
+          // Zoals Rust: de titel zoals de kop hem toont.
+          klantGetoond: mockNaam(t.klant, persoon),
+          onderwerpGetoond: t.onderwerp === null ? null : mockNaam(t.onderwerp, persoon),
           persoon: mockPersoonStand(persoon)
         }
       : t;
@@ -429,6 +493,7 @@ export function maakVergaderMock(
           opnieuw: opnieuw === null ? null : { ...opnieuw },
           naOpnieuw: naOpnieuw === null ? null : { ...naOpnieuw },
           vorigeVersie: vorige !== null,
+          sprekerstap: stapTerug === null ? null : structuredClone(stapTerug.info),
           notulen: notulen.stand(),
           beurten: t.beurten.map((b) => ({ ...b, veranderd: veranderd.has(b.index) }))
         }
@@ -461,7 +526,13 @@ export function maakVergaderMock(
     },
     () => beurten,
     stand,
-    () => persoon.vervangen
+    () => persoon.vervangen,
+    () => {
+      stapTerug = null;
+    },
+    () => (toestand.type === 'verslag' ? toestand.soort : laatsteSoort),
+    (tekst) => mockUitvoer(tekst, persoon),
+    (naam) => mockNaam(naam, persoon)
   );
   const zet = (nieuw: StandToestand): void => {
     toestand = nieuw;
@@ -523,7 +594,11 @@ export function maakVergaderMock(
     beurten: structuredClone(beurten),
     audioAanwezig: !opties.has('geenaudio') && !opties.has('gewist'),
     persoon: { vervangen: false, eigen: [] },
-    naam: verslagNaam,
+    klant: verslagVelden.klant,
+    onderwerp: verslagVelden.onderwerp,
+    datum: verslagVelden.datum ?? mockStandaardDatum(new Date(begin)),
+    klantGetoond: verslagVelden.klant,
+    onderwerpGetoond: verslagVelden.onderwerp,
     wistMs: wistOp(begin),
     bewarenMislukt: opties.has('bewaarfout'),
     modelId,
@@ -536,6 +611,7 @@ export function maakVergaderMock(
     opnieuw: null,
     naOpnieuw: null,
     vorigeVersie: false,
+    sprekerstap: null,
     notulen: { info: null, onleesbaar: false, maken: null }
   });
 
@@ -549,6 +625,7 @@ export function maakVergaderMock(
     vorige = null;
     veranderd = new Set();
     verbeterd.clear();
+    stapTerug = null;
   };
 
   /**
@@ -590,6 +667,25 @@ export function maakVergaderMock(
     veranderd = new Set();
   };
 
+  /** Wat een wijziging aan de sprekers bewaart om ongedaan te maken, zoals `StapTerug` in Rust. */
+  const momentopname = (): Momentopname => ({
+    beurten: structuredClone(beurten),
+    notulen: notulen.bewaar(),
+    veranderd: new Set(veranderd)
+  });
+
+  /**
+   * Na een wijziging aan de sprekers: als er iets veranderde, de stap om ongedaan te maken, en
+   * zoals Rust gaan de notulen mee. De vorige versie en haar melding blijven staan: die vervallen
+   * alleen bij een nieuw uitschrijven of het sluiten van het verslag.
+   */
+  const onthoudStap = (voor: Momentopname, info: Omit<Sprekerstap, 'volgnummer'>): void => {
+    if (JSON.stringify(voor.beurten) === JSON.stringify(beurten)) return;
+    stapTeller += 1;
+    stapTerug = { ...voor, info: { ...info, volgnummer: stapTeller } };
+    notulen.volg(voor.beurten, beurten);
+  };
+
   const startUitschrijven = (
     soort: Vergadersoort,
     begin: number,
@@ -622,7 +718,7 @@ export function maakVergaderMock(
       } satisfies Gebeurtenis);
       // Een nieuw verslag staat meteen naast zijn opname, zonder naam en zonder markeringen.
       huidigId = `vergadering-${String(begin)}`;
-      verslagNaam = null;
+      verslagVelden = LEGE_VELDEN;
       verslagDuurMs = null;
       nieuweMarkeringen();
       notulen.vergeet();
@@ -774,15 +870,20 @@ export function maakVergaderMock(
   ): BewaardVerslag => {
     const beurtenVoorbeeld = beurtenVoor(soort, herkend > 0 && soort !== 'alleen');
     return {
+      datum: null,
       info: {
         id,
-        naam,
+        klant: KLANT_VAN[id] ?? '',
+        onderwerp: naam,
         soort,
         beginMs,
         duurMs: minuten * 60_000,
         sprekers: aantalSprekers(beurtenVoorbeeld),
         wistMs: wistOp(beginMs),
-        opnameAanwezig: !(opties.has('eerdergewist') && id === 'eerder-3')
+        opnameAanwezig: !(opties.has('eerdergewist') && id === 'eerder-3'),
+        // Een deel van de verslagen heeft een opgeslagen bestand (elk derde niet).
+        opgeslagenBekend:
+          !opties.has('eerdergeenbestand') && Number(id.replace(/\D/g, '')) % 3 !== 2
       },
       beurten: beurtenVoorbeeld,
       persoon: nieuwMockPersoon()
@@ -842,6 +943,19 @@ export function maakVergaderMock(
         2
       )
     ];
+  } else if (opties.has('eerdervol')) {
+    // Achttien verslagen verspreid over zes dagen, drie per dag, wisselend van soort.
+    const soorten: Vergadersoort[] = ['online', 'ruimte', 'alleen'];
+    bewaard = Array.from({ length: 18 }, (_, i) =>
+      bewaardVoorbeeld(
+        `eerder-${String(i + 1)}`,
+        i % 4 === 0 ? `Overleg nummer ${String(i + 1)}` : null,
+        soorten[i % 3] ?? 'online',
+        vandaagOm(15 - (i % 3) * 2, 0, Math.floor(i / 3)),
+        20 + i,
+        i % 3 === 2 ? 0 : 2
+      )
+    );
   } else if (opties.has('eerderweinig')) {
     bewaard = [
       bewaardVoorbeeld(
@@ -913,13 +1027,46 @@ export function maakVergaderMock(
     rondOpnieuwAf();
   }
 
+  /** De bestandsnaam bij deze velden, zoals Rust hem uitrekent (met de bouwstenen uit Instellingen). */
+  const naamBij = (v: Naamvelden, soort: Vergadersoort, beginMs: number): string => {
+    const moment = new Date(beginMs);
+    const standaard = mockSoortwoord(soort);
+    return mockNaamVoor(
+      naamstand().bouwstenen,
+      {
+        datum: v.datum,
+        klant: v.klant,
+        onderwerp: v.onderwerp ?? standaard,
+        terugval: standaard,
+        moment
+      },
+      naamstand().formaat
+    );
+  };
+  /** De velden uit de argumenten van een commando: gelijk aan de standaard is "nooit aangeraakt". */
+  const veldenUit = (
+    args: InvokeArgs | undefined,
+    soort: Vergadersoort,
+    beginMs: number
+  ): Naamvelden => {
+    const tekst = (sleutel: string): string => tekstUit(args, sleutel);
+    return {
+      klant: schoonVeld(tekst('klant')),
+      onderwerp: mockEigenWaarde(schoonVeld(tekst('onderwerp')), mockSoortwoord(soort)),
+      datum: mockEigenWaarde(schoonVeld(tekst('datum')), mockStandaardDatum(new Date(beginMs)))
+    };
+  };
+  /** De naam van het open verslag als bestand. */
+  const bestandsnaam = (): string =>
+    toestand.type === 'verslag' ? naamBij(verslagVelden, toestand.soort, toestand.beginMs) : '';
+
   const sluit = (): void => {
     opgeslagenPad = null;
     stopTimers();
     stopNiveaus();
     fout = null;
     toestand = { type: 'klaar' };
-    verslagNaam = null;
+    verslagVelden = LEGE_VELDEN;
     verslagDuurMs = null;
     vergeetOpnieuw();
   };
@@ -931,14 +1078,17 @@ export function maakVergaderMock(
       {
         info: {
           id: huidigId,
-          naam: verslagNaam,
+          klant: verslagVelden.klant,
+          onderwerp: verslagVelden.onderwerp,
           soort: toestand.soort,
           beginMs: toestand.beginMs,
           duurMs: toestand.duurMs,
           sprekers: aantalSprekers(beurten),
           wistMs: wistOp(toestand.beginMs),
-          opnameAanwezig: toestand.opnameAanwezig
+          opnameAanwezig: toestand.opnameAanwezig,
+          opgeslagenBekend: opgeslagenPad !== null
         },
+        datum: verslagVelden.datum,
         beurten: structuredClone(beurten),
         persoon: {
           vervangen: persoon.vervangen,
@@ -975,7 +1125,7 @@ export function maakVergaderMock(
     ];
   };
 
-  return (cmd, args) => {
+  const handel = (cmd: string, args: InvokeArgs | undefined): unknown => {
     const notulenAntwoord = notulen.handel(cmd, args);
     if (notulenAntwoord !== ONBEKEND) return notulenAntwoord;
     switch (cmd) {
@@ -1109,35 +1259,108 @@ export function maakVergaderMock(
         return stand();
       }
       case 'vergadering_naam': {
+        // Zoals `Gesprek::geef_naam`: de naam geldt voor de hele spreker, en dezelfde naam op
+        // dezelfde kant is dezelfde persoon.
         const index = Number(argUit(args, 'index'));
         const naamArg = argUit(args, 'naam');
-        const naam = typeof naamArg === 'string' ? naamArg.trim() : '';
-        const bereik = argUit(args, 'bereik') as Naambereik;
+        const schoon =
+          typeof naamArg === 'string' ? naamArg.split(/\s+/).filter(Boolean).join(' ') : '';
         const doel = beurten.find((b) => b.index === index);
         if (!doel || toestand.type !== 'verslag') {
           throw { melding: 'Er is geen verslag open.', vervolg: 'geen' } satisfies Foutmelding;
         }
+        // In de ruimte heeft een alinea die niemand aanwees geen spreker om een naam te geven.
+        if (toestand.soort === 'ruimte' && doel.sprekernummer === null && !doel.eigenNaam) {
+          throw {
+            melding:
+              'Wijs deze alinea eerst aan een spreker toe, daarna kun je die een naam geven.',
+            vervolg: 'geen'
+          } satisfies Foutmelding;
+        }
+        const voor = momentopname();
         weigerTijdensOpnieuw();
-        const huidig = doel.spreker;
-        const standaard =
-          doel.sprekernummer === null
-            ? doel.kant === 'jij'
-              ? 'Jij'
-              : 'Anderen'
-            : `Spreker ${String(doel.sprekernummer)}`;
-        beurten = beurten.map((b) =>
-          (
-            bereik === 'beurt'
-              ? b.index === index
-              : bereik === 'spreker'
-                ? b.kant === doel.kant &&
-                  b.sprekernummer === doel.sprekernummer &&
-                  b.spreker === huidig
-                : b.kant === doel.kant && b.spreker === huidig
-          )
-            ? { ...b, spreker: naam === '' ? standaard : naam, eigenNaam: naam !== '' }
-            : b
-        );
+        const gelijk = (a: string | null, b: string | null): boolean =>
+          a !== null && b !== null && a.toLowerCase() === b.toLowerCase();
+        const standaardVan = (nummer: number | null): string =>
+          nummer === null ? (doel.kant === 'jij' ? 'Jij' : 'Anderen') : `Spreker ${String(nummer)}`;
+        const nieuw =
+          schoon === '' || gelijk(schoon, standaardVan(doel.sprekernummer)) ? null : schoon;
+        if (gelijk(nieuw, 'Jij') || gelijk(nieuw, 'Anderen')) {
+          throw {
+            melding: '"Jij" en "Anderen" kun je niet als naam geven. Kies een andere naam.',
+            vervolg: 'geen'
+          } satisfies Foutmelding;
+        }
+        const vanDeze = (b: BeurtInfo): boolean =>
+          b.kant === doel.kant &&
+          (doel.sprekernummer !== null
+            ? b.sprekernummer === doel.sprekernummer
+            : b.sprekernummer === null && b.spreker === doel.spreker);
+        const andere: number[] = [];
+        let zonder = false;
+        // De naam die die persoon al had (`null`: geen eigen naam); `undefined` zolang er niemand
+        // met die naam is. Ook "Spreker 1" is Spreker 1, ook als die nu anders heet.
+        let bestaand: string | null | undefined = undefined;
+        for (const b of beurten) {
+          if (nieuw === null || b.kant !== doel.kant || vanDeze(b)) continue;
+          if (b.sprekernummer !== null) {
+            if (!gelijk(b.spreker, nieuw) && !gelijk(standaardVan(b.sprekernummer), nieuw)) {
+              continue;
+            }
+            if (!andere.includes(b.sprekernummer)) andere.push(b.sprekernummer);
+          } else if (b.eigenNaam && gelijk(b.spreker, nieuw)) {
+            zonder = true;
+          } else {
+            continue;
+          }
+          bestaand ??= b.eigenNaam ? b.spreker : null;
+        }
+        const nummers = [doel.sprekernummer, ...andere].filter((n): n is number => n !== null);
+        const doelNummer = nummers.length > 0 ? Math.min(...nummers) : null;
+        let doelNaam = bestaand === undefined ? nieuw : bestaand;
+        if (doelNummer !== null && gelijk(doelNaam, standaardVan(doelNummer))) doelNaam = null;
+        const hoortErbij = (b: BeurtInfo): boolean =>
+          b.kant === doel.kant &&
+          (vanDeze(b) ||
+            (b.sprekernummer !== null && andere.includes(b.sprekernummer)) ||
+            (zonder && b.sprekernummer === null && b.eigenNaam && gelijk(b.spreker, nieuw)));
+        beurten = beurten.map((b) => {
+          if (!hoortErbij(b)) return b;
+          const nummer = doelNummer ?? b.sprekernummer;
+          return {
+            ...b,
+            sprekernummer: nummer,
+            spreker: doelNaam ?? standaardVan(nummer),
+            eigenNaam: doelNaam !== null
+          };
+        });
+        // Kreeg een beurt een ander nummer, dan gaan buren van dezelfde spreker samen.
+        if (beurten.some((b, i) => b.sprekernummer !== voor.beurten[i]?.sprekernummer)) {
+          beurten = voegBurenSamen(beurten);
+        }
+        const samengevoegd: (number | null)[] = [];
+        if (andere.length > 0 || (zonder && doelNummer !== null)) {
+          samengevoegd.push(...nummers.sort((a, b) => a - b));
+          if (doel.sprekernummer === null || zonder) samengevoegd.push(null);
+        }
+        onthoudStap(voor, { kant: doel.kant, samengevoegd, naam: doelNaam, nummer: doelNummer });
+        toestand = { ...toestand, beurten: structuredClone(beurten) };
+        return stand();
+      }
+      case 'vergadering_stap_terug': {
+        if (opnieuw !== null) throw OPNIEUW_BEZIG;
+        if (notulen.bezig()) throw NOTULEN_BEZIG;
+        if (stapTerug === null || toestand.type !== 'verslag') {
+          throw {
+            melding: 'Er is niets meer om ongedaan te maken.',
+            vervolg: 'geen'
+          } satisfies Foutmelding;
+        }
+        // Zoals Rust: ook de notulen en de vlaggen van ervoor; de vorige versie blijft.
+        beurten = stapTerug.beurten;
+        notulen.zetTerug(stapTerug.notulen);
+        veranderd = stapTerug.veranderd;
+        stapTerug = null;
         toestand = { ...toestand, beurten: structuredClone(beurten) };
         return stand();
       }
@@ -1178,6 +1401,8 @@ export function maakVergaderMock(
         if (!doel || toestand.type !== 'verslag') {
           throw { melding: 'Er is geen verslag open.', vervolg: 'geen' } satisfies Foutmelding;
         }
+        const voor = momentopname();
+        weigerTijdensOpnieuw();
         // Null is "Nieuwe spreker": het eerstvolgende vrije nummer, tot en met 8.
         const gebruikt = new Set(beurten.map((b) => b.sprekernummer));
         let nummer = typeof nummerArg === 'number' ? nummerArg : 1;
@@ -1190,7 +1415,6 @@ export function maakVergaderMock(
             vervolg: 'geen'
           } satisfies Foutmelding;
         }
-        weigerTijdensOpnieuw();
         // De beurt krijgt de naam van die spreker (van zijn eerste beurt), of geen naam.
         const bestaand = beurten.find((b) => b.sprekernummer === nummer);
         beurten = voegBurenSamen(
@@ -1204,6 +1428,7 @@ export function maakVergaderMock(
               : b
           )
         );
+        onthoudStap(voor, { kant: doel.kant, samengevoegd: [], naam: null, nummer: null });
         toestand = { ...toestand, beurten: structuredClone(beurten) };
         return stand();
       }
@@ -1213,6 +1438,7 @@ export function maakVergaderMock(
         if (toestand.type !== 'verslag' || van === naar) {
           throw { melding: 'Er is geen verslag open.', vervolg: 'geen' } satisfies Foutmelding;
         }
+        const voor = momentopname();
         weigerTijdensOpnieuw();
         const bestaand = beurten.find((b) => b.sprekernummer === naar);
         beurten = voegBurenSamen(
@@ -1226,6 +1452,12 @@ export function maakVergaderMock(
               : b
           )
         );
+        onthoudStap(voor, {
+          kant: bestaand?.kant ?? (toestand.soort === 'ruimte' ? 'jij' : 'anderen'),
+          samengevoegd: [],
+          naam: null,
+          nummer: null
+        });
         toestand = { ...toestand, beurten: structuredClone(beurten) };
         return stand();
       }
@@ -1235,12 +1467,13 @@ export function maakVergaderMock(
           return {
             type: 'bestaatAl',
             vraag: vraag.id,
-            naam: VERSLAG_NAAM,
-            voorstel: VERSLAG_NAAM.replace('.docx', ' (2).docx')
+            naam: bestandsnaam(),
+            voorstel: bestandsnaam().replace('.docx', ' (2).docx')
           } satisfies BewaarUitslag;
         }
-        const naam =
-          toestand.type === 'verslag' && toestand.soort === 'alleen' ? NOTITIE_NAAM : VERSLAG_NAAM;
+        const naam = bestandsnaam();
+        // De klant komt in de suggesties, nu het opslaan is gelukt.
+        onthoudKlant(verslagVelden.klant);
         opgeslagenPad = MAP.pad + '\\' + naam;
         if (opties.has('audionaast') || opties.has('audiofout')) {
           // Het mengen duurt even; zolang staat "Bezig met opslaan" er.
@@ -1279,17 +1512,22 @@ export function maakVergaderMock(
         vraag = null;
         const keuze = argUit(args, 'keuze');
         if (keuze === 'annuleren') return { type: 'geannuleerd' } satisfies BewaarUitslag;
-        opgeslagenPad =
-          MAP.pad +
-          '\\' +
-          (keuze === 'vervangen' ? VERSLAG_NAAM : VERSLAG_NAAM.replace('.docx', ' (2).docx'));
-        return {
-          type: 'opgeslagen',
-          naam: keuze === 'vervangen' ? VERSLAG_NAAM : VERSLAG_NAAM.replace('.docx', ' (2).docx'),
-          map: MAP
-        } satisfies BewaarUitslag;
+        const gekozenNaam =
+          keuze === 'vervangen' ? bestandsnaam() : bestandsnaam().replace('.docx', ' (2).docx');
+        onthoudKlant(verslagVelden.klant);
+        opgeslagenPad = MAP.pad + '\\' + gekozenNaam;
+        return { type: 'opgeslagen', naam: gekozenNaam, map: MAP } satisfies BewaarUitslag;
       }
       case 'vergadering_kopieer':
+        return null;
+      case 'systeemvak_zet_labels':
+        // Het systeemvak bestaat in de browser niet.
+        return null;
+      case 'vergadering_zet_soortwoorden':
+        zetMockSoortwoorden(tekstUit(args, 'vergadering'), tekstUit(args, 'notitie'));
+        return null;
+      case 'vergadering_zet_labels':
+        // Rust onthoudt de sprekernamen voor Kopiëren en Opslaan; de mock kopieert en bewaart niets.
         return null;
       case 'vergadering_audio_bewaren':
         return wacht(900).then(() =>
@@ -1340,7 +1578,11 @@ export function maakVergaderMock(
         bewaard = bewaard.filter((v) => v.info.id !== id);
         beurten = structuredClone(gekozen.beurten);
         huidigId = gekozen.info.id;
-        verslagNaam = gekozen.info.naam;
+        verslagVelden = {
+          klant: gekozen.info.klant,
+          onderwerp: gekozen.info.onderwerp,
+          datum: gekozen.datum
+        };
         verslagDuurMs = gekozen.info.duurMs;
         persoon.vervangen = gekozen.persoon.vervangen;
         persoon.genegeerd = new Set(gekozen.persoon.genegeerd);
@@ -1348,6 +1590,24 @@ export function maakVergaderMock(
         fout = null;
         toestand = verslag(gekozen.info.soort, gekozen.info.beginMs, volgendId());
         return stand();
+      }
+      case 'vergadering_verslag_toon_opgeslagen': {
+        const id = argUit(args, 'id');
+        const gekozen = bewaard.find((v) => v.info.id === id);
+        if (!gekozen) {
+          throw {
+            melding: 'Dit verslag staat er niet meer.',
+            vervolg: 'geen'
+          } satisfies Foutmelding;
+        }
+        if (!gekozen.info.opgeslagenBekend || opties.has('toonfout')) {
+          throw {
+            melding: 'Het opgeslagen bestand staat niet meer op die plek.',
+            vervolg: 'geen'
+          } satisfies Foutmelding;
+        }
+        console.info(`[mock] in de Verkenner getoond: opgeslagen bestand van ${String(id)}`);
+        return null;
       }
       case 'vergadering_verslag_wissen': {
         const id = argUit(args, 'id');
@@ -1368,15 +1628,29 @@ export function maakVergaderMock(
         }
         return stand();
       }
-      case 'vergadering_verslag_naam': {
+      case 'vergadering_verslag_naamvelden': {
         if (toestand.type !== 'verslag') {
           throw { melding: 'Er is geen verslag open.', vervolg: 'geen' } satisfies Foutmelding;
         }
         weigerTijdensOpnieuw();
-        const ruw = argUit(args, 'naam');
-        verslagNaam = typeof ruw === 'string' ? schoneVerslagnaam(ruw) : null;
-        toestand = { ...toestand, naam: verslagNaam };
+        verslagVelden = veldenUit(args, toestand.soort, toestand.beginMs);
+        toestand = {
+          ...toestand,
+          klant: verslagVelden.klant,
+          onderwerp: verslagVelden.onderwerp,
+          datum: verslagVelden.datum ?? mockStandaardDatum(new Date(toestand.beginMs))
+        };
         return stand();
+      }
+      case 'vergadering_naamvoorbeeld': {
+        if (toestand.type !== 'verslag') {
+          throw { melding: 'Er is geen verslag open.', vervolg: 'geen' } satisfies Foutmelding;
+        }
+        return naamBij(
+          veldenUit(args, toestand.soort, toestand.beginMs),
+          toestand.soort,
+          toestand.beginMs
+        );
       }
       case 'vergadering_opnieuw_keuzes': {
         if (toestand.type !== 'verslag') {
@@ -1471,5 +1745,24 @@ export function maakVergaderMock(
       default:
         return ONBEKEND;
     }
+  };
+
+  // Zoals Rust (`wijzig_open_in`): een wijziging die iets veranderde zonder een nieuwe stap te
+  // maken, laat "Ongedaan maken" vervallen; een wijziging die niets deed of mislukte, laat hem staan.
+  const inhoud = (): string =>
+    toestand.type === 'verslag'
+      ? JSON.stringify([beurten, persoon, verslagVelden, notulen.bewaar()])
+      : '';
+  const isStand = (waarde: unknown): boolean =>
+    typeof waarde === 'object' && waarde !== null && 'toestand' in waarde && 'versie' in waarde;
+  return (cmd, args) => {
+    const stap = stapTerug;
+    const voor = inhoud();
+    const uit = handel(cmd, args);
+    if (stap !== null && stapTerug === stap && inhoud() !== voor) {
+      stapTerug = null;
+      if (isStand(uit)) return stand();
+    }
+    return uit;
   };
 }

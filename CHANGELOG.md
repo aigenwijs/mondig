@@ -4,76 +4,47 @@ Alle merkbare wijzigingen staan hier. Opmaak volgens
 [Keep a Changelog](https://keepachangelog.com/nl/1.1.0/), versies volgens
 [Semantic Versioning](https://semver.org/lang/nl/).
 
+<!-- Schrijfwijze: elk punt begint met één zin in gewone taal over wat je merkt; de details volgen
+daarna. "Wat is er nieuw" in de app toont die eerste zin, en de rest achter "Alle wijzigingen
+tonen". Een punt dat alleen voor de Mac geldt, begint met "Op de Mac". -->
+
 ## [Nog niet uitgebracht]
+
+## [0.5.0] - 2026-11-11
 
 ### Toegevoegd
 
-- Stopwoorden weghalen: klanken als "ehm", "uh" en "hmm" gaan uit je dictaten, uitschriften
-  van bestanden en opnames, zonder taalmodel en zonder internet. Het staat standaard aan; je zet
-  het uit bij Instellingen onder Dicteren, achter Meer opties. Alleen klanken die geen woord
-  zijn gaan weg, nooit woorden als "nou" of "dus". Bij Nederlands gaan ook "eh" en "euh"
-  weg, bij Engels ook "um", "ah" en "eh". Opende zo'n klank de zin, dan krijgt het volgende
-  woord de hoofdletter. Opschonen met een taalmodel ziet de tekst al zonder stopwoorden.
-- Dictaten opschonen: een taalmodel maakt van je dictaat lopende zinnen met leestekens, voordat
-  Mondig de tekst plakt. Je kiest het bij Instellingen onder Dicteren: Uit (standaard), Met een
-  eigen sneltoets (Ctrl+Shift+Spatie geeft dan een opgeschoond dictaat, je gewone sneltoets de
-  letterlijke tekst) of Bij elk dictaat. Het werkt met het taalmodel dat je onder Notulen koos.
-  De eerste keer vraagt Mondig of je dictaten naar die aanbieder mogen; namen en andere
-  persoonsgegevens worden niet vervangen. Tijdens het opschonen toont de dicteerbalk het label
-  van de aanbieder, en het kruisje plakt meteen de letterlijke tekst. Duurt het langer dan drie
-  seconden of klopt het antwoord niet, dan plakt Mondig de letterlijke tekst. Bij je dictaten
-  staat wie het opschoonde, met een knop om de letterlijke tekst te kopiëren.
-- Van een verslag maakt Mondig nu notulen: een samenvatting, de besluiten en de actiepunten (wat,
-  wie en wanneer). Je kiest zelf waar de tekst heen gaat, bij Instellingen onder Notulen: naar
-  Mistral (Europees, met een eigen sleutel die Mondig in de sleutelbos van je computer bewaart) of
-  naar Ollama op je eigen computer. Bij Mistral zet je eerst het vinkje dat training uit staat voor
-  je sleutel; Mondig kan dat zelf niet controleren en legt uit waarom het ernaar vraagt. In het
-  verslag staan de tabbladen Verslag en Notulen. Bij elk punt staat een knop met de tijd waar het
-  gezegd is: een klik brengt je naar die plek in het verslag. Mondig controleert elke bron zelf.
-  Een punt dat niet in het verslag staat, blijft staan met een oranje markering, zodat jij kunt
-  beslissen. Je kunt elk punt aanpassen of weghalen, de notulen kopiëren en opnieuw laten maken.
-  Opslaan en Kopiëren zetten de notulen voor het verslag. Schrijf je het verslag opnieuw uit, dan
-  zegt Mondig dat de notulen bij de vorige versie horen.
-- Onder Instellingen kun je Mondig opnieuw laten afstellen: na een minuut kijken (met de stappen
-  zichtbaar en een knop Stoppen) toont Mondig wat beter past bij je computer als lijst met vinkjes,
-  bijvoorbeeld de videokaart gebruiken of het nauwkeurige model voor opnames en bestanden. Er
-  begint niets tot je op "Advies overnemen" klikt; een nieuw model wordt pas gebruikt als de
-  download klaar is. Is er niets te verbeteren, dan zegt Mondig dat het alles al goed staat.
+- De naam van een bestand maak je nu met drie velden: Datum, Klant en Onderwerp. Ze staan boven het uitschrift (Bestanden) en in het verslag (Opnemen), met eronder live hoe het bestand gaat heten ("Wordt 2026-11-02 Gemeente Vlaardingen Intake.docx"). Onderwerp staat al ingevuld met de naam van de opname (bij een verslag "Vergadering" of "Notitie"), dus zonder iets in te vullen verandert er niets; een leeg veld valt weg uit de naam. Bij Klant doet Mondig suggesties uit wat je eerder invulde: de pijltjes kiezen, Enter neemt over, Escape sluit, en je eigen tekst mag altijd. De namen blijven alleen op deze computer en komen erbij na het opslaan; onder Instellingen, bij Opslaan en Meer opties, verwijder je ze met "Klantnamen". Een verslag onthoudt zijn velden, ook als je het later opnieuw opent.
+
+- Je kunt kiezen hoe lang Mondig je dictaten bewaart: ook "Laatste 10" (de tien nieuwste, hoe oud ook) en 30 dagen. De lijst toont eerst je tien nieuwste dictaten, met "Meer tonen" voor de rest.
+- Dicteren werkt nu ook in programma's die plakken blokkeren. Laat zo'n programma plakken niet toe (een webformulier, een venster met een opdrachtregel, een sessie op afstand), dan typt Mondig de tekst na anderhalve seconde gewoon in, met de tekens zelf, dus ook goed op andere toetsenborden. Dat doet Mondig alleen als je cursor in een tekstveld staat, zodat letters nooit sneltoetsen worden; regeleindes worden spaties. Wissel je tijdens het typen van venster, dan stopt Mondig en staat de rest op het klembord. Kan ook typen niet (een wachtwoordveld op de Mac, een programma met beheerrechten op Windows), dan staat de tekst op het klembord en zegt Mondig waarom.
+- Op de Mac werkt dicteren nu ook in andere programma's, net als op Windows. Mondig plakt de tekst met ⌘V waar je typt en zet daarna je vorige klembord terug. De dicteerbalk verschijnt onderaan het scherm waar je werkt zonder je typen te onderbreken, het geluidje klinkt en de Mac blijft wakker zolang Mondig opneemt of uitschrijft. Heeft Mondig nog geen toestemming voor Toegankelijkheid, of typ je in een wachtwoordveld, dan staat de tekst op het klembord en zegt Mondig waarom, met een knop naar de juiste instelling.
+- Op de Mac kun je opnames rechtstreeks uit Dictafoon, Foto's en Mail naar Mondig slepen, net als
+  uit de Finder. Lukt het pakken van een gesleept bestand niet, dan zegt Mondig dat en wat je wel
+  kunt doen: het bestand eerst naar het bureaublad slepen.
+- Op de Mac is de standaard sneltoets Option+Spatie, omdat macOS zelf Ctrl+Spatie en Cmd+Spatie gebruikt. Voor een opgeschoond dictaat is het Option+Shift+Spatie. Toetsen staan als symbolen (⌥Spatie, ⌃⌘D) en de Command-toets mag in een eigen sneltoets. Stond er een Windows-sneltoets die op de Mac niet kan, dan kiest Mondig de standaard en meldt dat.
+- Bij een opname in de ruimte kun je zelf aanwijzen wie wat zei, ook als Mondig de sprekers niet herkende. Je wijst bij een alinea een spreker aan en geeft die een naam. Alinea's die je niet aanwees blijven zonder spreker, in het verslag, bij kopiëren en in elke export; ze heten dus niet "Jij". De notulen van zo'n opname maken niet elk actiepunt van "Jij": bij "Wie" staat alleen een naam of rol die in de tekst voorkomt.
+- Mondig haalt opvulklanken als "ehm", "uh" en "hmm" uit je dictaten, uitschriften en verslagen. Het werkt zonder AI-dienst en zonder internet, staat standaard aan en je zet het uit bij Instellingen onder Dicteren, achter Meer opties. Alleen klanken die geen woord zijn gaan weg, nooit woorden als "nou" of "dus". Bij Nederlands gaan ook "eh" en "euh" weg, bij Engels ook "um", "ah" en "eh". Opende zo'n klank de zin, dan krijgt het volgende woord de hoofdletter. Opschonen met een AI-dienst ziet de tekst al zonder opvulklanken.
+- Mondig kan je dictaat opschonen tot lopende zinnen met leestekens, voordat het de tekst plakt. Je kiest het bij Instellingen onder Dicteren: Uit (standaard), Met een eigen sneltoets (Ctrl+Shift+Spatie geeft dan een opgeschoond dictaat, je gewone sneltoets de letterlijke tekst) of Bij elk dictaat. Het werkt met de AI-dienst die je bij Instellingen koos. De eerste keer vraagt Mondig of je dictaten naar die aanbieder mogen; namen en andere persoonsgegevens worden niet vervangen. Tijdens het opschonen toont de dicteerbalk waar de tekst heen gaat, en het kruisje plakt meteen de letterlijke tekst. Duurt het langer dan drie seconden of klopt het antwoord niet, dan plakt Mondig de letterlijke tekst. Bij je dictaten staat wie het opschoonde, met een knop om de letterlijke tekst te kopiëren.
+- Van een verslag maakt Mondig nu notulen: een samenvatting, de besluiten en de actiepunten (wat, wie en wanneer). Je kiest zelf waar de tekst heen gaat, bij Instellingen onder AI-dienst: naar Mistral (Europees, met een eigen sleutel die Mondig in de sleutelbos van je computer bewaart) of naar Ollama op je eigen computer. Bij Mistral zet je eerst het vinkje dat training uit staat voor je sleutel; Mondig kan dat zelf niet controleren en legt uit waarom het ernaar vraagt. In het verslag staan de tabbladen Verslag en Notulen. Bij elk punt staat een knop met de tijd waar het gezegd is: een klik brengt je naar die plek in het verslag. Mondig controleert elke bron zelf. Een punt dat niet in het verslag staat, blijft staan met een oranje markering, zodat jij kunt beslissen. Je kunt elk punt aanpassen of weghalen, de notulen kopiëren en opnieuw laten maken. Opslaan en Kopiëren zetten de notulen voor het verslag. Schrijf je het verslag opnieuw uit, dan zegt Mondig dat de notulen bij de vorige versie horen.
+- Mondig kan je computer bekijken en adviseren welke modellen en instellingen het beste passen. Onder Instellingen laat je Mondig opnieuw afstellen: na een minuut kijken (met de stappen zichtbaar en een knop Stoppen) toont Mondig wat beter past als lijst met vinkjes, bijvoorbeeld de videokaart gebruiken of het nauwkeurige model voor opnames en bestanden. Er begint niets tot je op "Advies overnemen" klikt; een nieuw model wordt pas gebruikt als de download klaar is. Is er niets te verbeteren, dan zegt Mondig dat het alles al goed staat.
 - Het menu van het systeemvak heeft nu "Opname starten", met dezelfde soort als de vorige keer.
   Bij Online en In de ruimte opent Mondig eerst de vraag "Vertel het de anderen", bij Alleen ik
   begint de opname meteen. Tijdens een opname staat bovenaan "Opname loopt" met de tijd en
   daaronder "Stoppen en uitschrijven".
-- Een verslag kun je opnieuw laten uitschrijven met een nauwkeuriger model, via het menu (⋯) van het
-  verslag of van een verslag onder Eerder opgenomen. Sprekers, de namen die je gaf en wat je zelf
-  markeerde blijven; Mondig zegt vooraf hoe lang het ongeveer duurt en hoeveel regels je zelf
-  verbeterde. Tijdens het uitschrijven kun je het verslag lezen, kopiëren en opslaan, en met
-  Stoppen blijft alles zoals het was. Daarna zie je welke regels veranderden, en met "Vorige versie
-  terugzetten" ga je terug tot je het verslag sluit. Is de opname al gewist, dan staat de keuze
-  grijs met de reden.
-- Een verslag blijft nu bewaard als je het sluit. Onder Opnemen staat "Eerder opgenomen" met je laatste
-  verslagen: klik om er een te openen, geef het een eigen naam, of wis het. Mondig bewaart verslag en
-  opname samen, standaard 7 dagen. Onder Instellingen heet die keuze nu "Opnames en verslagen wissen na".
+- Een verslag kun je opnieuw laten uitschrijven met een nauwkeuriger model, via het menu (⋯) van het verslag of van een verslag onder Eerder opgenomen. Sprekers, de namen die je gaf en wat je zelf markeerde blijven; Mondig zegt vooraf hoe lang het ongeveer duurt en hoeveel regels je zelf verbeterde. Tijdens het uitschrijven kun je het verslag lezen, kopiëren en opslaan, en met Stoppen blijft alles zoals het was. Daarna zie je welke regels veranderden, en met "Vorige versie terugzetten" ga je terug tot je het verslag sluit. Is de opname al verwijderd, dan staat de keuze grijs met de reden.
+- Een verslag blijft nu bewaard als je het sluit. Onder Opnemen staat "Eerder opgenomen" met je laatste verslagen: klik om er een te openen, vul Klant en Onderwerp in, of verwijder het. Mondig bewaart verslag en opname samen, standaard 7 dagen. Onder Instellingen heet die keuze nu "Opnames en verslagen verwijderen na".
 - Dicteren toont nu je dictaten van de afgelopen 24 uur, per dag, met Kopiëren en Verwijderen,
   zodat je tekst terugvindt als het plakken niet lukte. Onder Instellingen kies je bij Dictaten
   bewaren: niet bewaren, 24 uur of 7 dagen. Ze staan alleen op deze computer en verdwijnen vanzelf
   na de gekozen tijd.
-- Eerste start: wie nog geen spraakmodel heeft, krijgt een korte uitleg waarom dat nodig is
-  (het uitschrijven gebeurt op je eigen computer), hoe groot de download is, hoeveel schijfruimte
-  er vrij is en hoe lang het ongeveer duurt. Mondig kijkt naar je computer en raadt een model aan,
-  apart voor dicteren en voor bestanden; het tweede model mag je overslaan. De videokaart raadt
-  Mondig alleen aan als een korte proef laat zien dat hij sneller is. Onder Instellingen kun je de
-  computer opnieuw laten checken.
-- Onder Instellingen, bij Problemen oplossen: een logboek met alleen gebeurtenissen en fouten (nooit
-  wat je dicteert, bestandsnamen of namen van sprekers) dat je zelf kopieert of opent, en Mondig
-  terugzetten: alle instellingen naar de standaard, zonder je modellen te wissen. Er gaat niets
-  vanzelf weg.
+- Bij de eerste start helpt Mondig je aan een spraakmodel. Wie er nog geen heeft, krijgt een korte uitleg waarom dat nodig is (het uitschrijven gebeurt op je eigen computer), hoe groot de download is, hoeveel schijfruimte er vrij is en hoe lang het ongeveer duurt. Mondig kijkt naar je computer en raadt een model aan, apart voor dicteren en voor bestanden; het tweede model mag je overslaan. De videokaart raadt Mondig alleen aan als een korte proef laat zien dat hij sneller is. Onder Instellingen kun je de computer opnieuw laten checken.
+- Bij Problemen oplossen onder Instellingen vind je een logboek en kun je Mondig terugzetten. Het logboek bevat alleen gebeurtenissen en fouten (nooit wat je dicteert, bestandsnamen of namen van sprekers) en je kopieert of opent het zelf. Met terugzetten gaan alle instellingen naar de standaard, zonder je modellen te verwijderen. Er gaat niets vanzelf weg.
 - Foutmeldingen in gewone taal per soort, elk met één vervolgactie: geluid dat niet te gebruiken is,
   te weinig videogeheugen, te weinig werkgeheugen, een ontbrekend model en een volle schijf.
 - Eerste versie van de app: een startscherm in het Nederlands en een pictogram in de
   systeembalk. Dicteren en bestanden uitschrijven volgen later.
-- Nieuwe spraakmotor: nauwkeuriger en sneller, en hij kan de videokaart gebruiken. Drie
-  modellen om uit te kiezen: Parakeet (standaard, snel), Canary (het nauwkeurigst) en
-  Whisper (99 talen). Eerder gedownloade modellen moeten opnieuw worden gedownload.
+- Nieuwe spraakmotor: nauwkeuriger en sneller, en hij kan de videokaart gebruiken. Drie modellen om uit te kiezen: Parakeet (standaard, snel), Canary (25 Europese talen) en Whisper (99 talen). Eerder gedownloade modellen moeten opnieuw worden gedownload.
 - De Windows-installer neemt alles mee wat Mondig nodig heeft, zodat het ook werkt op een pc
   waar dat nog niet op staat. Bij een update stopt de installer eerst wat van Mondig nog
   draait.
@@ -85,8 +56,7 @@ Alle merkbare wijzigingen staan hier. Opmaak volgens
 - Een proef: kies een opname of een video (mp4 of mov) en Mondig schrijft hem lokaal
   uit, zonder internet. De tekst kun je kopiëren; hij blijft alleen in het geheugen
   en verdwijnt bij afsluiten.
-- De spraakengine start pas als hij nodig is en stopt na vijf minuten zonder gebruik,
-  zodat Mondig in rust weinig geheugen gebruikt.
+- Mondig gebruikt in rust weinig geheugen: het spraakprogramma start pas als het nodig is en stopt na vijf minuten zonder gebruik.
 - Dicteren met een sneltoets: houd hem ingedrukt of tik kort, en de tekst verschijnt in
   Mondig. Stilte aan het begin en eind wordt weggeknipt. Hoort Mondig niets, dan zie je
   een melding.
@@ -129,31 +99,10 @@ Alle merkbare wijzigingen staan hier. Opmaak volgens
   Mondig niet kan lezen, staat in de rij met wat je kunt doen. Een klaar bestand open je
   met tijdcodes, de duur, de datum en het model, en kopieer je met één knop. Dicteren
   gaat voor.
-- Transcripten van bestanden bewaren: één knop "Opslaan als Word" slaat op in je eigen
-  map (standaard Documenten\Mondig); onder het pijltje kies je PDF voor archief (PDF/A),
-  LibreOffice, platte tekst of ondertitels (SRT en VTT), of een andere plek. Datum, bron,
-  model, label en "Lokaal verwerkt" staan in het document zelf en in de
-  documenteigenschappen. Een bestaand bestand wordt nooit stil overschreven: je kiest
-  "Opslaan als (2)", Vervangen of Annuleren. Na het opslaan open je het bestand of de map
-  met één klik, en Verwijderen haalt het transcript weg met de bestanden die Mondig zelf
-  opsloeg (alleen als ze sindsdien niet gewijzigd zijn).
-- Instellingen, groep Bestanden: de map, de bestandsnaam uit blokjes (datum, naam van de
-  opname, label, tijd, model) met een voorbeeld, het standaardformaat, tijden in het
-  document aan of uit, en automatisch opslaan na het uitschrijven (standaard uit).
-- Vergaderingen opnemen en uitschrijven, in het nieuwe scherm Vergadering. Kies online (je
-  microfoon en het geluid van de computer, apart) of een fysieke vergadering (alleen de
-  microfoon).
-  Vóór elke start herinnert Mondig je eraan dat je de anderen vertelt dat je opneemt. Na
-  afloop schrijft Mondig alles uit op je eigen computer, en maak je er een verslag van met
-  Jij en Anderen, waaraan je een naam kunt geven. Het verslag kun je kopiëren of opslaan
-  als Word of een ander formaat; de opname zelf wordt gewist, tenzij je hem eerst bewaart.
-  Een opname die niet goed is afgesloten kun je herstellen, en een opname kun je ook later
-  uitschrijven. Een vergadering wordt uitgeschreven met het model dat je voor bestanden
-  gebruikt.
-- Opnames van vergaderingen die nog op je computer staan (later uitschrijven, een verslag
-  dat openstond bij het afsluiten, of een crash) wist Mondig vanzelf na 7 dagen. In
-  Instellingen kies je 1, 7 of 30 dagen. Een dag van tevoren staat er bij de opname dat hij
-  binnenkort wordt gewist. Een verslag of audio die je zelf hebt opgeslagen blijft staan.
+- Het uitschrift van een bestand sla je op met één knop, standaard als Word in je eigen map (standaard Documenten\Mondig). Onder het pijltje kies je PDF voor archief (PDF/A), LibreOffice, platte tekst of ondertitels (SRT en VTT), of een andere plek. Datum, bron, model, klant, onderwerp en "Op deze computer" staan in het document zelf en in de documenteigenschappen. Een bestaand bestand wordt nooit stil overschreven: je kiest "Opslaan als (2)", Vervangen of Annuleren. Na het opslaan open je het bestand of de map met één klik, en Verwijderen haalt het uitschrift weg met de bestanden die Mondig zelf opsloeg (alleen als ze sindsdien niet gewijzigd zijn).
+- In Instellingen stel je in hoe Mondig uitschriften opslaat. Je kiest de map, de bestandsnaam uit blokjes (datum, klant, onderwerp, tijd, model) met een voorbeeld, het standaardformaat, tijden in het document aan of uit, en automatisch opslaan na het uitschrijven (standaard uit).
+- Vergaderingen opnemen en uitschrijven, in het nieuwe scherm Vergadering. Kies online (je microfoon en het geluid van de computer, apart) of een vergadering in de ruimte (alleen de microfoon). Vóór elke start herinnert Mondig je eraan dat je de anderen vertelt dat je opneemt. Na afloop schrijft Mondig alles uit op je eigen computer, en maak je er een verslag van met Jij en Anderen, waaraan je een naam kunt geven. Het verslag kun je kopiëren of opslaan als Word of een ander formaat; de opname zelf wordt verwijderd, tenzij je hem eerst bewaart. Een opname die niet goed is afgesloten kun je herstellen, en een opname kun je ook later uitschrijven. Een vergadering wordt uitgeschreven met het model dat je voor bestanden gebruikt.
+- Opnames van vergaderingen die nog op je computer staan (later uitschrijven, een verslag dat openstond bij het afsluiten, of een crash) verwijdert Mondig vanzelf na 7 dagen. In Instellingen kies je 1, 7 of 30 dagen. Een dag van tevoren staat er bij de opname dat hij binnenkort wordt verwijderd. Een verslag of audio die je zelf hebt opgeslagen blijft staan.
 - Een pagina Modellen in de zijbalk. Bovenaan zie je welk model je gebruikt om te dicteren en
   welk voor bestanden. Daaronder staan de modellen in groepen, met per model voor welke taak
   het past (aanbevolen, sneller of nauwkeuriger), de grootte, de talen en hoe snel het is.
@@ -191,40 +140,15 @@ Alle merkbare wijzigingen staan hier. Opmaak volgens
   uitschriften bewaart in de Verkenner. Bestaat de map nog niet, dan maakt Mondig hem aan.
   Dezelfde knop staat nu ook boven de opnames die nog wachten, in het menu van het
   pictogram in het systeemvak, en als "Openen" naast de map in Instellingen.
-- Nieuwe instelling onder Opslaan, "Meer opties": "Opname ook bewaren als geluidsbestand".
-  Staat die aan, dan zet Mondig bij het opslaan van een verslag de opname als WAV ernaast,
-  met dezelfde naam. Standaard staat hij uit en wordt de opname gewist.
+- Nieuwe instelling onder Opslaan, "Meer opties": "Opname ook opslaan als geluidsbestand". Staat die aan, dan zet Mondig bij het opslaan van een verslag de opname als geluidsbestand (.wav) ernaast, met dezelfde naam. Standaard staat hij uit en wordt de opname verwijderd.
 - Videokaart gebruiken: een nieuwe keuze in Instellingen (Spraakmodellen, Meer opties),
   standaard uit. Met een losse videokaart schrijft Mondig veel sneller uit; gaat er iets mis,
   dan gebruikt Mondig vanzelf de processor. Je ziet wat er werkelijk gebruikt wordt en welke
   videokaart Mondig vond. Zonder geschikte videokaart is de keuze uitgegrijsd. Met "Snelheid
   testen" zie je of aanzetten op jouw computer loont.
-- Sprekers herkennen in een vergaderverslag: met het
-  aparte model Sortformer (139 MB, alleen voor wie het downloadt) splitst Mondig online
-  "Anderen" in Spreker 1, Spreker 2 en zo verder, en bij een fysieke vergadering de
-  microfoon. Ook als iemand midden in een zin het woord overneemt. Een spreker geef je één
-  keer een naam, een beurt geef je aan een andere spreker en twee sprekers voeg je samen.
-  Zonder het model, met de nieuwe instelling "Sprekers herkennen" uit of met maar één
-  spreker blijft het verslag zoals het was. De licentie van NVIDIA en het Notice-bestand
-  staan bij het model en op Over Mondig.
-- Sprekers herkennen, nu ook in de app. In het verslag staat bij elke beurt "Spreker 1",
-  "Spreker 2" of de naam die je gaf; klik op een naam om hem te veranderen voor die hele
-  spreker, om de beurt aan een andere of nieuwe spreker te geven, of om twee sprekers samen
-  te voegen. Tijdens het uitschrijven zie je de stap "Sprekers herkennen". De schakelaar
-  "Sprekers herkennen" staat bij Instellingen (Opslaan) en op Bestanden. Aanzetten zonder
-  het model vraagt eerst of Mondig het mag downloaden (139 MB) en gaat pas aan als het er is;
-  weigeren laat hem uit. Op de pagina Modellen kun je het model ook los downloaden en
-  verwijderen. Ook bij een bestand worden de sprekers herkend: in het transcript, bij Kopiëren
-  en in elke export (tekst, Word, LibreOffice, pdf en ondertitels) staat dan de spreker voor
-  de tekst. Zonder sprekers blijft alles zoals het was.
-- Een map in de gaten houden (Instellingen, "Map in de gaten houden"): zet er opnames in, zoals
-  een Teams-opname, een dictafoon of een telefoonopname, en Mondig schrijft ze vanzelf uit zodra
-  het kopiëren klaar is. Dat werkt zolang Mondig draait, ook als alleen het pictogram in de
-  systeembalk zichtbaar is. De opname zelf blijft zoals hij was. Het transcript komt in je
-  map voor transcripten, in je standaardformaat en met je naamregel, of op verzoek naast de
-  opname. Wat al uitgeschreven is, onthoudt Mondig ook na een herstart. Standaard kijkt Mondig
-  niet in submappen, slaat het opnames over waar al een transcript van is, en laat het wat er bij
-  het aanzetten al in de map staat liggen. Een opname waar al een transcript van is, staat in de lijst als overgeslagen.
+- Mondig kan in een vergaderverslag laten zien wie er sprak. Met het aparte sprekermodel (139 MB, alleen voor wie het downloadt) splitst Mondig online "Anderen" in Spreker 1, Spreker 2 en zo verder, en bij een vergadering in de ruimte de microfoon. Ook als iemand midden in een zin het woord overneemt. Een spreker geef je één keer een naam, een beurt geef je aan een andere spreker en twee sprekers voeg je samen. Zonder het model, met de nieuwe instelling "Sprekers herkennen" uit of met maar één spreker blijft het verslag zoals het was. De licentie van NVIDIA en het Notice-bestand staan bij het model en op Over Mondig.
+- Sprekers herkennen, nu ook in de app. In het verslag staat bij elke beurt "Spreker 1", "Spreker 2" of de naam die je gaf; klik op een naam om hem te veranderen voor die hele spreker, om de beurt aan een andere of nieuwe spreker te geven, of om twee sprekers samen te voegen. Tijdens het uitschrijven zie je de stap "Sprekers herkennen". De schakelaar "Sprekers herkennen" staat bij Instellingen (Opslaan) en op Bestanden. Aanzetten zonder het model vraagt eerst of Mondig het mag downloaden (139 MB) en gaat pas aan als het er is; weigeren laat hem uit. Op de pagina Modellen kun je het model ook los downloaden en verwijderen. Ook bij een bestand worden de sprekers herkend: in het uitschrift, bij Kopiëren en in elke export (tekst, Word, LibreOffice, pdf en ondertitels) staat dan de spreker voor de tekst. Zonder sprekers blijft alles zoals het was.
+- Een map in de gaten houden (Instellingen, "Map in de gaten houden"): zet er opnames in, zoals een Teams-opname, een dictafoon of een telefoonopname, en Mondig schrijft ze vanzelf uit zodra het kopiëren klaar is. Dat werkt zolang Mondig draait, ook als alleen het pictogram in de systeembalk zichtbaar is. De opname zelf blijft zoals hij was. Het uitschrift komt in je map voor uitschriften, in je standaardformaat en met je naamregel, of op verzoek naast de opname. Wat al uitgeschreven is, onthoudt Mondig ook na een herstart. Standaard kijkt Mondig niet in submappen, slaat het opnames over waar al een uitschrift van is, en laat het wat er bij het aanzetten al in de map staat liggen. Een opname waar al een uitschrift van is, staat in de lijst als overgeslagen.
 - De wachtrij bij Bestanden toont hoe lang alles samen nog duurt ("Nog ongeveer 12 minuten
   voor 4 bestanden"), zodra Mondig een paar seconden heeft kunnen meten.
 - Mondig houdt de computer wakker zolang je een vergadering opneemt, dicteert of er bestanden
@@ -240,24 +164,8 @@ Alle merkbare wijzigingen staan hier. Opmaak volgens
 - Na een klik op Downloaden zie je meteen dat er iets gebeurt ("Wordt gestart…"), daarna de
   voortgang op dezelfde plek en in de zijbalk. Bij "Sprekers herkennen" springt de schakelaar
   na de download zichtbaar aan, met een korte bevestiging eronder.
-- Het verslag verbeteren, beluisteren en doorzoeken, bij Opnemen en bij een transcript op
-  Bestanden. Klik op een regel (of druk op Enter) om de tekst te verbeteren: Enter bewaart en
-  gaat naar de volgende regel, Shift+Enter begint een nieuwe regel, Esc maakt ongedaan, en
-  een leeg veld houdt de oude tekst. Kopiëren en alle exports (tekst, Word, LibreOffice, pdf
-  en ondertitels) gebruiken de verbeterde tekst. Klik op de tijd van een regel om die regel te
-  beluisteren, zolang de opname of het bronbestand er nog is; spatie speelt of pauzeert, en de
-  snelheid (1, 1,5 of 2 keer) blijft bewaard. Met Ctrl+F zoek je in het verslag: de treffers
-  zijn gemarkeerd, Enter en Shift+Enter gaan naar de volgende en vorige, en Esc sluit.
-  Het geluid blijft in Mondig zelf en gaat nooit naar buiten.
-- Persoonsgegevens markeren en vervangen, bij Opnemen en bij een transcript op Bestanden. Mondig
-  markeert gegevens met een vaste vorm, lokaal en zonder taalmodel: BSN (met elfproef), IBAN (met
-  controle), telefoonnummers, e-mailadressen, postcode of straat met huisnummer, datums en
-  kentekens, ook als de spraakherkenning cijfers in losse groepen schrijft. Gewone getallen,
-  bedragen, jaartallen en tijden worden niet gemarkeerd. Je kunt een markering weghalen of zelf
-  een stuk tekst markeren, bijvoorbeeld een naam. Met de schakelaar "Persoonsgegevens vervangen
-  bij Kopiëren en Opslaan" komt overal [BSN], [IBAN], [TELEFOON], [E-MAIL], [ADRES], [DATUM] of
-  [KENTEKEN] in de plaats; er wordt geen sleutellijst bewaard. Mondig vindt niet alles: lees het
-  verslag altijd zelf na.
+- Het verslag verbeteren, beluisteren en doorzoeken, bij Opnemen en bij een uitschrift op Bestanden. Klik op een regel (of druk op Enter) om de tekst te verbeteren: Enter bewaart en gaat naar de volgende regel, Shift+Enter begint een nieuwe regel, Esc maakt ongedaan, en een leeg veld houdt de oude tekst. Kopiëren en alle exports (tekst, Word, LibreOffice, pdf en ondertitels) gebruiken de verbeterde tekst. Klik op de tijd van een regel om die regel te beluisteren, zolang de opname of het bronbestand er nog is; spatie speelt of pauzeert, en de snelheid (1, 1,5 of 2 keer) blijft bewaard. Met Ctrl+F zoek je in het verslag: de treffers zijn gemarkeerd, Enter en Shift+Enter gaan naar de volgende en vorige, en Esc sluit. Het geluid blijft in Mondig zelf en gaat nooit naar buiten.
+- Persoonsgegevens markeren en vervangen, bij Opnemen en bij een uitschrift op Bestanden. Mondig markeert gegevens met een vaste vorm, op deze computer en zonder AI-dienst: BSN (met elfproef), IBAN (met controle), telefoonnummers, e-mailadressen, postcode of straat met huisnummer, datums en kentekens, ook als de spraakherkenning cijfers in losse groepen schrijft. Gewone getallen, bedragen, jaartallen en tijden worden niet gemarkeerd. Je kunt een markering weghalen of zelf een stuk tekst markeren, bijvoorbeeld een naam. Met de schakelaar "Persoonsgegevens vervangen bij Kopiëren en Opslaan" komt overal [BSN], [IBAN], [TELEFOON], [E-MAIL], [ADRES], [DATUM] of [KENTEKEN] in de plaats; er wordt geen sleutellijst bewaard. Mondig vindt niet alles: lees het verslag altijd zelf na.
 - Exporteren naar Markdown (.md) en een webpagina (.html), bij Opslaan en onder "Ander formaat".
   De webpagina is zelfstandig: de opmaak zit in het bestand, er worden geen lettertypen, scripts of
   plaatjes van buiten geladen en alle tekst is veilig opgemaakt. Beide formaten werken met en zonder
@@ -265,39 +173,51 @@ Alle merkbare wijzigingen staan hier. Opmaak volgens
 
 ### Gewijzigd
 
-- Mondig controleert de beveiligde verbinding voor het downloaden van modellen nu met de
-  certificaten van je computer. Daardoor werkt downloaden ook bij organisaties die het verkeer
-  controleren met een eigen certificaat, zoals veel gemeenten.
+- Mondig zegt nu overal "AI-dienst", en de sectie Notulen in Instellingen heet AI-dienst (voor notulen en het opschonen van dictaten). Eerder heette dat een taalmodel. Ollama krijgt een zin uitleg (een gratis programma dat AI op je eigen computer draait), de knoppen die ernaartoe leiden heten "Naar AI-dienst" en "Notulen instellen" en een geluidsbestand heet "geluidsbestand (.wav)". De twee mapinstellingen heten "Map voor uitschriften" en "Map om in de gaten te houden".
+- Hoe lang Mondig je opnames bewaart staat overal in dezelfde woorden: "Mondig verwijdert opnames na 7 dagen", boven "Nog uit te schrijven" en onder "Eerder opgenomen", met "Wijzigen" erbij. De termijn komt altijd uit je instelling. Bij "Later uitschrijven" staat hoe lang de opname blijft bewaard, en een verslag zegt wanneer het wordt verwijderd ("Wordt op 12 november verwijderd" of "Wordt morgen om 14:00 verwijderd").
+- "Wat is er nieuw" bij Over Mondig is korter: elk punt begint met één zin over wat je merkt, de details staan achter "Alle wijzigingen tonen", en punten voor alleen de Mac staan alleen op de Mac.
+- Op Modellen heeft het sprekermodel dat nog niet is gedownload een knop "Downloaden (139 MB)" in plaats van een schakelaar; de schakelaar komt na de download. Een model dat je gebruikt heeft een slotje bij "Verwijderen", met de reden erbij, "in gebruik" noemt nu opnames en bestanden, en "(hulpmodel)" staat bij de stiltedetectie niet meer twee keer.
+- Op Bestanden hebben geluidsbestanden nu een geluidsicoon, en "Bestanden kiezen" is niet de hoofdknop zolang er geen spraakmodel is.
+- De schakelaar voor persoonsgegevens verdwijnt als Mondig er geen heeft gevonden, en in het menu van een verslag heeft "Opname bewaren als geluidsbestand" een icoon.
+- Bij het begin van een dictaat is Annuleren niet meer de knop die je toetsenbord als eerste kiest, en de dicteerbalk zegt "Nog 59 seconden" voluit.
+- Het pictogram in het systeemvak volgt de taal van Mondig, en in het document dat je opslaat staat "Op deze computer" in plaats van "Lokaal verwerkt". Een verslag dat je heropent toont "Tonen in Verkenner" als Mondig weet waar je het opsloeg.
+- Het label is vervangen door Klant en Onderwerp. In Instellingen heten de blokjes van de bestandsnaam nu Datum, Klant, Onderwerp, Tijd en Model; wie "Label" of "Naam" had, krijgt Klant en Onderwerp, op dezelfde plek. Een bewaarde bestandsnaam met alleen de opname-naam krijgt Klant ervoor, zodat een ingevulde klant in de naam komt. Een verslag dat je eerder een eigen naam gaf, houdt die als onderwerp. Een oudere versie van Mondig die zo'n verslag nog eens opslaat, raakt het onderwerp kwijt.
+- De titel van een verslag volgt Klant en Onderwerp ("Gemeente Vlaardingen · Intake") en staat op een eigen regel onder de knoppen, zodat een lange titel afbreekt in plaats van wordt afgekapt. Zonder klant en onderwerp is de titel "Vergadering" of "Notitie", met de datum in de regel eronder. "Naam wijzigen" is vervallen: de velden staan er direct onder. De standaardnaam van een verslag heeft geen dubbele datum meer ("2026-11-02 Vergadering.docx").
+- De regel onder de titel van een verslag is gelijkgetrokken met die van een uitschrift: "Online vergadering · 2 nov, 14:00 · 52 min · op deze computer".
+- Bij een uitschrift zonder naam heet het bestand nu "Uitschrift" in plaats van "Transcript".
+- Bij elk opgeslagen bestand vind je het met één klik terug in Verkenner. "Tonen in Verkenner" (op de Mac "Toon in Finder") staat nu ook bij elk verslag onder Eerder opgenomen, ook na het herstarten van Mondig, en bij elk opgeslagen bestand op Bestanden. Het menu in het systeemvak volgt de taal van Mondig, en meldingen zeggen overal "verwijderen" en "uitschrift".
+- Op Opnemen kies je met drie kaarten wat je opneemt: een online vergadering, een gesprek in de ruimte of alleen jij, elk met een voorbeeld. "Nog uit te schrijven" toont eerst drie opnames met "Alle tonen" eronder, "Eerder opgenomen" eerst vijf verslagen met "Meer tonen" (tien erbij) en hoeveel het er zijn.
+- Op andere schermen dan het startscherm verschijnt de strook niet meer tijdens het dictaat zelf, want de dicteerbalk laat dat al zien. Hij komt alleen nog als een dictaat met een probleem afliep, zoals een tekst die niet geplakt is of een fout.
+- Dezelfde dingen heten nu overal hetzelfde: wat van je computer verdwijnt heet "verwijderen", de tekst van een bestand een "uitschrift", en bij een opgeslagen bestand zie je "Tonen in Verkenner" (op de Mac "Toon in Finder"). Onder een uitschrift staat nu "30 okt · 23 min · op deze computer".
+- Een naam in het verslag geldt nu altijd voor de hele spreker, ook voor Jij en Anderen: de keuze
+  "Alleen deze beurt" is weg. Geef je twee sprekers dezelfde naam, dan zijn ze dezelfde persoon
+  en voegt Mondig ze samen ("Spreker 1 en Spreker 2 zijn nu Noor"). Een naam, samenvoegen of een
+  beurt aan een andere spreker geven kun je met "Ongedaan maken" terugdraaien. Een nieuwe naam
+  staat ook bij "Wie" in de notulen, en samenvoegen maakt de notulen niet meer tot een vorige
+  versie. Zoeken vindt beurten ook op de naam van de spreker, en de telling van sprekers rekent
+  Anderen zonder nummer niet meer als extra spreker.
+- Downloaden van modellen werkt nu ook bij organisaties die het internetverkeer controleren, zoals veel gemeenten. Mondig controleert de beveiligde verbinding voor het downloaden nu met de certificaten van je computer, ook als je organisatie er een eigen certificaat voor gebruikt.
 - Modellen begint met "Wat Mondig gebruikt": een kaart voor Dicteren, voor Opnames en bestanden en voor Sprekers herkennen, met het snelle of nauwkeurige model in gebruik en Wijzigen. Wijzigen toont alleen de modellen die bij die taak passen. Heeft Mondig je computer bekeken (bij de eerste start of met "Mondig opnieuw afstellen"), dan staat "Past bij deze computer" bij het model dat het beste past, met de datum en "Opnieuw controleren". Daaronder staan de modellen als compacte kaarten, op je computer en te downloaden, met een rand om wat in gebruik is.
 - Het venster opent hoger (780 in plaats van 640). Past dat niet op je scherm, dan wordt het zo hoog als past en staat het in het midden.
-- Opnemen: "Opname starten" staat direct onder de microfoon en het geluid, vóór de lijsten. Een standaardapparaat heet nu bij zijn naam met "(standaard)" erachter, en onder "Nog uit te schrijven" staat na hoeveel dagen Mondig de opnames wist.
+- Opnemen: "Opname starten" staat direct onder de microfoon en het geluid, vóór de lijsten. Een standaardapparaat heet nu bij zijn naam met "(standaard)" erachter, en onder "Nog uit te schrijven" staat na hoeveel dagen Mondig de opnames verwijdert.
 - Dicteren: "Standaard herstellen" staat klein naast Wijzigen, alleen als je een eigen sneltoets koos. De knop "Probeer met een opname" is weg; een opname uitschrijven doe je bij Bestanden.
 - Bestanden: "Sprekers herkennen" is een korte regel met schakelaar onder "Bestanden kiezen", de grootte van het sprekermodel staat er alleen bij zolang het nog niet gedownload is. "Map openen" heet nu "Uitschriften openen", en Mondig zegt in welke map het uitschrift komt.
 - Dicteren begint met je sneltoets in grote toetsen, met de naam van je microfoon eronder. De microfoon staat pas aan als je op "Microfoon testen" klikt en gaat weer uit bij "Klaar", na 15 seconden stilte of als je naar een ander scherm gaat. Het lampje van Windows brandt dus niet meer zodra je Dicteren opent. De microfoon kiezen kan onder Instellingen. "Wat is er nieuw" is nu één regel, en het proefveld zit achter "Probeer het hier".
 - Bestanden zonder opnames begint met een vlak waar je opnames of video's naartoe sleept: streepjes die eindigen in de punt van het woordmerk, en een groene knop "Bestanden kiezen". Hang je een bestand boven het venster, dan kleurt het vlak, bewegen de streepjes (niet als Windows op minder beweging staat) en staat er "Laat los, dan begint Mondig". De regel met de bestandsformaten is weg. In een klein venster is "Map openen" een icoon.
 - Instellingen begint met "Deze computer": "Mondig opnieuw afstellen" (de computercheck, eerst onder Spraakmodellen bij Meer opties) en een rij "Modellen" met de knop "Naar Modellen". De microfoon kiezen kan hier met een knop "Testen": de meter loopt pas na een klik en stopt als je erop klikt, na 15 seconden stilte of als je naar een ander scherm gaat. In een klein venster staat de bediening onder de uitleg, op volle breedte.
-- Voor alles wat weggaat staat nu hetzelfde prullenbakje, ook bij wachtende en klaar staande bestanden. Het kruisje betekent alleen nog sluiten.
+- Op Bestanden zie je nu wat een knop doet: een kruisje om te annuleren of een bestand uit de rij te halen, en de prullenbak alleen bij een klaar bestand dat je uit de lijst verwijdert. Elke knop heeft een tooltip met dezelfde tekst.
 - Een uitgeschakelde knop blijft leesbaar in plaats van half doorzichtig, bijvoorbeeld "Verwijderen" bij een model dat in gebruik is.
 - De bouwcode staat niet meer in de kop van Over Mondig maar onderaan de pagina.
 - "Wat is er nieuw" op Dicteren staat op één regel; de hele zin staat in de tooltip.
-- Opnemen: de soorten heten korter (Online, In de ruimte, Alleen ik) en passen ook in een klein venster. "Opname starten" staat in een groene balk die altijd in beeld blijft, ook als er veel opnames wachten. Alleen opnemen is rood: de stip en de knop "Stoppen en uitschrijven". Het geluid staat overal als streepjes, tijdens de opname twintig per bron. Bij het uitschrijven staat naast het percentage hoelang het nog ongeveer duurt.
+- Opnemen: "Opname starten" staat in een groene balk die altijd in beeld blijft, ook als er veel opnames wachten. Alleen opnemen is rood: de stip en de knop "Stoppen en uitschrijven". Het geluid staat overal als streepjes, tijdens de opname twintig per bron. Bij het uitschrijven staat naast het percentage hoelang het nog ongeveer duurt.
 - Het verslag na een opname laat de tekst eerst zien: bovenaan Sluiten en Nieuwe opname, de titel op één regel met Kopiëren, Opslaan en een menu, één regel met de gegevens, en Zoeken en Snelheid in één balk. Persoonsgegevens staan nu op één regel: de lijst opent bij de teller, de schakelaar zegt wat er gebeurt, en in de stand Vervangen ziet ook het verslag zelf [BSN] en zo. Direct na het uitschrijven zegt een korte melding dat je verslag klaar staat.
 - Grotere tekst en grotere knoppen, beter zichtbare randen van velden en schakelaars, en overal dezelfde notatie voor percentages (38%) en tijden (12:36, 1:02:40). Lange apparaatnamen in een keuzelijst eindigen op "…".
 - Duidelijkere taal: de namen van de spraakmodellen staan alleen nog bij Modellen, "Wat is er nieuw" is korter, en een melding over een bestand dat Mondig niet kan lezen zegt nu wat je kunt doen. Bij een bezette microfoon kun je het meteen opnieuw proberen.
 - Uitschrijven van bestanden en opnames gaat op de achtergrond, zodat dicteren altijd voorgaat. Lange opnames worden in stukken verwerkt, zodat een uur geluid niet al je werkgeheugen gebruikt.
-- Het tabblad Vergadering heet nu "Opnemen". De soort kies je met een schakelaar met drie
-  standen, met eronder één regel uitleg. "Opname starten" staat boven de opnames die nog
-  wachten, zodat de knop altijd in beeld is. Die opnames staan elk op één regel, hooguit tien
-  tegelijk ("Alle tonen" voor de rest), en alleen die van de gekozen soort; wachten er ook
-  opnames van een andere soort, dan staat dat eronder, met een waarschuwing als er een
-  binnenkort gewist wordt. Verwijderen doe je met de prullenbak achter de regel; tijdens de
-  opname zit Weggooien in een menu (⋯). Beide vragen altijd om bevestiging.
-- De soort "In de ruimte" heet nu "Fysieke vergadering".
+- Het tabblad Vergadering heet nu "Opnemen". De soort kies je met een schakelaar met drie standen, met eronder één regel uitleg. "Opname starten" staat boven de opnames die nog wachten, zodat de knop altijd in beeld is. Die opnames staan elk op één regel, hooguit tien tegelijk ("Alle tonen" voor de rest), en alleen die van de gekozen soort; wachten er ook opnames van een andere soort, dan staat dat eronder, met een waarschuwing als er een binnenkort verwijderd wordt. Verwijderen doe je met de prullenbak achter de regel; tijdens de opname zit Verwijderen in een menu (⋯). Beide vragen altijd om bevestiging.
 - "Opname bewaren" begint in dezelfde map als je verslagen en stelt dezelfde naam voor als
   het verslag krijgt.
-- Het pictogram in het systeemvak zegt tijdens een opname wat er wordt opgenomen: een
-  vergadering, een fysieke vergadering of een notitie. Het tabblad Opnemen heeft een eigen
-  pictogram.
+- Het pictogram in het systeemvak zegt tijdens een opname wat er wordt opgenomen: een vergadering, een vergadering in de ruimte of een notitie. Het tabblad Opnemen heeft een eigen pictogram.
 - Instellingen heeft vijf groepen: Dicteren, Opslaan, Opstarten, Spraakmodellen en onderaan
   Over Mondig. De sneltoets staat bovenaan bij Dicteren, Bestanden en Vergadering zijn
   samengevoegd onder Opslaan, en wat je zelden verandert zit per groep achter "Meer opties".
@@ -325,14 +245,27 @@ Alle merkbare wijzigingen staan hier. Opmaak volgens
 
 ### Opgelost
 
+- Onder de sectie AI-dienst in Instellingen stond een losse lijn.
+- Een tweede "Meer tonen" bij je dictaten wordt weer voorgelezen door een schermlezer, ook als er dezelfde melding staat ("20 dictaten erbij").
+- Een lange opname mislukt niet meer helemaal als het model in één stukje blijft hangen (vooral
+  Canary bij zachte of rommelige stukken). Mondig houdt de tekst tot dat punt en gaat verder met
+  de rest; je mist hooguit een paar seconden van dat ene stukje.
+- Spatie en Ctrl+F (⌘F op de Mac) werken alleen nog op het tabblad dat je ziet. Op het tabblad
+  Notulen startte spatie eerst onzichtbaar geluid en opende Ctrl+F een zoekveld dat je niet zag.
+- "Vorige versie terugzetten" blijft nu staan tot je opnieuw uitschrijft of het verslag sluit,
+  ook als je een naam of tekst wijzigt. Terugzetten vraagt eerst om bevestiging, want het zet
+  ook je namen en verbeterde tekst van sindsdien terug. Je markeringen blijven.
+- "Opgeslagen als..." verdwijnt na opnieuw uitschrijven, zodat Openen niet naar een bestand met
+  de oude tekst wijst.
+- Persoonsgegevens vervangen werkt op beide tabbladen gelijk: staat het aan, dan tonen Verslag
+  en Notulen allebei `[BSN]` enzovoort, ook in de bronverwijzingen van de notulen en in de naam
+  van een spreker (`[GEGEVEN]`), zoals Kopiëren en Opslaan al deden. Bewerken begint nog steeds
+  met de echte tekst.
+- Kopiëren en opslaan gebruiken de namen van sprekers in de taal van de app ("You", "Others",
+  "Speaker 1" in het Engels), niet altijd Nederlands. Een naam die je zelf gaf, blijft staan.
 - De eerste start toont bij het downloaden de voortgang van alles samen ("0,6 van 1,8 GB") in plaats van van het ene model dat binnenkomt ("10 van 742 MB"), zodat het klopt met de knop "Downloaden (1,8 GB)".
-- Na een update kon een oude spraakengine naast de nieuwe app blijven staan, met als gevolg
-  een melding als "Onbekend model". De installer stopt de spraakengine nu ook bij het
-  verwijderen, laat je een bestand dat in gebruik is niet meer overslaan, en Mondig
-  controleert bij het starten of app en spraakengine bij elkaar horen. Zo niet, dan zie je
-  "Mondig is niet volledig bijgewerkt. Sluit Mondig af en installeer de nieuwste versie
-  opnieuw."
+- Na een update kon een oud onderdeel van Mondig blijven draaien, met als gevolg een melding als "Onbekend model". De installer stopt de spraakengine nu ook bij het verwijderen, laat je een bestand dat in gebruik is niet meer overslaan, en Mondig controleert bij het starten of app en spraakengine bij elkaar horen. Zo niet, dan zie je "Mondig is niet volledig bijgewerkt. Sluit Mondig af en installeer de nieuwste versie opnieuw."
 - Kies je bij installeren of verwijderen voor Annuleren als de installer vraagt Mondig te
   sluiten, dan blijft Mondig nu gewoon werken. Eerder was de spraakengine dan al gestopt.
-- "Versiegegevens kopiëren" noemt nu ook de versie van de spraakengine, zodat support kan
-  zien of app en spraakengine bij elkaar horen.
+- "Versiegegevens kopiëren" noemt nu ook de versie van het spraakprogramma, zodat support kan
+  zien of app en spraakprogramma bij elkaar horen.

@@ -43,14 +43,17 @@ export interface NotulenBron {
   /** De beurt (vanaf 0) waar de bronknop naartoe springt; `null` als dat niet kan. */
   beurt: number | null;
   ms: number | null;
-  /** Het citaat dat het model gaf. */
+  /** Het citaat dat het model gaf, alleen om te lezen: met Vervangen aan al vervangen. */
   citaat: string;
 }
 
 export interface NotulenBesluit {
   /** Het vaste nummer van het punt: commando's gaan op dit nummer, niet op de plek in de lijst. */
   id: number;
+  /** De echte tekst: daarmee begint het bewerken. */
   tekst: string;
+  /** De tekst op het scherm: met Vervangen aan met `[BSN]` enzovoort, zoals in Kopiëren en Opslaan. */
+  tekstGetoond: string;
   bron: NotulenBron;
 }
 
@@ -59,6 +62,10 @@ export interface NotulenActiepunt {
   wat: string;
   wie: string;
   wanneer: string;
+  /** Wat, wie en wanneer op het scherm, zoals `NotulenBesluit.tekstGetoond`. */
+  watGetoond: string;
+  wieGetoond: string;
+  wanneerGetoond: string;
   wieNietTeruggevonden: boolean;
   wanneerNietTeruggevonden: boolean;
   bron: NotulenBron;
@@ -67,6 +74,8 @@ export interface NotulenActiepunt {
 /** De notulen van een verslag. */
 export interface NotulenInfo {
   samenvatting: string;
+  /** De samenvatting op het scherm, zoals `NotulenBesluit.tekstGetoond`. */
+  samenvattingGetoond: string;
   besluiten: NotulenBesluit[];
   actiepunten: NotulenActiepunt[];
   aanbieder: string;

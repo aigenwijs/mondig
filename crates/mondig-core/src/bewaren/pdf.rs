@@ -391,7 +391,7 @@ pub(super) fn pdf(
 
     let mut zetter = Zetter::new(&titel_letter, &tekst_letter, &vet_letter);
     zetter.alinea(Stijl::Titel, &document.titel(), 8.0);
-    for (sleutel, waarde) in document.gegevens() {
+    for (sleutel, waarde) in document.gegevens_met(notulen) {
         zetter.alinea(Stijl::Gegevens, &format!("{sleutel}: {waarde}"), 0.0);
     }
     zetter.y += 18.0;
@@ -439,11 +439,11 @@ pub(super) fn pdf(
     };
     let mut pdf = krilla::Document::new_with(instellingen);
     let mut trefwoorden = vec!["Transcript".to_string()];
-    trefwoorden.extend(document.label());
+    trefwoorden.extend(document.klant());
     pdf.set_metadata(
         Metadata::new()
             .title(document.titel())
-            .description(document.beschrijving())
+            .description(document.beschrijving_met(notulen))
             .keywords(trefwoorden)
             .language(Taalcode::van(notulen).volledig.to_string())
             .creator(format!("Mondig {VERSIE}"))
@@ -508,9 +508,16 @@ mod tests {
         assert!(bevat(&bytes, "<pdfaid:part>2</pdfaid:part>"));
         assert!(bevat(&bytes, "<pdfaid:conformance>B</pdfaid:conformance>"));
         assert!(bevat(&bytes, "Interview wethouder"));
-        assert!(bevat(&bytes, "Lokaal verwerkt"));
+        assert!(bevat(&bytes, "Op deze computer"));
         assert!(bevat(&bytes, "Z-2026-1043"));
         assert!(bevat(&bytes, "OutputIntent"));
+    }
+
+    #[test]
+    fn pdf_noemt_een_aanbieder_buiten_deze_computer() {
+        use super::super::tests::blok;
+        let bytes = pdf(&document(), Some(&blok(Some("Mistral (Europees)"))), true).expect("pdf");
+        assert!(bevat(&bytes, "notulen door Mistral (Europees)"));
     }
 
     #[test]

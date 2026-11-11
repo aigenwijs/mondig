@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Bundelscript voor de Windows-installer (ADR 0012, "Bundelen op Windows").
-// Bouwt het werkproces mondig-engine in release en zet alles klaar in app/src-tauri:
+// Bundelscript voor het werkproces (ADR 0012, "Bundelen op Windows"; macOS: ADR 0029).
+// Op Windows bouwt het werkproces mondig-engine in release en zet alles klaar in app/src-tauri:
 //
 //   binaries/mondig-engine-<target-triple>.exe   (bundle.externalBin)
 //   engine-libs/                                  (bundle.resources, naast Mondig.exe)
@@ -13,16 +13,25 @@
 //
 //   node scripts/engine-bundelen.mjs
 //
+// Op macOS (alleen Apple Silicon, aarch64-apple-darwin) bouwt het script het werkproces met
+// Metal en zet het klaar als binaries/mondig-engine-aarch64-apple-darwin. Er komt geen
+// engine-libs bij: de rekenmodules en de Metal-shaders (metallib) zitten statisch in het
+// werkproces zelf (transcribe-cpp met de feature `metal`, GGML_METAL_EMBED_LIBRARY=ON in
+// transcribe-cpp-sys/bindings/rust/sys/build.rs). Het script controleert met otool dat het
+// werkproces alleen naar systeembibliotheken verwijst.
+//
 // MONDIG_VC_REDIST_DIR wijst handmatig naar de map met de runtime, bijvoorbeeld
 // C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\14.44.35112\x64\Microsoft.VC143.CRT
 
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const release = join(root, 'target', 'release');
+// Dezelfde map als cargo: CARGO_TARGET_DIR als die gezet is (relatief aan de repo, want cargo
+// draait hieronder met cwd root), anders target/.
+const release = join(resolve(root, process.env.CARGO_TARGET_DIR || 'target'), 'release');
 const binMap = join(root, 'app', 'src-tauri', 'binaries');
 const libMap = join(root, 'app', 'src-tauri', 'engine-libs');
 
@@ -31,9 +40,9 @@ const stop = (melding) => {
   process.exit(1);
 };
 
-if (process.platform !== 'win32') {
+if (process.platform !== 'win32' && process.platform !== 'darwin') {
   console.error(
-    'Dit script bundelt alleen voor Windows. Bundelen voor macOS en Linux komt in sprint 3e (ADR 0012).'
+    'Dit script bundelt alleen voor Windows en macOS (Apple Silicon). Bundelen voor Linux volgt later.'
   );
   process.exit(1);
 }
@@ -97,6 +106,49 @@ function bestanden(map, test) {
 function leegMap(map) {
   rmSync(map, { recursive: true, force: true });
   mkdirSync(map, { recursive: true });
+}
+
+/** macOS (Apple Silicon): werkproces met Metal bouwen en klaarzetten voor bundle.externalBin. */
+function bundelMac() {
+  if (process.arch !== 'arm64') {
+    stop('Bundelen voor macOS kan alleen op Apple Silicon (arm64). Intel-Macs worden niet ondersteund (ADR 0029).');
+  }
+  const triple = execFileSync('rustc', ['--print', 'host-tuple'], { encoding: 'utf8' }).trim();
+  if (triple !== 'aarch64-apple-darwin') stop(`Onverwachte target-triple: ${triple} (verwacht aarch64-apple-darwin).`);
+
+  // Zelfde minimumversie als de app (tauri.conf.json), zodat C en C++ van de engine voor dezelfde
+  // macOS-versie bouwen als de rest van de .app.
+  const config = JSON.parse(readFileSync(join(root, 'app', 'src-tauri', 'tauri.conf.json'), 'utf8'));
+  const minimum = config?.bundle?.macOS?.minimumSystemVersion;
+  if (!minimum) stop('bundle.macOS.minimumSystemVersion ontbreekt in tauri.conf.json.');
+
+  console.log(`Werkproces bouwen (release, Metal, macOS ${minimum} of nieuwer)...`);
+  execFileSync('cargo', ['build', '--release', '-p', 'mondig-engine'], {
+    cwd: root,
+    stdio: 'inherit',
+    env: { ...process.env, MACOSX_DEPLOYMENT_TARGET: minimum }
+  });
+  const enginePad = join(release, 'mondig-engine');
+  if (!existsSync(enginePad)) stop(`${enginePad} ontbreekt na de build.`);
+
+  // Controle: alleen systeembibliotheken. Een verwijzing naar @rpath of een andere map zou
+  // betekenen dat er een dylib mee moet die de .app niet bevat.
+  const regels = execFileSync('otool', ['-L', enginePad], { encoding: 'utf8' }).split(/\r?\n/).slice(1);
+  const vreemd = regels
+    .map((regel) => regel.trim().split(' ')[0])
+    .filter((pad) => pad && !pad.startsWith('/usr/lib/') && !pad.startsWith('/System/Library/'));
+  if (vreemd.length > 0) stop(`Het werkproces verwijst naar bibliotheken buiten het systeem: ${vreemd.join(', ')}`);
+
+  leegMap(binMap);
+  // Geen engine-libs op de Mac; een restant van een Windows-build mag niet in de .app.
+  rmSync(libMap, { recursive: true, force: true });
+  copyFileSync(enginePad, join(binMap, `mondig-engine-${triple}`));
+  console.log(`binaries/mondig-engine-${triple}`);
+}
+
+if (process.platform === 'darwin') {
+  bundelMac();
+  process.exit(0);
 }
 
 // 1. Werkproces bouwen

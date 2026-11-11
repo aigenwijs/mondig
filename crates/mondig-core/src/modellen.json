@@ -63,7 +63,7 @@
       "soort": "spraak",
       "nauwkeurigheid": 4,
       "snelheid": 4,
-      "naam": "Canary 1b-v2 (nauwkeurigst, 25 Europese talen)",
+      "naam": "Canary 1b-v2 (25 Europese talen)",
       "engine": "Canary",
       "labels": { "dicteren": "nauwkeuriger", "bestanden": "aanbevolen" },
       "niet_voor": [],
@@ -252,7 +252,7 @@
     {
       "id": "silero-vad-v6.2",
       "soort": "hulp",
-      "naam": "Silero VAD v6.2 (stiltedetectie, hulpmodel)",
+      "naam": "Silero VAD v6.2 (stiltedetectie)",
       "engine": "Silero",
       "rol": "vad",
       "licentie": "MIT",

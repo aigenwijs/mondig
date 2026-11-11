@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   duurTekst,
+  foutVanStand,
   isNieuwer,
   naamZonderExtensie,
+  rijKnop,
+  vraagBijWeghalen,
   stand,
   tijdcode,
   transcriptTekst,
   verwerkingTekst,
+  type BestandenStand,
   type BestandInfo
 } from './bestanden';
 import { en } from './i18n/en';
@@ -31,9 +35,9 @@ function info(over: Partial<BestandInfo>): BestandInfo {
 }
 
 describe('een overgeslagen bestand uit de bewaakte map', () => {
-  it('zegt dat er al een transcript is, in beide talen', () => {
+  it('zegt dat er al een uitschrift is, in beide talen', () => {
     const bestand = info({ toestand: { type: 'geannuleerd' }, overgeslagen: true, uitMap: true });
-    expect(stand(bestand, null, nl)).toBe('overgeslagen, er is al een transcript');
+    expect(stand(bestand, null, nl)).toBe('overgeslagen, er is al een uitschrift');
     expect(stand(bestand, null, en)).toBe('skipped, a transcript already exists');
   });
 });
@@ -98,7 +102,8 @@ describe('de volgorde van standen', () => {
     const stand = (versie: number) => ({
       versie,
       lijst: [info({ toestand: { type: 'klaar' } })],
-      fout: null
+      fout: null,
+      nietGepakt: false
     });
     expect(isNieuwer(stand(5), 4)).toBe(true);
     expect(isNieuwer(stand(4), 4)).toBe(false);
@@ -157,7 +162,9 @@ describe('kopiëren', () => {
             uitvoer: 'Tweede zin.'
           }
         ],
-        label: '',
+        klant: '',
+        onderwerp: 'interview',
+        datum: '2026-10-30',
         audioAanwezig: true,
         persoon: { vervangen: false, eigen: [] }
       })
@@ -185,7 +192,9 @@ describe('kopiëren', () => {
             uitvoer: 'Bel [TELEFOON].'
           }
         ],
-        label: '',
+        klant: '',
+        onderwerp: 'interview',
+        datum: '2026-10-30',
         audioAanwezig: true,
         persoon: { vervangen: true, eigen: [] }
       })
@@ -232,10 +241,77 @@ describe('kopiëren', () => {
             spreker: null
           }
         ],
-        label: '',
+        klant: '',
+        onderwerp: 'interview',
+        datum: '2026-10-30',
         audioAanwezig: true,
         persoon: { vervangen: false, eigen: [] }
       })
     ).toBe('Spreker 1: Eerste zin.\nSpreker 2: Tweede zin.\nZonder.');
+  });
+});
+
+describe('een drop die niets oplevert (ADR 0030)', () => {
+  const leeg: BestandenStand = { versie: 1, lijst: [], fout: null, nietGepakt: false };
+
+  it('zegt in gewone taal wat wel kan, in beide talen', () => {
+    const stand = { ...leeg, nietGepakt: true };
+    expect(foutVanStand(stand, nl)).toEqual({
+      melding:
+        'Mondig kon dit bestand niet pakken. Sleep het eerst naar het bureaublad en dan hierheen.',
+      vervolg: 'geen'
+    });
+    expect(foutVanStand(stand, en)?.melding).toBe(
+      "Mondig couldn't pick up this file. Drag it to the desktop first, then drag it here."
+    );
+  });
+
+  it('toont niets zonder lege drop, en een fout van het toevoegen gaat voor', () => {
+    expect(foutVanStand(leeg, nl)).toBeNull();
+    const fout = { melding: 'Download eerst een spraakmodel.', vervolg: 'geen' as const };
+    expect(foutVanStand({ ...leeg, fout, nietGepakt: true }, nl)).toBe(fout);
+  });
+});
+
+describe('de knop aan het eind van een rij', () => {
+  it('geeft een kruisje voor annuleren en uit de rij halen, de prullenbak alleen bij klaar', () => {
+    expect(rijKnop({ type: 'verwerkt', voortgang: 40 })).toEqual({
+      soort: 'annuleren',
+      icoon: 'kruis'
+    });
+    expect(rijKnop({ type: 'wacht' })).toEqual({ soort: 'uitRij', icoon: 'kruis' });
+    expect(rijKnop({ type: 'luistert' })).toEqual({ soort: 'uitRij', icoon: 'kruis' });
+    expect(rijKnop({ type: 'geannuleerd' })).toEqual({ soort: 'uitRij', icoon: 'kruis' });
+    expect(rijKnop({ type: 'fout', melding: 'Mislukt', vervolg: 'geen' })).toEqual({
+      soort: 'uitRij',
+      icoon: 'kruis'
+    });
+    expect(rijKnop({ type: 'klaar' })).toEqual({ soort: 'verwijderen', icoon: 'prullenbak' });
+  });
+
+  it('heeft teksten die zeggen wat er gebeurt', () => {
+    expect(nl.bestandAnnulerenKort).toBe('Annuleren');
+    expect(nl.bestandUitRijKort).toBe('Uit de rij halen');
+    expect(nl.bestandWeghalen('Interview.m4a')).toContain('uit de lijst verwijderen');
+    expect(en.bestandWeghalen('Interview.m4a')).toContain('from the list');
+  });
+});
+
+describe('de vraag bij de prullenbak', () => {
+  it('komt alleen bij een klaar uitschrift dat nog niet is opgeslagen', () => {
+    expect(vraagBijWeghalen(info({ toestand: { type: 'klaar' }, opgeslagen: null }))).toBe(true);
+    expect(
+      vraagBijWeghalen(info({ toestand: { type: 'klaar' }, opgeslagen: 'C:/Mondig/a.docx' }))
+    ).toBe(false);
+    expect(vraagBijWeghalen(info({ toestand: { type: 'wacht' } }))).toBe(false);
+    expect(
+      vraagBijWeghalen(info({ toestand: { type: 'fout', melding: 'x', vervolg: 'geen' } }))
+    ).toBe(false);
+  });
+
+  it('heeft teksten die zeggen wat er gebeurt', () => {
+    expect(nl.bestandWeghalenOnopgeslagen).toContain('nog niet opgeslagen');
+    expect(nl.bestandWeghalenKortOpgeslagen).toContain('opgeslagen bestand blijft staan');
+    expect(en.bestandOpgeslagenBlijft).toContain('saved file stays');
   });
 });

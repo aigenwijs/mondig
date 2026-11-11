@@ -17,8 +17,8 @@
     bewerkToets,
     deelTekst,
     leesSnelheid,
+    lijstToets,
     naarTreffer,
-    neemtSpatieOver,
     vindTreffers,
     volgendeSleutel,
     vervangenRegel,
@@ -40,6 +40,7 @@
     regels,
     labels = false,
     label,
+    aanwijs,
     lijstLabel,
     zetTekst,
     haalAudio,
@@ -48,13 +49,20 @@
     zetVervangen,
     haalWeg,
     markeer,
-    opgelicht = null
+    opgelicht = null,
+    inBeeld = true
   }: {
     regels: VerslagRegel[];
     /** Heeft de lijst een kolom met de spreker? */
     labels?: boolean;
     /** De spreker van een regel, in de kolom ernaast. */
     label?: Snippet<[VerslagRegel]>;
+    /**
+     * Zonder labelkolom: een knop rechts naast de regel (bijvoorbeeld "Spreker aanwijzen") die
+     * verschijnt bij aanwijzen en bij toetsenbordfocus op de regel. Hij heeft een eigen kolom, dus
+     * hij bedekt nooit tekst of een zoektreffer.
+     */
+    aanwijs?: Snippet<[VerslagRegel]>;
     lijstLabel: string;
     /** Bewaart de nieuwe tekst van een regel; geeft de melding bij een fout, anders `null`. */
     zetTekst: (sleutel: number, tekst: string) => Promise<string | null>;
@@ -72,6 +80,11 @@
     markeer: (tekst: string) => Promise<string | null>;
     /** De regel die even oplicht, na een sprong vanaf een bronknop van de notulen. */
     opgelicht?: number | null;
+    /**
+     * Is de lijst in beeld? Zo niet (een ander tabblad staat open), dan doen Spatie en Ctrl+F of
+     * ⌘F niets. De lijst blijft geladen, zodat de afspeelstand bij terugkomen klopt.
+     */
+    inBeeld?: boolean;
   } = $props();
 
   // ---- Afspelen ----
@@ -217,7 +230,8 @@
   const treffers = $derived(
     vindTreffers(
       getoond.map((r) => r.tekst),
-      vraag
+      vraag,
+      getoond.map((r) => r.naam)
     )
   );
   const actief = $derived(Math.min(huidig, Math.max(0, treffers.length - 1)));
@@ -302,22 +316,11 @@
 
   function opToets(event: KeyboardEvent): void {
     if (event.defaultPrevented) return;
-    if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'f') {
+    const actie = lijstToets(event, { actief: inBeeld, heeftGeluid: haalAudio !== null });
+    if (actie === 'zoeken') {
       event.preventDefault();
       void openZoeken();
-      return;
-    }
-    // Spatie speelt of pauzeert, maar nooit in een tekstveld en niet op een knop of link: die
-    // bedienen spatie zelf.
-    if (
-      event.key === ' ' &&
-      !event.ctrlKey &&
-      !event.metaKey &&
-      !event.altKey &&
-      !event.shiftKey &&
-      haalAudio &&
-      !neemtSpatieOver(event.target)
-    ) {
+    } else if (actie === 'afspelen') {
       event.preventDefault();
       const eerste = regels[0];
       if (!afspeler.schakel() && eerste) speel(eerste);
@@ -470,7 +473,9 @@
     bind:this={lijstEl}
     class="m-0 grid list-none gap-x-3 gap-y-3 p-0 text-midden leading-[1.55] {labels
       ? 'grid-cols-[3.75rem_fit-content(12rem)_1fr] max-[639px]:grid-cols-[3.75rem_1fr]'
-      : 'grid-cols-[3.75rem_1fr]'}"
+      : aanwijs
+        ? 'grid-cols-[3.75rem_1fr_1.5rem]'
+        : 'grid-cols-[3.75rem_1fr]'}"
     aria-label={lijstLabel}
   >
     {#each regels as regel, plek (regel.sleutel)}
@@ -479,8 +484,9 @@
       {@const geladenDeze = afspeler.sleutel === regel.sleutel}
       {@const hier = perRegel[plek]}
       {@const zien = getoond[plek] ?? regel}
+      {@const naamTreffer = hier?.treffers.findIndex((tr) => tr.naam) ?? -1}
       <li
-        class="col-span-full grid grid-cols-subgrid items-baseline {labels
+        class="group/rij col-span-full grid grid-cols-subgrid items-baseline {labels
           ? 'max-[639px]:col-span-2'
           : ''}"
       >
@@ -510,7 +516,13 @@
           <span class="text-klein text-dim tabular-nums" title={geenGeluid}>{tijd}</span>
         {/if}
         {#if labels}
-          <span class="min-w-0"
+          <!-- Een treffer in de naam van de spreker: het label krijgt de kleur van een treffer. -->
+          <span
+            class="min-w-0 {naamTreffer >= 0
+              ? `rounded-[3px] bg-waarsch/35 ${naamTreffer === hier?.actief ? 'ring-2 ring-actie' : ''}`
+              : ''}"
+            data-naam-treffer={naamTreffer >= 0 ? '' : undefined}
+            data-actieve-treffer={naamTreffer >= 0 && naamTreffer === hier?.actief ? '' : undefined}
             >{#if label}{@render label(regel)}{/if}</span
           >
         {/if}
@@ -568,6 +580,9 @@
             >
           {/if}
         </div>
+        {#if !labels && aanwijs}
+          <div class="self-start leading-none">{@render aanwijs(regel)}</div>
+        {/if}
       </li>
     {/each}
   </ol>

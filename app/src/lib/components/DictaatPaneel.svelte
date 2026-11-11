@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
   import { onMount, tick } from 'svelte';
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
@@ -12,11 +11,15 @@
   import MicrofoonRegel from '#lib/components/MicrofoonRegel.svelte';
   import { Button } from '#lib/components/ui/button/index.js';
   import { huidigeTaal, t } from '#lib';
-  import { dictaatAnnuleer, microfooninstellingOpen } from '#lib/commandos.js';
+  import {
+    dictaatAnnuleer,
+    microfooninstellingOpen,
+    toegankelijkheidOpen
+  } from '#lib/commandos.js';
   import { bijnaVol, formatDuur, isActief, klokTijd, plakSoort } from '#lib/dictaat.js';
   import type { PlakUitkomst, Weergave } from '#lib/dictaat.js';
   import { dictaatStand } from '#lib/dictaatstand.svelte.js';
-  import { laatsteLosTonen } from '#lib/dictaten.js';
+  import { laatsteLosTonen, type DictatenTermijn } from '#lib/dictaten.js';
   import { dictatenStand } from '#lib/dictatenstand.svelte.js';
   import { herstelFocus } from '#lib/focus.js';
   import { kopieerNaarKlembord } from '#lib/klembord.js';
@@ -36,9 +39,11 @@
   const dictaat = $derived(dictaatStand.dictaat);
   const plak = $derived(weergave.type === 'klaar' ? dictaatStand.plak : null);
   const plakFout = $derived(plak !== null && plakSoort(plak) === 'fout');
-  // De dictaatgeschiedenis (ADR 0021): bij 24 uur of 7 dagen staat hier de lijst "Je dictaten",
-  // bij Niet bewaren alleen het laatste dictaat uit het geheugen, zoals voor de lijst bestond.
+  // De dictaatgeschiedenis (ADR 0021): bij elke stand behalve Niet bewaren staat hier de lijst
+  // "Je dictaten", bij Niet bewaren alleen het laatste dictaat uit het geheugen, zoals voor de
+  // lijst bestond.
   const bewaart = $derived(dictatenStand.termijn !== 'niet');
+  const lijstTermijn = $derived(dictatenStand.termijn === 'niet' ? '24u' : dictatenStand.termijn);
   const lijstLeeg = $derived(
     bewaart && dictatenStand.geladen && dictatenStand.zichtbaar.length === 0
   );
@@ -49,6 +54,24 @@
       : null
   );
   const INSTELLING_DICTATEN = '#dictaten-bewaren';
+  // De melding van de lijst (verwijderd, termijn gezet) staat in een regio van dit paneel, want
+  // bij Niet bewaren verdwijnt de lijst met haar eigen regio (WCAG 4.1.3).
+  let lijstMelding = $state('');
+  // Bij Niet bewaren verdwijnt de lijst, en met haar de knop met de focus. Zet de focus dan op
+  // de statusregio, zodat hij niet naar de pagina valt (WCAG 2.4.3). Alleen als het venster de
+  // focus heeft, zodat Mondig niet naar voren springt.
+  let hadLijst = false;
+  $effect(() => {
+    const heeftLijst = bewaart;
+    if (hadLijst && !heeftLijst) {
+      void tick()
+        .then(() => new Promise((klaar) => setTimeout(klaar, 0)))
+        .then(() => {
+          if (document.hasFocus()) document.getElementById('dictaten-status')?.focus();
+        });
+    }
+    hadLijst = heeftLijst;
+  });
   let nu = $state(Date.now());
   let gekopieerd = $state(false);
   // Het proefveld: de globale sneltoets plakt niet in Mondig zelf, dus vult het veld zichzelf
@@ -88,16 +111,21 @@
   // De tweede sneltoets (ADR 0027): alleen bij "Met een eigen sneltoets", en alleen als hij
   // echt aan staat. Een fout hier verbergt alleen de regel.
   let tweede = $state<string | null>(null);
+  let tweedeVoorlezen = $state<string | null>(null);
   async function laadTweede(): Promise<void> {
     try {
       const info = await opschonenInstellingen();
       if (info.stand !== 'eigenSneltoets') {
         tweede = null;
+        tweedeVoorlezen = null;
         return;
       }
-      tweede = (await haalSneltoetsStatus('opschonen'))?.actief ?? null;
+      const stand = await haalSneltoetsStatus('opschonen');
+      tweede = stand?.actief ?? null;
+      tweedeVoorlezen = stand?.actiefVoorlezen ?? null;
     } catch {
       tweede = null;
+      tweedeVoorlezen = null;
     }
   }
 
@@ -138,15 +166,6 @@
     proefveld.setRangeText(`${dictaat} `, proefveld.selectionStart, proefveld.selectionEnd, 'end');
   });
 
-  /** Naar de rij Dictaten bewaren in Instellingen. */
-  function naarDictatenBewaren(): void {
-    void goto(resolve('/instellingen')).then(() => {
-      // De rij staat nu op het scherm: scroll ernaartoe en zet de focus op de keuzelijst.
-      document.getElementById('dictaten-bewaren')?.scrollIntoView({ block: 'center' });
-      document.getElementById('dictaten-keuze')?.focus();
-    });
-  }
-
   /** Toont het proefveld en zet de cursor erin. */
   async function openProefveld(): Promise<void> {
     proefOpen = true;
@@ -164,6 +183,14 @@
     switch (uitkomst) {
       case 'geplakt':
         return t().plakGeplakt;
+      case 'getypt':
+        return t().plakGetypt;
+      case 'typen_onderbroken':
+        return t().plakTypenOnderbroken;
+      case 'typen_mislukt':
+        return t().plakTypenMislukt;
+      case 'geen_tekstveld':
+        return t().plakGeenTekstveld;
       case 'waarschijnlijk_geplakt':
         return t().plakWaarschijnlijk;
       case 'op_klembord':
@@ -182,6 +209,10 @@
         return t().plakMislukt;
       case 'in_mondig':
         return inProefveld ? t().plakInProefveld : t().plakInMondig;
+      case 'geen_toegang':
+        return t().plakGeenToegang;
+      case 'wachtwoordveld':
+        return t().plakWachtwoordveld;
     }
   }
 
@@ -232,15 +263,21 @@
   $effect(() => {
     const type = weergave.type;
     if (vorigeType !== null && type !== vorigeType && document.hasFocus()) {
+      // Bij de start van een dictaat naar de statusregio van het paneel, niet naar Annuleren:
+      // die knop zou er als de hoofdactie uitzien (UI-check punt 8).
+      const doel = type === 'luistert' ? '#dictaat-paneel' : undefined;
       void tick().then(() => {
-        herstelFocus(document);
+        herstelFocus(document, doel);
       });
     }
     vorigeType = type;
   });
 </script>
 
-<div class="flex flex-col gap-6">
+<!-- De vaste plek voor de focus bij de start van een dictaat: het paneel zelf, niet de statusregio
+     (die leest elke focus voor) en niet Annuleren. Bij klaar gaat de focus van hier naar de
+     hoofdactie (`data-focusplek`, zie `herstelFocus`). -->
+<div id="dictaat-paneel" data-focusplek tabindex="-1" class="flex flex-col gap-6 outline-none">
   {#if sneltoets?.actief === null}
     <div class={foutVak} role="alert">
       <p class="m-0 flex items-start gap-2.5">
@@ -250,7 +287,9 @@
     </div>
   {:else if sneltoets?.isTerugval && sneltoets.actief}
     <p class="m-0 text-gedempt">
-      {t().sneltoetsTerugval(sneltoets.gewenst, sneltoets.actief)}
+      {sneltoets.overgezet
+        ? t().sneltoetsOvergezet(sneltoets.gewenst, sneltoets.actief)
+        : t().sneltoetsTerugval(sneltoets.gewenst, sneltoets.actief)}
     </p>
   {/if}
 
@@ -265,7 +304,9 @@
          zichtbare inhoud trekt de negatieve marge de ruimte van de `gap` weer weg. -->
     <div
       role="status"
-      class="flex min-w-0 flex-col gap-3 empty:hidden {isActief(weergave)
+      class="flex min-w-0 flex-col gap-3 rounded-klein outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus empty:hidden {isActief(
+        weergave
+      )
         ? 'flex-[1_1_18rem]'
         : '[&:not(:has(>:not(.sr-only)))]:-mt-6'}"
     >
@@ -329,7 +370,7 @@
   {#if toonRust && !isActief(weergave)}
     <!-- Sneltoets met de microfoonregel eronder, in één kaart. Wijzigen is dezelfde bediening
          als in Instellingen; de microfoon kies je daar, hier staat alleen de naam en de test. -->
-    <InstellingSneltoets variant="kaart" bijStatus={zetGewijzigd} {tweede}>
+    <InstellingSneltoets variant="kaart" bijStatus={zetGewijzigd} {tweede} {tweedeVoorlezen}>
       {#snippet onder()}
         <MicrofoonRegel />
       {/snippet}
@@ -364,9 +405,16 @@
         <CircleAlert size={16} class="mt-0.5 shrink-0" aria-hidden="true" />
         {plakMelding(plak)}
       </p>
-      <Button onclick={() => kopieer()} data-hoofdactie=""
-        ><Copy size={16} aria-hidden="true" />{t().kopieren}</Button
-      >
+      {#if plak === 'geen_toegang'}
+        <!-- De tekst staat al op het klembord; de knop lost het blijvend op. -->
+        <Button onclick={() => void toegankelijkheidOpen()} data-hoofdactie=""
+          >{t().toegankelijkheidOpenen}</Button
+        >
+      {:else}
+        <Button onclick={() => kopieer()} data-hoofdactie=""
+          ><Copy size={16} aria-hidden="true" />{t().kopieren}</Button
+        >
+      {/if}
     </div>
   {/if}
 
@@ -411,6 +459,8 @@
     {@render proefblok()}
   {/if}
 
+  <div id="dictaten-status" role="status" tabindex="-1" class="sr-only">{lijstMelding}</div>
+
   {#if bewaart && !isActief(weergave)}
     {#if dictatenStand.geladen && losLaatste !== null}
       <!-- Het laatste dictaat staat niet (als nieuwste) in de lijst, bijvoorbeeld omdat het
@@ -425,12 +475,18 @@
     {#if dictatenStand.geladen}
       <DictatenLijst
         dictaten={dictatenStand.zichtbaar}
-        termijn={dictatenStand.termijn === '7d' ? '7d' : '24u'}
+        termijn={lijstTermijn}
+        totaal={dictatenStand.zichtbaarTotaal}
         bewaard={dictatenStand.bewaard}
         nu={dictatenStand.nu}
         bijVerwijder={(id: string) => dictatenStand.verwijder(id)}
         bijWisAlles={() => dictatenStand.wisAlles()}
-        bijHoeLang={naarDictatenBewaren}
+        bijMeerTonen={() => dictatenStand.meerTonen()}
+        wegval={(termijn: DictatenTermijn) => dictatenStand.wegval(termijn)}
+        bijTermijn={(termijn: DictatenTermijn) => dictatenStand.zetTermijn(termijn)}
+        bijMelding={(tekst: string) => {
+          lijstMelding = tekst;
+        }}
       />
     {/if}
   {/if}

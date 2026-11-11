@@ -102,7 +102,7 @@ fn controleer_zet(
     }
     let Some(aanbieder) = klaar else {
         return Err(Foutmelding::nieuw(
-            "Kies eerst een taalmodel onder Notulen.",
+            "Kies eerst een AI-dienst onder Instellingen.",
             Vervolg::Geen,
         ));
     };
@@ -518,7 +518,7 @@ mod tests {
     #[test]
     fn aanzetten_weigert_zonder_aanbieder() {
         let fout = controleer_zet(Stand::BijElkDictaat, None, false, Some("mistral")).unwrap_err();
-        assert!(fout.melding.contains("Notulen"), "{}", fout.melding);
+        assert!(fout.melding.contains("AI-dienst"), "{}", fout.melding);
         // Uitzetten kan altijd.
         assert!(!controleer_zet(Stand::Uit, None, false, None).unwrap());
     }

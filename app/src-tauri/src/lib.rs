@@ -12,6 +12,7 @@ mod dicteerketen;
 mod downloads;
 mod geluid;
 mod instellingen;
+mod klanten;
 mod logboek;
 mod meter;
 mod microfoonrecht;
@@ -26,6 +27,7 @@ mod snelheid;
 mod sneltoets;
 mod systeemvak;
 mod taal;
+mod toegankelijkheid;
 mod venster;
 mod vergadering;
 mod versie;
@@ -327,6 +329,10 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(hoofdvenster) = app.get_webview_window("main") {
         venster::pas_in_werkgebied(app, &hoofdvenster);
     }
+    // Op de Mac: bestanden aannemen die als belofte gesleept worden, uit Dictafoon, Foto's en
+    // Mail (ADR 0030).
+    #[cfg(target_os = "macos")]
+    bestanden::plaats_mac_haak(app);
     // Het venster is bij het aanmaken onzichtbaar (`visible: false` in tauri.conf.json), dus
     // een verborgen start flitst niet: we tonen het alleen als dat nodig is.
     let via_autostart = std::env::args().any(|arg| arg == AUTOSTART_ARG);
@@ -386,12 +392,14 @@ pub fn run() -> tauri::Result<()> {
             dicteerketen::proef_annuleer,
             dicteerketen::laatste_dictaat,
             dictaten::dictaten_stand,
+            dictaten::dictaten_wegval,
             dictaten::dictaten_bewaren_zet,
             dictaten::dictaat_verwijder,
             dictaten::dictaten_wis_alles,
             dictaat::dictaat_annuleer,
             sneltoets::sneltoets_status,
             sneltoets::sneltoets_controleer,
+            sneltoets::sneltoets_info,
             sneltoets::sneltoets_vang_start,
             sneltoets::sneltoets_vang_stop,
             sneltoets::sneltoets_wijzig,
@@ -436,9 +444,12 @@ pub fn run() -> tauri::Result<()> {
             pil::pil_toon,
             pil::pil_verberg,
             pil::pil_open_mondig,
+            pil::pil_klik,
             pil::pil_positie_instelling,
             pil::pil_positie_zet,
             plakken::klembord_zet,
+            toegankelijkheid::toegankelijkheid_stand,
+            toegankelijkheid::toegankelijkheid_open,
             versie::versie_info,
             versie::werkproces_bouw,
             versie::model_vermeldingen,
@@ -464,7 +475,10 @@ pub fn run() -> tauri::Result<()> {
             bewaren::bewaren_zet_audio,
             bewaren::bestand_bewaar,
             bewaren::bestand_bewaar_beslis,
-            bewaren::bestand_zet_label,
+            bewaren::bestand_zet_naamvelden,
+            bewaren::bestand_naamvoorbeeld,
+            klanten::klanten_lijst,
+            klanten::klanten_verwijder,
             bewaren::bestand_open_opgeslagen,
             bewaren::bestand_toon_opgeslagen,
             bewaren::bewaren_open_map,
@@ -497,15 +511,21 @@ pub fn run() -> tauri::Result<()> {
             vergadering::vergadering_voeg_sprekers_samen,
             vergadering::vergadering_opslaan,
             vergadering::vergadering_kopieer,
+            vergadering::vergadering_zet_labels,
             vergadering::vergadering_audio_bewaren,
             vergadering::vergadering_sluiten,
             vergadering::vergadering_verslag_openen,
             vergadering::vergadering_verslag_wissen,
-            vergadering::vergadering_verslag_naam,
+            vergadering::vergadering_verslag_toon_opgeslagen,
+            systeemvak::systeemvak_zet_labels,
+            vergadering::vergadering_verslag_naamvelden,
+            vergadering::vergadering_naamvoorbeeld,
+            vergadering::vergadering_zet_soortwoorden,
             vergadering::vergadering_opnieuw_keuzes,
             vergadering::vergadering_opnieuw_start,
             vergadering::vergadering_opnieuw_stoppen,
             vergadering::vergadering_vorige_terugzetten,
+            vergadering::vergadering_stap_terug,
             vergadering::notulen_maken::vergadering_notulen_maken,
             vergadering::notulen_maken::vergadering_notulen_stoppen,
             vergadering::notulen_maken::vergadering_notulen_punt_aanpassen,

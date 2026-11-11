@@ -31,7 +31,7 @@ pub(crate) struct TaalmodelOpties {
 
 #[derive(Subcommand)]
 enum Actie {
-    /// Zet, controleert of wist de sleutel in de sleutelbos van deze computer.
+    /// Zet, controleert of verwijdert de sleutel in de sleutelbos van deze computer.
     Sleutel {
         #[command(subcommand)]
         actie: SleutelActie,
@@ -130,7 +130,7 @@ fn sleutel_actie(actie: &SleutelActie) -> Result<ExitCode, Melding> {
         SleutelActie::Wis { aanbieder } => {
             let voorinstelling = aanbieder.voorinstelling();
             let tekst = if sleutel::wis(voorinstelling)? {
-                "De sleutel is gewist."
+                "De sleutel is verwijderd."
             } else {
                 "Er stond geen sleutel."
             };

@@ -80,8 +80,9 @@
 </section>
 
 <section id="notulen" aria-labelledby="sectie-notulen">
-  <h2 id="sectie-notulen" class={sectieKop}>{t().groepNotulen}</h2>
-  <div class="{vlak} divide-y divide-lijn">
+  <h2 id="sectie-notulen" class="{sectieKop} mb-0.5">{t().groepNotulen}</h2>
+  <p class="m-0 mb-2 text-klein text-gedempt">{t().groepNotulenUitleg}</p>
+  <div class={vlak}>
     <InstellingNotulen />
   </div>
 </section>

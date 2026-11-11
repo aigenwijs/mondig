@@ -266,7 +266,7 @@ pub(crate) async fn bewaak_kies_map(app: AppHandle) -> Result<BewaakInstellingen
         ) == Some(Probleem::ZelfdeAlsOpslag)
         {
             return Err(Foutmelding::nieuw(
-                "Dit is de map waarin Mondig je transcripten bewaart. Kies een andere map om in de gaten te houden.",
+                "Dit is de map waarin Mondig je uitschriften bewaart. Kies een andere map om in de gaten te houden.",
                 Vervolg::Geen,
             ));
         }

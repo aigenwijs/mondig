@@ -22,6 +22,7 @@ pub mod filter;
 pub mod gesprek;
 #[cfg(feature = "download")]
 pub mod hardware;
+pub mod klanten;
 pub mod logboek;
 pub mod meten;
 pub mod model;

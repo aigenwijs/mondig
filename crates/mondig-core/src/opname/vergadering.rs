@@ -964,7 +964,7 @@ fn wis_met(map: &Path, toch: bool) -> Result<(), Foutmelding> {
 
 fn niet_weg() -> Foutmelding {
     Foutmelding::nieuw(
-        "Mondig kan de opname niet weggooien. Is een bestand ervan nog open?",
+        "Mondig kan de opname niet verwijderen. Is een bestand ervan nog open?",
         Vervolg::OpnieuwProberen,
     )
 }

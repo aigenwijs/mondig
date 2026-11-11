@@ -292,7 +292,7 @@
 
     <section aria-labelledby="notulen-samenvatting">
       <h3 id="notulen-samenvatting" class={kopKlasse}>{t().notulenSamenvatting}</h3>
-      <p class="m-0 whitespace-pre-line">{info.samenvatting}</p>
+      <p class="m-0 whitespace-pre-line">{info.samenvattingGetoond}</p>
       <p class="m-0 mt-1 text-klein text-dim">{t().notulenSamenvattingNota}</p>
     </section>
 
@@ -329,7 +329,7 @@
                   <span
                     class="min-w-0 flex-[1_1_16rem] pt-1"
                     id={punt('besluit', besluit.id)}
-                    tabindex="-1">{besluit.tekst}</span
+                    tabindex="-1">{besluit.tekstGetoond}</span
                   >
                   {@render bron(besluit.bron)}
                   {@render knoppen('besluit', besluit.id, () => {
@@ -386,7 +386,7 @@
                   <span
                     class="min-w-0 flex-[1_1_16rem] pt-1"
                     id={punt('actiepunt', actie.id)}
-                    tabindex="-1">{actie.wat}</span
+                    tabindex="-1">{actie.watGetoond}</span
                   >
                   {@render bron(actie.bron)}
                   {@render knoppen('actiepunt', actie.id, () => {
@@ -400,7 +400,7 @@
                   {#if actie.wie.trim() === ''}
                     <span class="text-dim">{t().notulenNietGenoemd}</span>
                   {:else}
-                    <span class="text-tekst">{actie.wie}</span>
+                    <span class="text-tekst">{actie.wieGetoond}</span>
                   {/if}
                   {#if actie.wieNietTeruggevonden}
                     <span class={markering}
@@ -413,7 +413,7 @@
                   {#if actie.wanneer.trim() === ''}
                     <span class="text-dim">{t().notulenNietGenoemd}</span>
                   {:else}
-                    <span class="text-tekst">{actie.wanneer}</span>
+                    <span class="text-tekst">{actie.wanneerGetoond}</span>
                   {/if}
                   {#if actie.wanneerNietTeruggevonden}
                     <span class={markering}
@@ -463,7 +463,7 @@
           {klaar === 'niet-ingesteld' ? t().notulenNietIngesteld : t().notulenOnvolledig}
         </p>
         <Button variant="tweede" href={`${resolve('/instellingen')}#notulen`}
-          >{t().notulenNaarInstellingen}</Button
+          >{t().notulenInstellen}</Button
         >
       {/if}
     </div>

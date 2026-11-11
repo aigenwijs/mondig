@@ -106,24 +106,48 @@ describe('meervoud en rollen in de teksten', () => {
 });
 
 describe('aantalSprekers', () => {
+  type B = Parameters<typeof aantalSprekers>[0][number];
+  const b = (kant: B['kant'], sprekernummer: number | null, naam: string | null = null): B => ({
+    kant,
+    sprekernummer,
+    spreker:
+      naam ??
+      (sprekernummer !== null
+        ? `Spreker ${String(sprekernummer)}`
+        : kant === 'jij'
+          ? 'Jij'
+          : 'Anderen'),
+    eigenNaam: naam !== null
+  });
+
   it('telt alleen herkende sprekers, met Jij erbij', () => {
     expect(
-      aantalSprekers([
-        { kant: 'jij', sprekernummer: null },
-        { kant: 'anderen', sprekernummer: 1 },
-        { kant: 'anderen', sprekernummer: 2 },
-        { kant: 'anderen', sprekernummer: 1 }
-      ])
+      aantalSprekers([b('jij', null), b('anderen', 1), b('anderen', 2), b('anderen', 1)])
     ).toBe(3);
   });
 
-  it('geeft null zolang de sprekers niet herkend zijn', () => {
+  it('telt een kaal Anderen niet, maar wel een eigen naam zonder nummer', () => {
+    expect(
+      aantalSprekers([b('jij', null), b('anderen', 1), b('anderen', null), b('anderen', 2)])
+    ).toBe(3);
+    // Spreker 1, Spreker 2, Jij en regels zonder nummer die Jan heten: vier namen.
     expect(
       aantalSprekers([
-        { kant: 'jij', sprekernummer: null },
-        { kant: 'anderen', sprekernummer: null }
+        b('jij', null),
+        b('anderen', 1),
+        b('anderen', 2),
+        b('anderen', null, 'Jan'),
+        b('anderen', null, 'jan')
       ])
-    ).toBeNull();
+    ).toBe(4);
+    // Twee sprekers met dezelfde naam zijn één naam.
+    expect(aantalSprekers([b('anderen', 1, 'Noor'), b('anderen', 2, 'Noor')])).toBe(1);
+    // In de ruimte net zo: de microfoon zonder nummer is geen extra persoon.
+    expect(aantalSprekers([b('jij', 1), b('jij', null), b('jij', 2)])).toBe(2);
+  });
+
+  it('geeft null zolang de sprekers niet herkend zijn', () => {
+    expect(aantalSprekers([b('jij', null), b('anderen', null)])).toBeNull();
   });
 });
 

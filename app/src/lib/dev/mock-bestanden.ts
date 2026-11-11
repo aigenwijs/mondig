@@ -16,6 +16,7 @@
 //               bestanden uit die map
 //   bewaarfout: opslaan mislukt met "Mondig mag niet schrijven in deze map." (4-C)
 //   geenaudio:  het bronbestand is weg: de regels hebben geen afspeelknop (V-1)
+//   geenklanten, klantwisfout: de klantnamen, zie mock-naam.ts (UI-E)
 // "Bestanden kiezen" voegt twee bestanden toe die in een paar seconden klaar zijn.
 // Bewaren (4-C): de schijf is een lijst namen in het geheugen; "Andere map kiezen" en "Opslaan
 // op een andere plek" kiezen altijd D:\Archief\Zaken.
@@ -34,6 +35,15 @@ import type {
 } from '../bewaren';
 import type { Foutmelding, Gebeurtenis, Toestand } from '../taak';
 import { maakTestWav } from './mock-audio';
+import {
+  mockEigenWaarde,
+  mockNaamVoor,
+  mockStandaardDatum,
+  naamstand,
+  onthoudKlant,
+  resetNaamstand,
+  tekstUit
+} from './mock-naam';
 import {
   mockMarkeringen,
   mockPersoonStand,
@@ -88,6 +98,7 @@ export function maakBestandenMock(
   volgendId: () => number
 ): (cmd: string, args: InvokeArgs | undefined) => unknown {
   const lijst: BestandInfo[] = [];
+  const ns = resetNaamstand(opties);
   // De regels van het transcript; een verbetering past ze hier aan, zoals Rust dat doet.
   const tekstregels = structuredClone(opties.has('sprekers') ? SPREKER_REGELS : REGELS);
   // De markeringen van persoonsgegevens (V-2) van het transcript dat open is.
@@ -105,7 +116,7 @@ export function maakBestandenMock(
   /** De stand met een nieuw volgnummer, zoals Rust die na elke wijziging stuurt. */
   const stand = (): BestandenStand => {
     versie += 1;
-    return { versie, lijst: structuredClone(lijst), fout };
+    return { versie, lijst: structuredClone(lijst), fout, nietGepakt: false };
   };
   const meldStand = (): void => {
     void emit('bestanden-gewijzigd', stand());
@@ -199,7 +210,8 @@ export function maakBestandenMock(
       : undefined;
   const taakUit = (args: InvokeArgs | undefined): number => Number(argUit(args, 'taak'));
 
-  // Bewaren (4-C): de instellingen, de "schijf" en per transcript het label en de bestanden.
+  // Bewaren (4-C): de instellingen, de "schijf" en per transcript de velden van de naam en de
+  // bestanden. De bouwstenen, het formaat en de klantnamen staan in mock-naam.ts.
   const standaardMap: MapInfo = {
     pad: 'C:\\Users\\Jan\\Documents\\Mondig',
     inDocumenten: 'Mondig'
@@ -207,47 +219,33 @@ export function maakBestandenMock(
   const andereMap: MapInfo = { pad: 'D:\\Archief\\Zaken', inDocumenten: null };
   const instellingen = {
     map: standaardMap,
-    bouwstenen: ['datum', 'naam'] as Bouwsteen[],
-    formaat: 'docx' as Formaat,
+    get bouwstenen(): Bouwsteen[] {
+      return ns.bouwstenen;
+    },
+    set bouwstenen(waarde: Bouwsteen[]) {
+      ns.bouwstenen = waarde;
+    },
+    get formaat(): Formaat {
+      return ns.formaat;
+    },
+    set formaat(waarde: Formaat) {
+      ns.formaat = waarde;
+    },
     tijden: true,
     automatisch: opties.has('automatisch'),
     audio: opties.has('audionaast')
   };
   const schijf = new Set<string>();
-  const labels = new Map<number, string>();
+  // Per transcript wat de gebruiker invulde; `null` is "nooit aangeraakt" (de standaard geldt).
+  const velden = new Map<
+    number,
+    { klant: string; onderwerp: string | null; datum: string | null }
+  >();
   const opgeslagen = new Map<number, { naam: string; map: MapInfo }[]>();
   let vraag: { id: number; taak: number; formaat: Formaat; map: MapInfo; naam: string } | null =
     null;
   const KLAAR_OP = Date.parse('2026-10-30T14:00:00');
 
-  /** Een eenvoudige versie van de naam uit Rust (zonder alle regels voor Windows). */
-  const naamVoor = (
-    bouwstenen: Bouwsteen[],
-    naam: string,
-    label: string,
-    moment: Date,
-    formaat: Formaat
-  ): string => {
-    const twee = (n: number): string => String(n).padStart(2, '0');
-    const delen = bouwstenen
-      .map((steen) => {
-        switch (steen) {
-          case 'datum':
-            return `${String(moment.getFullYear())}-${twee(moment.getMonth() + 1)}-${twee(moment.getDate())}`;
-          case 'naam':
-            return naam;
-          case 'label':
-            return label;
-          case 'tijd':
-            return `${twee(moment.getHours())}.${twee(moment.getMinutes())}`;
-          case 'model':
-            return 'Parakeet Ultra';
-        }
-      })
-      .map((deel) => deel.replace(/[<>:"/\\|?*]/g, '-').trim())
-      .filter((deel) => deel !== '');
-    return `${delen.join(' ') || naam || 'Transcript'}.${formaat}`;
-  };
   const metNummer = (naam: string, n: number): string =>
     naam.replace(/(\.[^.]+)$/, ` (${String(n)})$1`);
   const vrij = (map: MapInfo, naam: string): string => {
@@ -258,16 +256,46 @@ export function maakBestandenMock(
   const stand_instellingen = (): BewaarInstellingen => ({
     ...instellingen,
     bouwstenen: [...instellingen.bouwstenen],
-    voorbeeld: naamVoor(
+    voorbeeld: mockNaamVoor(
       instellingen.bouwstenen,
-      'Interview wethouder',
-      'Z-2026-1043',
-      new Date(),
+      {
+        datum: null,
+        klant: 'Gemeente Vlaardingen',
+        onderwerp: 'Intake',
+        terugval: 'Intake',
+        moment: new Date()
+      },
       instellingen.formaat
     )
   });
   const titelVan = (taak: number): string =>
-    (lijst.find((b) => b.taak === taak)?.naam ?? 'Transcript').replace(/\.[^.]+$/, '');
+    (lijst.find((b) => b.taak === taak)?.naam ?? 'Uitschrift').replace(/\.[^.]+$/, '');
+  /** De velden zoals Rust ze bewaart: de standaard van een veld dat de gebruiker niet aanraakte. */
+  const veldenVan = (taak: number): { klant: string; onderwerp: string; datum: string } => {
+    const v = velden.get(taak);
+    return {
+      klant: v?.klant ?? '',
+      onderwerp: v?.onderwerp ?? titelVan(taak),
+      datum: v?.datum ?? mockStandaardDatum(new Date(KLAAR_OP))
+    };
+  };
+  /** De naam van het bestand bij deze velden, voor opslaan en voor het voorbeeld. */
+  const naamBij = (
+    taak: number,
+    v: { klant: string; onderwerp: string; datum: string },
+    formaat: Formaat
+  ): string =>
+    mockNaamVoor(
+      instellingen.bouwstenen,
+      {
+        datum: mockEigenWaarde(v.datum, mockStandaardDatum(new Date(KLAAR_OP))),
+        klant: v.klant,
+        onderwerp: v.onderwerp,
+        terugval: titelVan(taak),
+        moment: new Date(KLAAR_OP)
+      },
+      formaat
+    );
   if (opties.has('bestaat')) {
     schijf.add(`${standaardMap.pad}\\2026-10-30 Interview wethouder.docx`);
   }
@@ -275,6 +303,8 @@ export function maakBestandenMock(
   /** Schrijft op de "schijf" en onthoudt het bij het transcript. */
   const schrijf = (taak: number, map: MapInfo, naam: string): BewaarUitslag => {
     schijf.add(`${map.pad}\\${naam}`);
+    // De klant komt in de suggesties, nu het opslaan is gelukt.
+    onthoudKlant(velden.get(taak)?.klant ?? '');
     const lijstNamen = (opgeslagen.get(taak) ?? []).filter(
       (b) => b.naam !== naam || b.map.pad !== map.pad
     );
@@ -294,13 +324,7 @@ export function maakBestandenMock(
         vervolg: 'opnieuw_proberen'
       };
     }
-    const naam = naamVoor(
-      instellingen.bouwstenen,
-      titelVan(taak),
-      labels.get(taak) ?? '',
-      new Date(KLAAR_OP),
-      formaat
-    );
+    const naam = naamBij(taak, veldenVan(taak), formaat);
     if (schijf.has(`${map.pad}\\${naam}`)) {
       if (
         instellingen.automatisch &&
@@ -343,7 +367,7 @@ export function maakBestandenMock(
         ? 'Het bestand lijkt afgebroken; de tekst stopt bij 00:26.'
         : null,
       regels: regelsMet(),
-      label: labels.get(item.taak) ?? '',
+      ...veldenVan(item.taak),
       audioAanwezig: !opties.has('geenaudio'),
       persoon: mockPersoonStand(persoon)
     } satisfies BestandTranscript;
@@ -428,11 +452,35 @@ export function maakBestandenMock(
       case 'bewaren_zet_audio':
         instellingen.audio = Boolean(argUit(args, 'aan'));
         return stand_instellingen();
-      case 'bestand_zet_label':
-        {
-          const label = argUit(args, 'label');
-          labels.set(taakUit(args), typeof label === 'string' ? label : '');
+      case 'bestand_zet_naamvelden': {
+        const taak = taakUit(args);
+        const tekst = (sleutel: string): string => tekstUit(args, sleutel);
+        velden.set(taak, {
+          klant: tekst('klant').trim().replace(/\s+/g, ' '),
+          onderwerp: mockEigenWaarde(tekst('onderwerp'), titelVan(taak)),
+          datum: mockEigenWaarde(tekst('datum'), mockStandaardDatum(new Date(KLAAR_OP)))
+        });
+        return null;
+      }
+      case 'bestand_naamvoorbeeld': {
+        const taak = taakUit(args);
+        const tekst = (sleutel: string): string => tekstUit(args, sleutel);
+        return naamBij(
+          taak,
+          { klant: tekst('klant'), onderwerp: tekst('onderwerp'), datum: tekst('datum') },
+          instellingen.formaat
+        );
+      }
+      case 'klanten_lijst':
+        return [...naamstand().klanten];
+      case 'klanten_verwijder':
+        if (naamstand().klantWisFout) {
+          throw {
+            melding: 'Mondig kon de klantnamen niet verwijderen. Probeer het opnieuw.',
+            vervolg: 'opnieuw_proberen'
+          } satisfies Foutmelding;
         }
+        naamstand().klanten = [];
         return null;
       case 'bestand_bewaar': {
         const formaat = (argUit(args, 'formaat') as Formaat | null) ?? instellingen.formaat;
@@ -456,8 +504,21 @@ export function maakBestandenMock(
       case 'bestand_opgeslagen_lijst':
         return opgeslagen.get(taakUit(args)) ?? [];
       case 'bestand_open_opgeslagen':
-      case 'bestand_toon_opgeslagen':
+      case 'bestand_toon_opgeslagen': {
+        // Zoals Rust: alleen als Mondig van dit bestand iets opsloeg (in de mock staat dat in het geheugen).
+        const namen = opgeslagen.get(taakUit(args)) ?? [];
+        const laatste = namen[namen.length - 1];
+        if (!laatste) {
+          throw {
+            melding: 'Het opgeslagen bestand staat niet meer op die plek.',
+            vervolg: 'geen'
+          } satisfies Foutmelding;
+        }
+        console.info(
+          `[mock] ${cmd === 'bestand_open_opgeslagen' ? 'geopend' : 'in de Verkenner getoond'}: ${laatste.naam}`
+        );
         return null;
+      }
       case 'bestand_verwijder': {
         const taak = taakUit(args);
         const verwijderd = (opgeslagen.get(taak) ?? []).map((b) => b.naam);
@@ -486,7 +547,7 @@ export function maakBestandenMock(
         const regel = tekstregels.find((r) => r.index === Number(argUit(args, 'index')));
         if (!regel) {
           throw {
-            melding: 'Deze regel staat niet (meer) in het transcript.',
+            melding: 'Deze regel staat niet (meer) in het uitschrift.',
             vervolg: 'geen'
           } satisfies Foutmelding;
         }

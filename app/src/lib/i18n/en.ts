@@ -55,7 +55,7 @@ export const en = {
     }).format(seconden);
     return `Done in ${tekst} seconds`;
   },
-  lokaalVerwerkt: 'Processed locally',
+  lokaalVerwerkt: 'Processed on this computer',
   uitgeschrevenMet: (naam: string): string => `Written out with ${naam}`,
   tekstGekopieerd: 'The text has been copied.',
   geenGeluid: 'No sound heard.',
@@ -65,6 +65,8 @@ export const en = {
   sneltoetsUitleg: (toets: string): string => `Hold ${toets} and speak. A short tap works too.`,
   sneltoetsTerugval: (gewenst: string, actief: string): string =>
     `${gewenst} is already used by another program. Mondig now uses ${actief}.`,
+  sneltoetsOvergezet: (gewenst: string, actief: string): string =>
+    `${gewenst} cannot be a shortcut on this computer. Mondig now uses ${actief}. You can choose another key with Change.`,
   sneltoetsGeen: (toetsen: string): string =>
     `Mondig could not set up a shortcut: ${toetsen} are already used by other programs. Close one of them and restart Mondig, or choose your own key under Settings, Advanced.`,
   dictaatLuistert: 'Mondig is listening…',
@@ -84,15 +86,33 @@ export const en = {
   plakVorigKlembordKwijt: 'Your previous clipboard could not be saved.',
   plakVorigKlembordOnvolledig: 'Your previous clipboard could not be saved completely.',
   plakOpKlembord: 'The text is on the clipboard. Paste it with Ctrl+V.',
+  plakGetypt: 'The text is where you were typing.',
+  plakTypenOnderbroken:
+    'Mondig stopped typing halfway, because you switched windows, held down a key or moved into a password field. The beginning is already there; the rest, which was not typed yet, is on the clipboard, so you can paste it yourself.',
+  plakGeenTekstveld:
+    'Mondig found no text field to type into. The text is on the clipboard, so you can paste it yourself; it replaced what you copied before.',
+  plakTypenMislukt:
+    'Pasting and typing did not work in this window. The text is on the clipboard, so you can paste it yourself.',
   plakBeheerrechten:
-    'Mondig cannot paste into this window, because it runs as administrator. Copy the text and paste it yourself.',
+    'Mondig cannot paste or type into this window, because it runs as administrator. The text is on the clipboard: paste it with Ctrl+V. It replaced what you copied before.',
   plakToetsen:
     'Mondig did not paste, because a key was still held down. Copy the text and paste it yourself.',
   plakGeenVenster: 'There was no window to paste into. Copy the text and paste it yourself.',
   plakNietGelezen:
     "Mondig is not sure the text was pasted. If it isn't there, copy it and paste it yourself.",
   plakMislukt: 'Pasting did not work. Copy the text and paste it yourself.',
-  plakNietGeplakt: 'Mondig could not paste into this window. The text is ready under Copy.',
+  plakNietGeplakt:
+    'Mondig could not paste or type into this window, perhaps because it runs as administrator. The text is on the clipboard, so you can paste it yourself; it replaced what you copied before.',
+  plakGeenToegang:
+    'Mondig may not paste yet, because macOS first asks for your permission. The text is on the clipboard: paste it with ⌘V.',
+  plakWachtwoordveld:
+    'Mondig could not paste, probably because secure input was on (for example in a password field). The text is on the clipboard: paste it with ⌘V.',
+  toegankelijkheidOpenen: 'Open Accessibility',
+  toegangKop: 'Allow Mondig to paste',
+  toegangTekst:
+    'To paste the text where you are typing, Mondig needs permission to send keystrokes. Turn Mondig on in System Settings, under Privacy & Security, Accessibility. Until then, Mondig puts the text on the clipboard.',
+  toegangOpnieuw:
+    'Is Mondig already on there and still not pasting? That happens after a new version of Mondig. Remove Mondig from the list with the minus button and add it again with the plus button.',
   modelAanvullenKop: 'The speech model is not complete yet',
   modelAanvullenTekst: (grootte: string): string =>
     `${grootte} still to download. After that, Mondig is ready to dictate.`,
@@ -125,7 +145,7 @@ export const en = {
   microfoonWeg: 'Your chosen microphone is not connected. Mondig now uses the Windows default.',
   sneltoetsKop: 'Shortcut',
   sneltoetsWijzigen: 'Change',
-  sneltoetsHoudTik: 'Hold: record until you let go. Tap briefly: record until you tap again.',
+  sneltoetsHoudTik: 'Hold: dictate until you let go. Tap briefly: dictate until you tap again.',
   sneltoetsVang: 'Press the keys you want to use…',
   sneltoetsVangHulp:
     'What you press appears here; letting go saves it. Esc stops without changing.',
@@ -138,14 +158,22 @@ export const en = {
   sneltoetsBezetTekst: (toets: string): string =>
     `${toets} is used by another program. Choose a different combination.`,
   sneltoetsFoutWindows: 'Combinations with the Windows key are not possible. Try Ctrl or Alt.',
-  sneltoetsFoutLosseToets:
-    'You need this key for typing or navigating. Choose Insert, Scroll Lock or a function key, or add Ctrl or Alt.',
-  sneltoetsFoutShiftAlleen: 'Shift alone is not enough. Add Ctrl or Alt.',
-  sneltoetsFoutWerktNiet: (toets: string): string =>
-    toets.includes('+')
+  sneltoetsFoutLosseToets: (mac: boolean): string =>
+    mac
+      ? 'You need this key for typing or navigating. Choose a function key, or add Control, Option or Command.'
+      : 'You need this key for typing or navigating. Choose Insert, Scroll Lock or a function key, or add Ctrl or Alt.',
+  sneltoetsFoutShiftAlleen: (mac: boolean): string =>
+    mac
+      ? 'Shift alone is not enough. Add Control, Option or Command.'
+      : 'Shift alone is not enough. Add Ctrl or Alt.',
+  sneltoetsFoutWerktNiet: (toets: string, mac: boolean): string => {
+    if (mac) return 'Pause does not work as a shortcut. Choose another key.';
+    return toets.includes('+')
       ? 'Pause does not work as a shortcut, not even with Ctrl or Alt. Choose another key.'
-      : 'Pause does not work as a shortcut: Windows does not report when you let go. Choose another key.',
-  sneltoetsFoutHoofdtoets: 'Also press a regular key, for example Ctrl+Space or F9.',
+      : 'Pause does not work as a shortcut: Windows does not report when you let go. Choose another key.';
+  },
+  sneltoetsFoutHoofdtoets: (voorbeeld: string): string =>
+    `Also press a regular key, for example ${voorbeeld} or F9.`,
   sneltoetsFoutMeerdere: 'Use only one regular key.',
   sneltoetsFoutOnbekend: 'This key cannot be a shortcut. Choose another.',
   sneltoetsFoutGereserveerd: 'You need this combination in other programs. Choose another.',
@@ -355,20 +383,28 @@ export const en = {
   opgeslagen: 'Saved.',
 
   // Dictation on other screens
-  stripVerwerkt: 'Mondig is transcribing…',
-  stripKlaar: 'Done, the text is on the home screen',
-  stripNaarStart: 'Go to the home screen',
+  stripPlakprobleem: 'Pasting did not work. Your text is waiting on Dictate.',
+  stripNaarStart: 'Go to Dictate',
   annulerenMetEsc: 'Cancel (Esc)',
 
   // Sidebar and start screen (ADR 0014)
   hoofdmenu: 'Main menu',
   menuBestanden: 'Files',
   menuVergadering: 'Record',
-  lokaalRegel: 'Everything stays on this PC. Only downloading a model goes over the internet.',
+  lokaalRegel:
+    'Everything stays on this computer. Only downloading a model goes over the internet.',
   dicterenRustUitleg:
     'Hold and speak, or tap briefly to start and stop. The text appears where you type.',
   dicterenGeenToets: 'Once there is a shortcut, you can dictate with it in any program.',
   pilStoppen: 'Stop and transcribe',
+  // The system tray menu (Rust builds it; the interface passes the texts).
+  systeemvakOpnameLoopt: 'Recording',
+  systeemvakStartenEerstAfmaken: 'Start recording (finish the report first)',
+  systeemvakKopieer: 'Copy last dictation',
+  systeemvakAfsluiten: 'Quit',
+  systeemvakTipOnline: 'Mondig is recording a meeting ({tijd})',
+  systeemvakTipRuimte: 'Mondig is recording an in-room meeting ({tijd})',
+  systeemvakTipAlleen: 'Mondig is recording a note ({tijd})',
   pilLokaal: 'Local',
   pilUitschrijven: 'Transcribing…',
   pilGeplakt: 'Pasted',
@@ -379,10 +415,15 @@ export const en = {
   pilGeenTekst: 'No text recognised',
   pilGeenGeluid: 'No sound heard',
   pilVerdacht: 'Hardly any speech heard, check the text',
-  pilRest: (seconden: number): string => `${String(seconden)} s left, then dictation stops`,
+  pilRest: (seconden: number): string =>
+    `${String(seconden)} ${seconden === 1 ? 'second' : 'seconds'} left, then dictation stops`,
   pilPlakMislukt: 'Pasting did not work in this window',
-  pilPlakBeheer: 'This window runs as administrator, paste the text yourself',
+  pilPlakBeheer: 'This window runs as administrator, the text is on the clipboard',
+  pilTypenOnderbroken: 'Stopped typing, the rest is on the clipboard',
+  pilGeenTekstveld: 'No text field found, the text is on the clipboard',
+  pilTypenMislukt: 'Pasting and typing did not work, the text is on the clipboard',
   pilPlakOnzeker: 'Not sure the text was pasted',
+  pilPlakGeenToegang: 'Mondig may not paste yet, the text is on the clipboard',
   pilGekopieerd: 'Copied, paste with Ctrl+V',
   plakInMondig: 'The text is below, because Mondig was in front when it was ready.',
   pilInMondig: 'The text is in Mondig',
@@ -467,9 +508,11 @@ export const en = {
     'A conversation, a Teams recording, a voice message. Several at once is fine.',
   bestandenLoslaten: 'Release, and Mondig starts',
   bestandenLoslatenUitleg: 'They are transcribed on this computer, one after the other.',
+  bestandenNietGepakt:
+    "Mondig couldn't pick up this file. Drag it to the desktop first, then drag it here.",
   bestandenKiezen: 'Choose files',
   bestandenMapOpenen: 'Open folder',
-  bestandenUitschriftenOpenen: 'Open transcripts',
+  bestandenUitschriftenOpenen: 'Open folder',
   bestandenKomtIn: (map: string): string => `The transcript goes to ${map}.`,
   bestandenOpslaanIn: (map: string): string => `Saving goes to ${map}.`,
   bestandenMeerToevoegen: 'Add more',
@@ -491,8 +534,13 @@ export const en = {
   bestandAnnuleren: (naam: string): string => `Cancel ${naam}`,
   bestandUitRijKort: 'Remove from queue',
   bestandUitRij: (naam: string): string => `Remove ${naam} from the queue`,
-  bestandWeghalenKort: 'Remove',
-  bestandWeghalen: (naam: string): string => `Remove ${naam}`,
+  bestandWeghalenKort: 'Delete from the list',
+  bestandWeghalenKortOpgeslagen: 'Delete from the list. The saved file stays.',
+  bestandWeghalenVraag: 'Delete transcript from the list?',
+  bestandWeghalenOnopgeslagen:
+    'This transcript has not been saved yet. If you delete it, the text is gone. Your recording stays.',
+  bestandOpgeslagenBlijft: 'Deleted from the list. The saved file stays in your folder.',
+  bestandWeghalen: (naam: string): string => `Delete ${naam} from the list`,
   bestandProcentSchermlezer: (naam: string, p: number): string => `${naam}: ${String(p)} percent`,
   bestandKlaarSchermlezer: (naam: string): string => `${naam} has been transcribed.`,
   bestandFoutSchermlezer: (naam: string, melding: string): string => `${naam}: ${melding}`,
@@ -506,18 +554,17 @@ export const en = {
   formaatSrt: 'Subtitles',
   formaatVtt: 'Subtitles for the web',
   bouwsteenDatum: 'Date',
-  bouwsteenNaam: 'Name of the recording',
-  bouwsteenLabel: 'Label',
+  bouwsteenKlant: 'Client',
+  bouwsteenOnderwerp: 'Subject',
   bouwsteenTijd: 'Time',
   bouwsteenModel: 'Model',
   mapDocumenten: 'Documents',
   mapGeen: 'No folder chosen yet',
-  opslaanInKop: 'Folder',
+  opslaanInKop: 'Folder for transcripts',
   opslaanInHulp: 'For transcripts and reports.',
   mapKiezenAria: (map: string): string => `Save in ${map}. Choose another folder`,
   bestandsnaamKop: 'File name',
-  bestandsnaamHulp:
-    'Turn parts on or off. Drag them, or use Alt + left or right arrow, to set the order.',
+  bestandsnaamHulp: 'Drag the blocks, or use Alt + arrow keys. Empty blocks are left out.',
   bestandsnaamPlek: (naam: string, plek: number, totaal: number): string =>
     `${naam} is now at position ${String(plek)} of ${String(totaal)}`,
   bestandsnaamVoorbeeld: (naam: string): string => `Example: ${naam}`,
@@ -532,7 +579,7 @@ export const en = {
   bewaakAanKop: 'Transcribe new recordings automatically',
   bewaakAanHulp:
     'Mondig watches this folder and transcribes new recordings, as long as Mondig is running. The recording itself stays as it was. Whatever is in the folder now stays untouched.',
-  bewaakMapKop: 'Folder',
+  bewaakMapKop: 'Folder to watch',
   bewaakMapHulp: 'For example the folder where Teams or OneDrive puts your recordings.',
   bewaakMapGeen: 'Choose a folder',
   bewaakMapKiezenAria: (map: string): string => `Watched folder: ${map}. Choose another folder`,
@@ -547,7 +594,7 @@ export const en = {
   bewaakProbleemMapOntbreekt:
     'This folder cannot be found. Mondig watches it again as soon as it is back.',
   bewaakProbleemZelfdeAlsOpslag:
-    'This is the folder where Mondig keeps your transcripts. Choose another folder to watch.',
+    'This is the folder where Mondig saves your transcripts. Choose another folder to watch.',
   bewaakKiezenEerst: 'Choose a folder to watch first.',
   bestandUitMap: 'from the watched folder',
   bestandOvergeslagen: 'skipped, a transcript already exists',
@@ -562,21 +609,38 @@ export const en = {
   opslaanMenu: 'Other format or place',
   opslaanAnderePlek: 'Save somewhere else…',
   opslaanBezig: 'Saving…',
-  labelKop: 'Label',
-  labelHulp: 'Goes into the file name and the document details.',
-  labelVoorbeeld: 'For example a case number',
+  // The "File name" card (UI-E): above the transcript and in the report.
+  naamkaartKop: 'File name',
+  naamveldDatum: 'Date',
+  naamveldKlant: 'Client',
+  naamveldOnderwerp: 'Subject',
+  naamkaartWordt: 'Will be',
+  klantSuggestiesLabel: 'Client suggestions',
+  klantSuggestiesAantal: (n: number): string =>
+    n === 1 ? '1 suggestion' : `${String(n)} suggestions`,
+  // Client names under Settings, Saving (UI-E)
+  klantnamenKop: 'Client names',
+  klantnamenHulp: 'Mondig remembers them as suggestions, only on this computer.',
+  klantnamenGeen: 'Mondig does not remember any client names yet.',
+  klantnamenAantal: (n: number): string =>
+    n === 1 ? '1 client name' : `${String(n)} client names`,
+  klantnamenVraag: (n: number): string =>
+    n === 1 ? 'Delete 1 client name?' : `Delete ${String(n)} client names?`,
+  klantnamenUitleg: 'Saved files and reports stay as they are.',
+  klantnamenVerwijderd: 'The client names are deleted.',
   opgeslagenKop: 'Saved',
   opgeslagenAlsIn: (naam: string, map: string): string => `as ${naam} in ${map}`,
   opgeslagenOpenen: 'Open',
-  opgeslagenMapTonen: 'Show folder',
+  toonInVerkenner: 'Show in Explorer',
+  toonInFinder: 'Show in Finder',
   bestaatAlKop: 'A file with this name already exists',
   opslaanAlsNummer: (nummer: string): string => `Save as ${nummer}`,
   vervangen: 'Replace',
   verwijderenKnop: 'Delete…',
   verwijderKop: 'Delete transcript?',
   verwijderMetBestanden: (namen: string): string =>
-    `Mondig removes the transcript and deletes the files it saved: ${namen}. This cannot be undone.`,
-  verwijderZonderBestanden: 'Mondig removes the transcript. No files were saved from it.',
+    `Mondig deletes the transcript and the files it saved: ${namen}. This cannot be undone.`,
+  verwijderZonderBestanden: 'Mondig deletes the transcript. No files were saved from it.',
   verwijderBevestig: 'Delete',
   bestandInMap: (naam: string, map: string): string => `${naam} in ${map}`,
   verwijderInGebruik: (namen: string): string =>
@@ -586,7 +650,7 @@ export const en = {
     aantal === 1
       ? 'Transcript and 1 file deleted.'
       : `Transcript and ${String(aantal)} files deleted.`,
-  verwijderdZonderBestanden: 'Transcript removed.',
+  verwijderdZonderBestanden: 'Transcript deleted.',
   verwijderGebleven: (namen: string): string =>
     `Kept, because changed or moved after saving: ${namen}.`,
   bestandOpgeslagenAls: (naam: string): string => `saved as ${naam}`,
@@ -599,12 +663,12 @@ export const en = {
   // Meeting (sprint 4b-C)
   sprekerJij: 'You',
   sprekerAnderen: 'Others',
-  vergaderSoortLabel: 'Type of recording',
-  vergaderOnline: 'Online',
-  vergaderOnlineUitleg: 'Teams, Zoom or Meet. Your voice and the others are recorded separately.',
+  vergaderSoortLabel: 'What are you recording?',
+  vergaderOnline: 'Online meeting',
+  vergaderOnlineUitleg: 'Teams, Zoom or Meet. Your voice and the others, separately.',
   vergaderRuimte: 'In the room',
-  vergaderRuimteUitleg: 'Everyone in one room, with the microphone of this computer.',
-  vergaderGeluidVan: 'Sound from',
+  vergaderRuimteUitleg: 'A conversation at a table or an interview, with one microphone.',
+  vergaderGeluidVan: 'Sound from the computer',
   vergaderApparatenFout: 'Mondig could not get the speakers. The default speaker is used.',
   vergaderTipOnline:
     'Wear headphones. Then what the others say does not end up twice in the report.',
@@ -624,10 +688,10 @@ export const en = {
   vergaderSysteemStil:
     'No sound has come in from the computer for a minute. Is the meeting playing through another device?',
   vergaderStopUitschrijven: 'Stop and write out',
-  vergaderWeggooienKop: 'Discard the recording?',
+  vergaderWeggooienKop: 'Delete the recording?',
   vergaderWeggooienTekst:
     'Mondig deletes the recording and everything recorded so far. You cannot undo this.',
-  vergaderWeggooienBevestig: 'Yes, discard',
+  vergaderWeggooienBevestig: 'Yes, delete',
   vergaderAfronden: 'Mondig is finishing the recording…',
   vergaderHerstellen: 'Mondig is recovering the recording…',
   vergaderUitschrijvenKop: 'Writing out…',
@@ -635,22 +699,20 @@ export const en = {
   vergaderUitschrijvenHulp:
     'You can keep using Mondig. The report appears here as soon as it is written out.',
   vergaderLater: 'Write out later',
-  vergaderLaterHulp: 'The recording is then kept until you write it out or discard it.',
-  vergaderingVan: (dag: string, tijd: string): string => `Meeting of ${dag}, ${tijd}`,
+  vergaderLaterHulp: (dagen: number | null): string =>
+    dagen === null
+      ? 'The recording is kept. Write it out within the retention period.'
+      : `The recording is kept for ${String(dagen)} ${dagen === 1 ? 'day' : 'days'}. Write it out within that time.`,
+  titelVergadering: 'Meeting',
   vergaderMinuten: (n: number): string => (n === 1 ? '1 minute' : `${String(n)} minutes`),
-  vergaderInDeRuimte: 'In-person meeting',
+  vergaderInDeRuimte: 'In the room',
   vergaderEchoMelding:
     'Part of what the others said also came in through your microphone. That double text was left out. With headphones the report comes out best.',
   vergaderMeldingSluiten: 'Close message',
   vergaderBeurtenLabel: 'The report',
   vergaderNaamAria: (naam: string): string => `${naam}, change name`,
   vergaderNaamGeven: (kant: string): string => `Name for ${kant}`,
-  vergaderNaamKop: 'Name',
   vergaderNaamVoorbeeld: 'For example Councillor De Vries',
-  vergaderNaamLeeg: (kant: string): string => `Leave the field empty to go back to ${kant}.`,
-  vergaderNaamBereikLabel: 'For which turns',
-  vergaderNaamBeurt: 'Only this turn',
-  vergaderNaamKant: (kant: string): string => `All turns of ${kant}`,
   vergaderSpreker: (nummer: number): string => `Speaker ${String(nummer)}`,
   vergaderNaamOpslaan: 'Save',
   vergaderNaamGegeven: (naam: string): string => `Name set: ${naam}.`,
@@ -658,11 +720,16 @@ export const en = {
   // Recognising speakers (4b-D, phase D-2)
   vergaderNaamSprekerKop: 'Name of this speaker',
   vergaderNaamSprekerHulp: (standaard: string): string =>
-    `Applies to all turns of this speaker. Leave the field empty to go back to ${standaard}.`,
+    `Applies to all turns of this speaker. If another speaker has the same name, they are merged. Leave the field empty to go back to ${standaard}.`,
   vergaderBeurtVanKop: 'This turn is by',
   vergaderBeurtVanAria: (naam: string): string => `Give this turn to ${naam}`,
   vergaderNieuweSpreker: 'New speaker',
   vergaderPlusSpreker: '+ Speaker',
+  vergaderSprekerAanwijzen: 'Assign speaker',
+  vergaderSprekerAanwijzenAria: (tijd: string): string =>
+    `Assign a speaker to the paragraph at ${tijd}`,
+  vergaderSprekerAanwijzenHulp:
+    'Choose who this paragraph belongs to, or make a new speaker. You can give a speaker a name afterwards.',
   vergaderSamenvoegenKop: 'Is this the same person?',
   vergaderSamenvoegenHulp: (naam: string): string =>
     `Merge ${naam} with another speaker. All turns of ${naam} then become that speaker's.`,
@@ -671,6 +738,13 @@ export const en = {
   vergaderNieuweSprekerGegeven: 'The turn now belongs to a new speaker.',
   vergaderSamengevoegd: (van: string, naar: string): string =>
     `${van} and ${naar} have been merged.`,
+  vergaderZijnNu: (namen: string[], naam: string): string => {
+    const laatste = namen.at(-1) ?? '';
+    const lijst = namen.length > 1 ? `${namen.slice(0, -1).join(', ')} and ${laatste}` : laatste;
+    return `${lijst} are now ${naam}.`;
+  },
+  vergaderOngedaanMaken: 'Undo',
+  vergaderOngedaanGemaakt: 'Undone.',
   vergaderSprekersHerkennen: 'Recognising speakers…',
   vergaderSprekersSchermlezer: 'Mondig is now recognising the speakers.',
   sprekersKop: 'Recognise speakers',
@@ -689,7 +763,7 @@ export const en = {
   sprekersOpslaanFout: 'The setting could not be saved.',
   vergaderAudioBezig: 'Saving the recording…',
   vergaderAudioBewaard: (naam: string): string => `Recording saved as ${naam}.`,
-  vergaderAudioBewarenMenu: 'Keep the recording as a sound file…',
+  vergaderAudioBewarenMenu: 'Save the recording as a sound file…',
   verslagSluiten: 'Close',
   verslagSluitenTitel: 'Back to Record. The report stays saved.',
   verslagNieuweOpname: 'New recording',
@@ -717,10 +791,12 @@ export const en = {
   dictatenKop: 'Your dictations',
   dictatenBewaard: (termijn: string): string => `Kept for ${termijn}`,
   dictatenTermijnNiet: "Don't keep",
+  dictatenTermijnLaatste10: 'Last 10',
   dictatenTermijn24u: '24 hours',
   dictatenTermijn7d: '7 days',
+  dictatenTermijn30d: '30 days',
   dictatenMenu: 'More options for your dictations',
-  dictatenHoeLang: 'How long to keep…',
+  dictatenTermijnGezet: (tekst: string): string => `Keeping dictations: ${tekst}`,
   dictatenAllesWissen: 'Delete all…',
   dictatenAllesWissenKop: 'Delete all dictations?',
   dictatenWisVraag: (aantal: number): string =>
@@ -729,6 +805,14 @@ export const en = {
       : `Your ${String(aantal)} saved dictations will be deleted.`,
   dictatenWisBevestig: 'Delete all',
   dictatenNietBewarenKop: 'Stop keeping dictations?',
+  dictatenKorterKop: 'Keep for a shorter time?',
+  dictatenKorterBevestig: 'Delete and keep for less time',
+  dictatenMenuBewaren: 'Keep dictations',
+  meerTonen: 'Show more',
+  lijstTelling: (getoond: number, totaal: number): string =>
+    `${String(getoond)} of ${String(totaal)}`,
+  dictatenMeerGetoond: (aantal: number): string =>
+    aantal === 1 ? '1 more dictation shown' : `${String(aantal)} more dictations shown`,
   dictatenNietBewarenBevestig: 'Delete and stop keeping',
   dictatenDagVandaag: 'Today',
   dictatenDagGisteren: 'Yesterday',
@@ -740,24 +824,27 @@ export const en = {
   dictatenLeegKop: 'What you dictate will appear here',
   dictatenLeegTekst: (termijn: string): string =>
     `Dictate in Word, Outlook or your browser. What you say stays here for ${termijn}, so you can find it if pasting did not work.`,
+  dictatenLeegTekstLaatste10:
+    'Dictate in Word, Outlook or your browser. Mondig keeps your ten newest dictations here, so you can find them if pasting did not work.',
   dictatenNietBewaard:
     'Mondig does not keep your dictations; this disappears when you close Mondig.',
   dictatenWijzigen: 'Change',
   dictatenBewarenKop: 'Keep dictations',
-  dictatenBewarenHulp: 'So you can find them on Dictate. Only on this computer.',
+  dictatenBewarenHulp:
+    'So you can find them on Dictate. Only on this computer. With Last 10, Mondig always keeps the ten newest, however old.',
 
   // Dictaten opschonen (ADR 0027): Instellingen, de tweede sneltoets, de pil en de geschiedenis
   opschonenKop: 'Clean up dictations',
   opschonenKeuzeUit: 'Off',
   opschonenKeuzeSneltoets: 'With its own shortcut',
   opschonenKeuzeElk: 'For every dictation',
-  opschonenUitleg: 'A language model turns your dictation into flowing sentences with punctuation.',
+  opschonenUitleg: 'An AI service turns your dictation into flowing sentences with punctuation.',
   opschonenUitlegNaar: (naam: string, label: string): string =>
-    `A language model turns your dictation into flowing sentences with punctuation. Your text goes to ${naam} (${label}). Names and other personal data are not replaced. The word-for-word text stays on this computer.`,
+    `An AI service turns your dictation into flowing sentences with punctuation. Your text goes to ${naam} (${label}). Names and other personal data are not replaced. The word-for-word text stays on this computer.`,
   opschonenUitlegLokaal:
-    'A language model turns your dictation into flowing sentences with punctuation. Your text stays on this computer (Local). Only quick with a good graphics card.',
-  opschonenGeenAanbieder: 'First choose a language model under Minutes.',
-  opschonenNaarNotulen: 'Go to Minutes',
+    'An AI service turns your dictation into flowing sentences with punctuation. Your text stays on this computer (Local). Only quick with a good graphics card.',
+  opschonenGeenAanbieder: 'First choose an AI service.',
+  opschonenNaarNotulen: 'Go to AI service',
   opschonenVraagTekst: (naam: string, label: string): string =>
     `Your dictations go to ${naam} (${label}) to be cleaned up. Names and other personal data are not replaced. The word-for-word text stays on this computer.`,
   opschonenAanzetten: 'Turn on',
@@ -799,7 +886,7 @@ export const en = {
     'Mondig cannot tell whether this recording is still running. If Mondig is open somewhere else, close that first.',
   vergaderHerstelUitschrijven: 'Recover',
   vergaderUitschrijvenKnop: 'Write out',
-  vergaderLijstWeggooienVraag: 'Discard this recording? You cannot undo this.',
+  vergaderLijstWeggooienVraag: 'Delete this recording? You cannot undo this.',
   vergaderLijstKnopAria: (knop: string, wanneer: string): string =>
     `${knop}, recording from ${wanneer}`,
   vergaderGestartSchermlezer: 'The recording has started.',
@@ -807,19 +894,18 @@ export const en = {
   vergaderProcentSchermlezer: (p: number): string => `Writing out: ${String(p)} percent`,
   vergaderKlaarSchermlezer: 'The report is ready.',
   vergaderFoutSchermlezer: (melding: string): string => `Error: ${melding}`,
-  vergaderWeggegooidSchermlezer: 'The recording has been discarded.',
+  vergaderWeggegooidSchermlezer: 'The recording has been deleted.',
   vergaderLaterSchermlezer: 'Writing out has stopped. The recording is kept.',
   vergaderGeslotenSchermlezer: 'The report is closed. You will find it under Recorded earlier.',
   // Record (phase UX-D): the type Just me, the start screen and the list still waiting
   vergaderAlleen: 'Just me',
-  vergaderAlleenUitleg: 'Speak your thoughts. Mondig writes it out afterwards.',
-  notitieVan: (dag: string, tijd: string): string => `Note of ${dag}, ${tijd}`,
+  vergaderAlleenUitleg: 'Your thoughts or a note. Written out afterwards.',
+  titelNotitie: 'Note',
+  verslagTitelNu: (titel: string): string => `The report is now called ${titel}.`,
   vergaderTestgeluid: 'Play test sound',
   vergaderTestgeluidBezig: 'Playing test sound…',
   vergaderTestgeluidFout: 'The test sound did not play.',
   vergaderNogUitTeSchrijven: 'Still to write out',
-  vergaderWachtendWistRegel: (dagen: number): string =>
-    `Mondig deletes them after ${String(dagen)} ${dagen === 1 ? 'day' : 'days'}.`,
   // From one hour on: "1 h 4 min", otherwise "52 min".
   vergaderMinutenKort: (n: number): string => {
     if (n < 60) return `${String(n)} min`;
@@ -833,14 +919,17 @@ export const en = {
   vergaderWistKortMorgen: 'deleted tomorrow',
   vergaderWistOp: (moment: string): string => `Will be deleted automatically on ${moment}.`,
   vergaderAlleTonen: (n: number): string => `Show all ${String(n)}`,
-  vergaderMinderTonen: 'Show fewer',
+  vergaderOpnamesErbij: (aantal: number): string =>
+    aantal === 1 ? '1 more recording shown' : `${String(aantal)} more recordings shown`,
+  vergaderVerslagenErbij: (aantal: number): string =>
+    aantal === 1 ? '1 more report shown' : `${String(aantal)} more reports shown`,
   // Saving reports and Recorded earlier (N-C3, ADR 0022)
   vergaderEerderOpgenomen: 'Recorded earlier',
   vergaderEerderLabel: 'Meetings and notes recorded earlier',
   verslagAlleenIk: 'just me',
   vergaderDagMorgen: 'tomorrow',
   vergaderBewaartRegel: (dagen: number): string =>
-    `Mondig keeps them for ${String(dagen)} ${dagen === 1 ? 'day' : 'days'}.`,
+    `Mondig deletes recordings after ${String(dagen)} ${dagen === 1 ? 'day' : 'days'}.`,
   vergaderBewaartWijzigen: 'Change',
   verslagMeerAria: (titel: string): string => `More for ${titel}`,
   verslagMeer: 'More',
@@ -851,12 +940,10 @@ export const en = {
   verslagWissenBevestig: 'Yes, delete',
   verslagGewistSchermlezer: 'The report is deleted.',
   verslagTochSluiten: 'Close anyway',
-  verslagNaamWijzigen: 'Rename',
-  verslagNaamLabel: 'Name of the report',
-  verslagNaamWijzigenAria: (titel: string): string => `Rename, ${titel}`,
-  verslagNaamGegeven: (naam: string): string => `The report is now called ${naam}.`,
-  verslagNaamTerug: 'The report has the title Mondig makes again.',
-  verslagBewaardTot: (dag: string): string => `Mondig keeps this report until ${dag}`,
+  verslagVerwijderdOp: (datum: string): string => `Will be deleted on ${datum}`,
+  verslagVerwijderdVandaagOm: (tijd: string): string => `Will be deleted today at ${tijd}`,
+  verslagVerwijderdMorgenOm: (tijd: string): string => `Will be deleted tomorrow at ${tijd}`,
+  verslagVerwijderdVandaag: 'Will be deleted today',
   vergaderMeerMenuNu: 'More for this recording',
   vergaderVerwijderen: 'Delete',
   vergaderVerwijderAria: (wanneer: string): string => `Delete recording from ${wanneer}`,
@@ -880,10 +967,10 @@ export const en = {
     `The report was saved, but the recording was not: ${melding}`,
   audioNaastKop: 'Also save the recording as an audio file',
   audioNaastHulp:
-    'When you save a report, the recording goes next to it as a WAV, with the same name.',
-  mapOpenenKort: 'Open',
+    'When you save a report, the recording goes next to it as an audio file (.wav), with the same name.',
+  mapOpenenKort: 'Open folder',
   mapOpenenAria: (map: string): string => `Open ${map} in File Explorer`,
-  vergaderOpnameWeggooien: 'Discard recording…',
+  vergaderOpnameWeggooien: 'Delete recording…',
 
   // Models (sprint 5-A)
   menuModellen: 'Models',
@@ -918,8 +1005,7 @@ export const en = {
   functieTeWeinigRuimte: (grootte: string): string => `Not enough space: ${grootte} more needed.`,
   kaartVolgt: (rol: string): string => `${rol} follows when the download is done.`,
   sprekersModelAanwezig: 'On this computer. Recognises up to 4 speakers.',
-  sprekersModelNiet: (grootte: string): string =>
-    `Not downloaded yet (${grootte}). Recognises up to 4 speakers.`,
+  sprekersModelNiet: 'Not downloaded yet. Recognises up to 4 speakers.',
   naHervattenGebruik: (dicteren: boolean, opnames: boolean): string =>
     dicteren && opnames
       ? 'Will be used for dictation and recordings when the download is done.'
@@ -948,8 +1034,8 @@ export const en = {
   labelNieuw: 'New',
   labelLokaal: 'Local',
   inGebruikVoorDicteren: 'in use for dictation',
-  inGebruikVoorBestanden: 'in use for recordings',
-  inGebruikVoorBeide: 'in use for dictation and recordings',
+  inGebruikVoorBestanden: 'in use for recordings and files',
+  inGebruikVoorBeide: 'in use for dictation, recordings and files',
   gedeeltelijkGedownload: (binnen: string, totaal: string): string =>
     `${binnen} of ${totaal} is already downloaded`,
   verderDownloadenGrootte: (rest: string): string => `Continue downloading (${rest} left)`,
@@ -1019,7 +1105,7 @@ export const en = {
       case 'whisper-large-v3-turbo-q8':
         return {
           naam: 'Whisper turbo',
-          zin: 'The most accurate, and the only one for Turkish and Arabic. Too slow to dictate with, and slow without a fast graphics card.',
+          zin: 'Extra accurate but slower, and the only one for Turkish and Arabic. Too slow to dictate with, and slow without a fast graphics card.',
           dicterenTijd: 'after about 12 seconds',
           uurOpname: 'about 26 minutes',
           extra: 'For Turkish, Arabic and languages outside the 25. Can only be chosen for files.'
@@ -1136,6 +1222,10 @@ export const en = {
       ? '1 marking is no longer in the text; check the report.'
       : `${String(aantal)} markings are no longer in the text; check the report.`,
   opnieuwTerugzetten: 'Restore previous version',
+  opnieuwTerugzettenKop: 'Restore the previous version?',
+  opnieuwTerugzettenTekst:
+    'The report goes back to how it was before the new transcription. Names and corrected text you changed since then go back too. Your markings of personal data stay.',
+  opnieuwTerugzettenBevestig: 'Yes, restore',
   opnieuwTeruggezet: 'The previous version is back.',
   opnieuwVeranderdAria: 'changed when written out again',
   persoonZelfKop: 'Mark something yourself',
@@ -1159,10 +1249,11 @@ export const en = {
   persoonSoortAria: (soort: string): string => `marked as ${soort}`,
 
   // Minutes (T3, ADR 0024 to 0026): Settings and the Minutes tab of the transcript
-  groepNotulen: 'Minutes',
+  groepNotulen: 'AI service',
+  groepNotulenUitleg: 'For minutes and for cleaning up dictations.',
   notulenKop: 'Make minutes with',
   notulenHulp:
-    'Choose where the text of a transcript goes. Nothing set: then Mondig does not make minutes.',
+    'Choose where the text goes. Ollama is a free program that runs AI on your own computer. Nothing set: then Mondig does not make minutes.',
   notulenKeuzeGeen: 'Not set',
   notulenKeuzeMistral: 'Mistral (European)',
   notulenKeuzeOllama: 'Ollama on this computer',
@@ -1203,7 +1294,7 @@ export const en = {
   notulenMaken: 'Make minutes',
   notulenNietIngesteld: 'Making minutes is not set up yet.',
   notulenOnvolledig: 'Making minutes is not ready to use yet.',
-  notulenNaarInstellingen: 'Go to Settings',
+  notulenInstellen: 'Set up minutes',
   notulenVraagKop: 'Where does the text go?',
   notulenVraagTekst: (aanbieder: string, vervangen: boolean): string =>
     `The text of this transcript goes to ${aanbieder}. ${
@@ -1216,7 +1307,7 @@ export const en = {
   notulenStoppen: 'Stop',
   notulenGestopt: 'Making the minutes has stopped. The transcript has not changed.',
   notulenSamenvatting: 'Summary',
-  notulenSamenvattingNota: 'Made by a language model, check it.',
+  notulenSamenvattingNota: 'Made by an AI service, check it.',
   notulenBesluiten: 'Decisions',
   notulenGeenBesluiten: 'No decisions.',
   notulenActiepunten: 'Action items',

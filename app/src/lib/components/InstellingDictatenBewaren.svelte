@@ -3,33 +3,25 @@
   import Keuze from '#lib/components/Keuze.svelte';
   import { Button } from '#lib/components/ui/button/index.js';
   import { t } from '#lib';
-  import { DICTATEN_TERMIJNEN, vraagVoorTermijn, type DictatenTermijn } from '#lib/dictaten.js';
+  import { DICTATEN_TERMIJNEN, herbevestig, type DictatenTermijn } from '#lib/dictaten.js';
+  import { termijnLabel } from '#lib/dictatentekst.js';
   import { dictatenStand } from '#lib/dictatenstand.svelte.js';
   import { rij, rijBediening, rijLabel, rijNaam, rijUitleg, vlak } from '#lib/stijl.js';
   import { foutUitCommando } from '#lib/taak.js';
 
-  // "Dictaten bewaren" (ADR 0021): Niet bewaren, 24 uur (standaard) of 7 dagen. Direct bewaard,
-  // zonder "Opslaan". Korter zetten wist meteen wat ouder is. Naar Niet bewaren wist alles,
-  // dus daar komt eerst een vraag, maar alleen als er bewaarde dictaten zijn.
+  // "Dictaten bewaren" (ADR 0021): Niet bewaren, Laatste 10, 24 uur (standaard), 7 dagen of
+  // 30 dagen. Direct bewaard, zonder "Opslaan". Een kortere of strengere stand wist meteen wat
+  // niet meer mag blijven, dus daar komt eerst een vraag, maar alleen als er dictaten wegvallen.
 
   let bewaard = $state(false);
+  // Hoeveel dictaten wegvallen bij de termijn waarop we wachten.
+  let wachtAantal = $state(0);
   let fout = $state<string | null>(null);
   // De termijn waarvoor we om bevestiging wachten; de keuzelijst toont ondertussen wat geldt.
   let wacht = $state<DictatenTermijn | null>(null);
   let bezig = $state(false);
 
   const waarde = $derived(dictatenStand.termijn);
-
-  function label(termijn: DictatenTermijn): string {
-    switch (termijn) {
-      case 'niet':
-        return t().dictatenTermijnNiet;
-      case '24u':
-        return t().dictatenTermijn24u;
-      case '7d':
-        return t().dictatenTermijn7d;
-    }
-  }
 
   async function zet(termijn: DictatenTermijn): Promise<void> {
     bewaard = false;
@@ -50,12 +42,19 @@
     if (gekozen === undefined || gekozen === waarde) return;
     // Het menu laat tot na de bevestiging zien wat nu geldt.
     event.currentTarget.value = waarde;
-    // De lijst kan sinds het laden veranderd zijn (een dictaat tijdens het kiezen).
-    await dictatenStand.ververs();
-    if (vraagVoorTermijn(gekozen, dictatenStand.bewaard)) {
+    let aantal: number;
+    try {
+      // Rust telt op dit moment, dus ook een dictaat dat tijdens het kiezen is bijgekomen.
+      aantal = await dictatenStand.wegval(gekozen);
+    } catch (e) {
+      fout = foutUitCommando(e, t().somsGingErIetsMis).melding;
+      return;
+    }
+    if (aantal > 0) {
+      wachtAantal = aantal;
       wacht = gekozen;
       await tick();
-      document.getElementById('dictaten-niet-annuleer')?.focus();
+      document.getElementById('dictaten-wacht-annuleer')?.focus();
       return;
     }
     await zet(gekozen);
@@ -64,6 +63,17 @@
   async function bevestig(): Promise<void> {
     const doel = wacht;
     if (doel === null) return;
+    // Het getal in de vraag kan verouderd zijn: eerst opnieuw tellen.
+    try {
+      const { doorgaan, aantal } = await herbevestig(wachtAantal, () => dictatenStand.wegval(doel));
+      if (!doorgaan) {
+        wachtAantal = aantal;
+        return;
+      }
+    } catch (e) {
+      fout = foutUitCommando(e, t().somsGingErIetsMis).melding;
+      return;
+    }
     wacht = null;
     await zet(doel);
     await tick();
@@ -77,7 +87,7 @@
   }
 
   onMount(() => {
-    // Het aantal bewaarde dictaten is nodig voor de bevestigvraag.
+    // De huidige termijn komt uit Rust.
     void dictatenStand.ververs();
   });
 </script>
@@ -103,7 +113,7 @@
         onchange={wijzig}
       >
         {#each DICTATEN_TERMIJNEN as termijn (termijn)}
-          <option value={termijn}>{label(termijn)}</option>
+          <option value={termijn}>{termijnLabel(termijn)}</option>
         {/each}
       </Keuze>
     </div>
@@ -112,19 +122,22 @@
     <div
       class="{vlak} mx-4 mb-3.5 flex flex-col gap-2.5 bg-hover px-4 py-3.5"
       role="alertdialog"
-      aria-labelledby="dictaten-niet-kop"
-      aria-describedby="dictaten-niet-uitleg"
+      aria-labelledby="dictaten-wacht-kop"
+      aria-describedby="dictaten-wacht-uitleg"
     >
-      <b id="dictaten-niet-kop" class="font-semibold">{t().dictatenNietBewarenKop}</b>
-      <span id="dictaten-niet-uitleg" class="text-gedempt"
-        >{t().dictatenWisVraag(dictatenStand.bewaard)}</span
+      <b id="dictaten-wacht-kop" class="font-semibold"
+        >{wacht === 'niet' ? t().dictatenNietBewarenKop : t().dictatenKorterKop}</b
+      >
+      <span id="dictaten-wacht-uitleg" class="text-gedempt"
+        >{t().dictatenWisVraag(wachtAantal)}</span
       >
       <div class="flex flex-wrap gap-2">
         <Button
           class="bg-fout-tekst text-achtergrond not-aria-disabled:hover:bg-fout-tekst/90"
-          onclick={bevestig}>{t().dictatenNietBewarenBevestig}</Button
+          onclick={bevestig}
+          >{wacht === 'niet' ? t().dictatenNietBewarenBevestig : t().dictatenKorterBevestig}</Button
         >
-        <Button id="dictaten-niet-annuleer" variant="spook" onclick={annuleer}
+        <Button id="dictaten-wacht-annuleer" variant="spook" onclick={annuleer}
           >{t().annuleren}</Button
         >
       </div>

@@ -118,9 +118,46 @@ describe('de dictatenmock', () => {
     expect(dag.every((d) => d.tijdUnixMs > grens)).toBe(true);
   });
 
+  it('dictatenweek heeft ruim meer dan tien dictaten, en de stand geeft ze in delen', () => {
+    const m = maakDictatenMock(new Set(['dictatenweek']));
+    const eerste = m.handel('dictaten_stand', undefined) as DictatenAntwoord;
+    expect(eerste.dictaten).toHaveLength(10);
+    expect(eerste.totaal).toBeGreaterThan(30);
+    const volgende = m.handel('dictaten_stand', { begin: 10, limiet: 20 }) as DictatenAntwoord;
+    expect(volgende.dictaten).toHaveLength(20);
+    expect(volgende.totaal).toBe(eerste.totaal);
+    // Aansluitend, nieuwste eerst.
+    expect(volgende.dictaten[0]?.tijdUnixMs).toBeLessThan(eerste.dictaten[9]?.tijdUnixMs ?? 0);
+  });
+
+  it('Laatste 10 wist direct alles behalve de tien nieuwste en zegt vooraf hoeveel dat is', () => {
+    const m = maakDictatenMock(new Set(['dictatenweek']));
+    const voor = (m.handel('dictaten_stand', undefined) as DictatenAntwoord).totaal;
+    expect(m.handel('dictaten_wegval', { termijn: 'laatste10' })).toBe(voor - 10);
+    expect(m.handel('dictaten_wegval', { termijn: '30d' })).toBe(0);
+    m.handel('dictaten_bewaren_zet', { termijn: 'laatste10' });
+    const na = m.handel('dictaten_stand', { begin: 0, limiet: 50 }) as DictatenAntwoord;
+    expect(na).toMatchObject({ termijn: 'laatste10', totaal: 10, bewaard: 10 });
+    expect(na.dictaten).toHaveLength(10);
+    // Een nieuw dictaat duwt het oudste weg.
+    const oudste = na.dictaten[9]?.id;
+    m.nieuw('Een elfde.');
+    const daarna = m.handel('dictaten_stand', { begin: 0, limiet: 50 }) as DictatenAntwoord;
+    expect(daarna.dictaten).toHaveLength(10);
+    expect(daarna.dictaten[0]?.tekst).toBe('Een elfde.');
+    expect(daarna.dictaten.some((d) => d.id === oudste)).toBe(false);
+  });
+
+  it('30 dagen houdt langer vast dan 7 dagen', () => {
+    const m = maakDictatenMock(new Set(['dictatenweek']));
+    m.handel('dictaten_bewaren_zet', { termijn: '30d' });
+    expect(stand(m).termijn).toBe('30d');
+    expect(m.handel('dictaten_wegval', { termijn: '24u' })).toBeGreaterThan(0);
+  });
+
   it('weigert een onbekende termijn', () => {
     const m = maakDictatenMock(new Set());
-    expect(() => m.handel('dictaten_bewaren_zet', { termijn: '30d' })).toThrow();
+    expect(() => m.handel('dictaten_bewaren_zet', { termijn: '1u' })).toThrow();
     expect(stand(m).termijn).toBe('24u');
   });
 });

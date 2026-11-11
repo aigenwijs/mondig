@@ -2,13 +2,14 @@
   import { onMount } from 'svelte';
   import BewaarMelding from '#lib/components/BewaarMelding.svelte';
   import InstellingBestandsnaam from '#lib/components/InstellingBestandsnaam.svelte';
+  import InstellingKlantnamen from '#lib/components/InstellingKlantnamen.svelte';
   import RijKop from '#lib/components/RijKop.svelte';
   import Schakelaar from '#lib/components/Schakelaar.svelte';
   import { t } from '#lib';
   import { bewaarStand } from '#lib/bewarenstand.svelte.js';
   import { rij, rijBediening, rijLabel } from '#lib/stijl.js';
 
-  // De rijen van Opslaan achter "Meer opties": de bestandsnaam, de tijden in het document,
+  // De rijen van Opslaan achter "Meer opties": de bestandsnaam, de klantnamen, de tijden in het document,
   // automatisch opslaan en de opname als geluidsbestand naast een vergaderverslag.
 
   const stand = $derived(bewaarStand.stand);
@@ -19,6 +20,8 @@
 </script>
 
 <InstellingBestandsnaam />
+
+<InstellingKlantnamen />
 
 <div class={rij}>
   <div class={rijLabel}>

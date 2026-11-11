@@ -51,7 +51,10 @@ const SCHERMEN = [
   ["02-dicteren-hoofd", "/?mock=compleet"],
   ["03-dicteren-wat-is-nieuw", "/?mock=compleet,nieuw"],
   ["04-dicteren-tijdens-dictaat", "/?mock=compleet,dictaat", 3500],
-  ["06-pil-dictaat", "/pil?mock=dictaat", 300, { maat: PIL, tekst: "0:01" }],
+  // dictaatlang: de pil blijft luisteren. Met het gewone dictaat duurt het luisteren 3,5 s en staat
+  // "0:01" maar één seconde in beeld; een trage start van de browser mist dat venster en dan
+  // loopt het wachten na 25 s af. "Lokaal" staat er zolang de pil luistert.
+  ["06-pil-dictaat", "/pil?mock=dictaatlang", 300, { maat: PIL, tekst: "Lokaal" }],
   [
     "07-pil-waarschuwing",
     "/pil?mock=dictaat&klok=540000",
@@ -193,7 +196,7 @@ const SCHERMEN = [
     1500,
     { maat: KLEIN },
   ],
-  // N-C3: verslagen bewaren. Opnemen met Eerder opgenomen (vijf in beeld, Alle 9 tonen, de regel over
+  // N-C3: verslagen bewaren. Opnemen met Eerder opgenomen (vijf in beeld, Meer tonen, de regel over
   // de bewaartermijn) op beide vensters, met en zonder wachtende opnames, de lijst uitgeklapt, het
   // menu (...) van een regel met de bevestigvraag, een verslag geopend uit de lijst, het menu van het
   // verslag, de titel in bewerking, en Instellingen met de rij Opnames en verslagen wissen na.
@@ -225,7 +228,7 @@ const SCHERMEN = [
     "43-opnemen-eerder-alle-tonen",
     "/vergadering?mock=compleet,eerder",
     1500,
-    { vol: true, klik: ["Alle 9 tonen"], naKlik: 800 },
+    { vol: true, klik: ["Meer tonen"], naKlik: 800 },
   ],
   [
     "44-opnemen-eerder-menu",
@@ -241,7 +244,7 @@ const SCHERMEN = [
       vol: true,
       klik: [
         "Meer voor Teamoverleg Ruimte en Wonen",
-        ["menuitem", "Verslag wissen…"],
+        ["menuitem", "Verslag verwijderen…"],
       ],
       naKlik: 800,
     },
@@ -262,13 +265,9 @@ const SCHERMEN = [
     "48-verslag-naam-wijzigen",
     "/vergadering?mock=compleet,eerder",
     1500,
-    {
-      klik: [
-        "Overleg buurtbijeenkomst speelveld",
-        "Naam wijzigen, Overleg buurtbijeenkomst speelveld",
-      ],
-      naKlik: 1200,
-    },
+    // De knop "Naam wijzigen" bestaat niet meer: de naam maak je met de velden Datum, Klant en
+    // Onderwerp bovenaan het verslag. Zelfde schermnaam, zodat de metingen vergelijkbaar blijven.
+    { klik: ["Overleg buurtbijeenkomst speelveld"], naKlik: 1500 },
   ],
   [
     "49-instellingen-verslagen-wissen-na",

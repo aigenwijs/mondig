@@ -25,15 +25,38 @@ export const SOORTEN: readonly Vergadersoort[] = ['online', 'ruimte', 'alleen'];
 export type Kant = 'jij' | 'anderen';
 
 /**
- * Voor welke beurten een naam geldt: alleen deze, alle beurten van die kant met dezelfde naam,
- * of alle beurten van die spreker (4b-D, als de sprekers herkend zijn).
+ * De laatste wijziging aan de sprekers (een naam, samenvoegen, een beurt aan een andere spreker),
+ * zolang die met "Ongedaan maken" terug kan (Rust: `Sprekerstap`).
  */
-export type Naambereik = 'beurt' | 'kant' | 'spreker';
+export interface Sprekerstap {
+  /** Een nummer per stap: een wijziging die niets deed, laat de oude stap (en zijn nummer) staan. */
+  volgnummer: number;
+  /** De kant waar het gebeurde. */
+  kant: Kant;
+  /**
+   * De sprekers die door een naam samengingen, als nummer; `null` is de kant zonder nummer
+   * ("Anderen"). Leeg als er niets samenging.
+   */
+  samengevoegd: (number | null)[];
+  /** Bij een naam: de naam zoals hij nu in het verslag staat; `null` is de standaardnaam. */
+  naam: string | null;
+  /** Bij een naam: het sprekernummer daarna, voor de standaardnaam ("Terug naar Spreker 2"). */
+  nummer: number | null;
+}
+
+/**
+ * De stap die een wijziging maakte: de nieuwe `sprekerstap` als Rust echt een nieuwe stap maakte
+ * (een ander volgnummer dan `voor`), anders `null`. Zo zet een wijziging die niets deed (Opslaan
+ * zonder andere naam) geen melding neer die bij een oudere stap hoort.
+ */
+export function nieuweStap(voor: number | null, na: Sprekerstap | null): Sprekerstap | null {
+  return na !== null && na.volgnummer !== voor ? na : null;
+}
 
 /** Het niveau per spoor tijdens de opname, van 0 (stilte) tot 1. */
 export interface Niveaus {
   microfoon: number;
-  /** `null` zonder geluid van de computer (fysieke vergadering, Alleen ik, of geen afspeelapparaat). */
+  /** `null` zonder geluid van de computer (In de ruimte, Alleen ik, of geen afspeelapparaat). */
   systeem: number | null;
 }
 
@@ -57,8 +80,13 @@ export interface OpnameInfo {
 export interface VerslagInfo {
   /** De mapnaam: zo heet het verslag in de commando's. */
   id: string;
-  /** De naam die de gebruiker het gaf; zonder naam maakt het scherm de titel uit soort en begin. */
-  naam: string | null;
+  /** De klant die de gebruiker invulde; leeg zonder klant. */
+  klant: string;
+  /**
+   * Het onderwerp als de gebruiker het invulde (ook leeg gemaakt); `null`: nooit aangeraakt, dan
+   * is het onderwerp het soortwoord ("Vergadering", "Notitie").
+   */
+  onderwerp: string | null;
   soort: Vergadersoort;
   beginMs: number;
   duurMs: number;
@@ -68,6 +96,12 @@ export interface VerslagInfo {
   wistMs: number | null;
   /** Staat de opname er nog, zodat het verslag opnieuw kan worden uitgeschreven (ADR 0023)? */
   opnameAanwezig: boolean;
+  /**
+   * Weet Mondig waar de gebruiker dit verslag als bestand opsloeg? Alleen dan toont de lijst
+   * "Tonen in Verkenner"; is het bestand weg, dan meldt de klik dat. Het pad zelf komt nooit in
+   * de interface.
+   */
+  opgeslagenBekend: boolean;
 }
 
 /**
@@ -123,6 +157,12 @@ export interface BeurtInfo {
   sprekernummer: number | null;
   /** "Jij", "Anderen", "Spreker 1" of een gegeven naam; `null` in de ruimte zonder sprekers. */
   spreker: string | null;
+  /**
+   * `spreker` zoals hij op het scherm staat: met Vervangen aan en een gemarkeerd gegeven in de
+   * naam staat hier `[GEGEVEN]` enzovoort, zoals in Kopiëren en Opslaan. Naam geven begint met
+   * de echte `spreker`.
+   */
+  sprekerGetoond: string | null;
   /** Heeft de gebruiker deze beurt een eigen naam gegeven? */
   eigenNaam: boolean;
   startMs: number;
@@ -191,8 +231,22 @@ export type StandToestand =
       audioAanwezig: boolean;
       /** De stand van "Persoonsgegevens markeren en vervangen" (V-2). */
       persoon: PersoonStand;
-      /** De naam die de gebruiker het verslag gaf; `null`: het scherm maakt de titel zelf. */
-      naam: string | null;
+      /** De klant zoals de gebruiker hem invulde; leeg zonder klant. */
+      klant: string;
+      /**
+       * Het onderwerp voor de bestandsnaam zoals de gebruiker het invulde (ook leeg gemaakt);
+       * `null`: nooit aangeraakt. De interface vult dan het soortwoord in de eigen taal in.
+       */
+      onderwerp: string | null;
+      /** De datum voor de bestandsnaam (2026-11-02): wat de gebruiker invulde, anders die van het begin. */
+      datum: string;
+      /**
+       * `klant` zoals de kop hem toont: met Vervangen aan en een gemarkeerd gegeven erin staat hier
+       * `[GEGEVEN]` enzovoort, zoals in de bestandsnaam en de export. De velden tonen de echte waarde.
+       */
+      klantGetoond: string;
+      /** `onderwerp` zoals de kop hem toont, zie `klantGetoond`; `null` blijft nooit aangeraakt. */
+      onderwerpGetoond: string | null;
       /** Wanneer Mondig het verslag vanzelf wist (milliseconden sinds 1970); `null` als dat niet bekend is. */
       wistMs: number | null;
       /** Kon Mondig de laatste wijzigingen niet bewaren? Dan weigert Sluiten, tenzij je toch sluit. */
@@ -214,8 +268,10 @@ export type StandToestand =
       opnieuw: OpnieuwStand | null;
       /** Wat er na het laatste opnieuw uitschrijven veranderde. */
       naOpnieuw: NaOpnieuw | null;
-      /** Kan "Vorige versie terugzetten" nog (tot het verslag sluit)? */
+      /** Kan "Vorige versie terugzetten" nog (tot het verslag sluit of opnieuw wordt uitgeschreven)? */
       vorigeVersie: boolean;
+      /** De laatste wijziging aan de sprekers, zolang die ongedaan kan worden gemaakt. */
+      sprekerstap: Sprekerstap | null;
       /** De notulen van dit verslag en het maken ervan (T3, ADR 0026). */
       notulen: NotulenStand;
     };
@@ -307,13 +363,18 @@ export function vergaderingHerstel(id: string): Promise<VergaderingStand> {
   return invoke<VergaderingStand>('vergadering_herstel', { id });
 }
 
-/** Geeft de spreker van een beurt een naam; een lege naam zet terug naar "Jij" of "Anderen". */
-export function vergaderingNaam(
-  index: number,
-  naam: string,
-  bereik: Naambereik
-): Promise<VergaderingStand> {
-  return invoke<VergaderingStand>('vergadering_naam', { index, naam, bereik });
+/**
+ * Geeft de spreker van een beurt een naam, voor al zijn beurten; een lege naam zet terug naar
+ * "Jij", "Anderen" of "Spreker 1". Heeft een andere spreker van die kant dezelfde naam, dan gaan
+ * ze samen (`sprekerstap.samengevoegd` in de nieuwe stand).
+ */
+export function vergaderingNaam(index: number, naam: string): Promise<VergaderingStand> {
+  return invoke<VergaderingStand>('vergadering_naam', { index, naam });
+}
+
+/** Maakt de laatste wijziging aan de sprekers ongedaan (een naam, samenvoegen, een andere spreker). */
+export function vergaderingStapTerug(): Promise<VergaderingStand> {
+  return invoke<VergaderingStand>('vergadering_stap_terug');
 }
 
 /**
@@ -381,6 +442,34 @@ export function vergaderingKopieer(): Promise<void> {
   return invoke<undefined>('vergadering_kopieer');
 }
 
+/**
+ * De standaardnamen van de sprekers in de taal van de app, zoals Rust ze nodig heeft voor Kopiëren
+ * en Opslaan (`Sprekerlabels` in mondig-core): "Jij"/"You", "Anderen"/"Others" en per nummer
+ * "Spreker 1"/"Speaker 1". Een naam die de gebruiker gaf, blijft zoals hij is.
+ */
+export interface Sprekerlabels {
+  jij: string;
+  anderen: string;
+  /** Plek 0 is spreker 1, tot en met `MAX_SPREKERS`. */
+  sprekers: string[];
+}
+
+/** Alle standaardnamen in de taal van `t`, voor `vergaderingZetLabels`. */
+export function sprekerlabels(
+  t: Pick<Berichten, 'sprekerJij' | 'sprekerAnderen' | 'vergaderSpreker'>
+): Sprekerlabels {
+  return {
+    jij: t.sprekerJij,
+    anderen: t.sprekerAnderen,
+    sprekers: Array.from({ length: MAX_SPREKERS }, (_, plek) => t.vergaderSpreker(plek + 1))
+  };
+}
+
+/** Geeft Rust de standaardnamen van de sprekers in de taal van de app, voor Kopiëren en Opslaan. */
+export function vergaderingZetLabels(labels: Sprekerlabels): Promise<void> {
+  return invoke<undefined>('vergadering_zet_labels', { labels });
+}
+
 /** Bewaart de opname als één WAV-bestand. Geeft de bestandsnaam, of `null` bij annuleren. */
 export function vergaderingAudioBewaren(): Promise<string | null> {
   return invoke<string | null>('vergadering_audio_bewaren');
@@ -403,6 +492,11 @@ export function vergaderingVerslagOpenen(id: string, toch = false): Promise<Verg
 /** Wist een verslag met zijn opname: zonder `id` het verslag dat open is, anders een uit de lijst. */
 export function vergaderingVerslagWissen(id: string | null): Promise<VergaderingStand> {
   return invoke<VergaderingStand>('vergadering_verslag_wissen', { id });
+}
+
+/** Toont het opgeslagen bestand van een verslag uit de lijst in Verkenner of Finder. */
+export function vergaderingVerslagToonOpgeslagen(id: string): Promise<void> {
+  return invoke<undefined>('vergadering_verslag_toon_opgeslagen', { id });
 }
 
 /** De modellen waarmee het open verslag opnieuw kan worden uitgeschreven (ADR 0023). */
@@ -428,9 +522,34 @@ export function vergaderingVorigeTerugzetten(): Promise<VergaderingStand> {
   return invoke<VergaderingStand>('vergadering_vorige_terugzetten');
 }
 
-/** Geeft het verslag dat open is een naam; een lege naam zet de titel terug die Mondig zelf maakt. */
-export function vergaderingVerslagNaam(naam: string): Promise<VergaderingStand> {
-  return invoke<VergaderingStand>('vergadering_verslag_naam', { naam });
+/**
+ * Bewaart Klant, Onderwerp en Datum van het verslag dat open is. Samen geven ze de bestandsnaam en,
+ * als Klant of Onderwerp is ingevuld, de titel. Een veld gelijk aan de standaard blijft "nooit
+ * aangeraakt" in Rust.
+ */
+export function vergaderingVerslagNaamvelden(
+  klant: string,
+  onderwerp: string,
+  datum: string
+): Promise<VergaderingStand> {
+  return invoke<VergaderingStand>('vergadering_verslag_naamvelden', { klant, onderwerp, datum });
+}
+
+/**
+ * Geeft Rust de woorden "Vergadering" en "Notitie" in de taal van de app, voor het standaard
+ * onderwerp, de bestandsnaam en de titel van het document.
+ */
+export function vergaderingZetSoortwoorden(vergadering: string, notitie: string): Promise<void> {
+  return invoke<undefined>('vergadering_zet_soortwoorden', { vergadering, notitie });
+}
+
+/** De bestandsnaam die het open verslag met deze velden krijgt; Rust rekent hem uit. */
+export function vergaderingNaamvoorbeeld(
+  klant: string,
+  onderwerp: string,
+  datum: string
+): Promise<string> {
+  return invoke<string>('vergadering_naamvoorbeeld', { klant, onderwerp, datum });
 }
 
 // ---------------------------------------------------------------------------
@@ -566,15 +685,30 @@ export function sprekersVan(
 }
 
 /**
- * Kan deze beurt aan een spreker gegeven worden? Alleen in een verslag met herkende sprekers, en
- * alleen op de kant waarvan de sprekers herkend zijn: online heeft "Jij" geen sprekers.
+ * Kan deze beurt aan een spreker gegeven worden? Alleen op de kant waarvan de sprekers herkend
+ * worden: online heeft "Jij" geen sprekers. Online alleen in een verslag met herkende sprekers; in
+ * de ruimte ook zonder, want daar maakt de gebruiker zelf de eerste spreker (Rust:
+ * `Gesprek::geef_aan_nieuwe_spreker`). Zonder sprekers staat er geen labelkolom ([`toontLabels`]),
+ * en bij aanwijzen verschijnt de knop "Spreker aanwijzen".
  */
 export function kanAanSpreker(
   soort: Vergadersoort,
   beurten: readonly BeurtInfo[],
   beurt: Pick<BeurtInfo, 'kant'>
 ): boolean {
-  return heeftSprekers(beurten) && beurt.kant === sprekerKant(soort);
+  return (soort === 'ruimte' || heeftSprekers(beurten)) && beurt.kant === sprekerKant(soort);
+}
+
+/**
+ * Is dit een alinea in de ruimte die niemand aanwees? Zo'n alinea heeft geen spreker en geen
+ * naam (Rust: `Gesprek::label` geeft `None`): de labelkolom toont "+ Spreker" in plaats van "Jij",
+ * en zoeken, kopie, export en notulen noemen er geen naam bij.
+ */
+export function zonderSpreker(
+  soort: Vergadersoort,
+  beurt: Pick<BeurtInfo, 'sprekernummer' | 'eigenNaam'>
+): boolean {
+  return soort === 'ruimte' && beurt.sprekernummer === null && !beurt.eigenNaam;
 }
 
 /** Neemt deze soort ook het geluid van de computer op? Alleen online. */
@@ -591,10 +725,10 @@ export function vraagtHerinnering(soort: Vergadersoort): boolean {
 }
 
 /**
- * Zoveel wachtende opnames staan er hooguit in beeld; de rest achter "Alle N tonen". De lijst
+ * Zoveel wachtende opnames staan er eerst in beeld; de rest achter "Alle N tonen". De lijst
  * staat onder de startknop, dus een langere lijst duwt "Opname starten" niet uit beeld.
  */
-export const WACHTEND_ZICHTBAAR = 10;
+export const WACHTEND_ZICHTBAAR = 3;
 
 /**
  * De soort van een wachtende opname. Een onbekende soort telt als online, net als in Rust
@@ -653,28 +787,30 @@ export function zichtbareOpnames(opnames: readonly OpnameInfo[], alles: boolean)
   return alles ? nieuwsteEerst : nieuwsteEerst.slice(0, WACHTEND_ZICHTBAAR);
 }
 
-/** Zoveel bewaarde verslagen staan er hooguit in beeld; de rest achter "Alle N tonen". */
+/** Zoveel bewaarde verslagen staan er eerst in beeld; "Meer tonen" voegt er steeds tien toe. */
 export const VERSLAGEN_ZICHTBAAR = 5;
 
-/** De bewaarde verslagen die in beeld staan, nieuwste eerst: alle, of de nieuwste vijf. */
-export function zichtbareVerslagen(
-  verslagen: readonly VerslagInfo[],
-  alles: boolean
-): VerslagInfo[] {
-  const nieuwsteEerst = [...verslagen].sort((a, b) => b.beginMs - a.beginMs);
-  return alles ? nieuwsteEerst : nieuwsteEerst.slice(0, VERSLAGEN_ZICHTBAAR);
-}
-
-/** Tot wanneer Mondig een verslag bewaart, als dag voor de zin "Mondig bewaart dit verslag tot ...". */
-export type BewaarTot =
-  | { soort: 'vandaag' }
-  | { soort: 'morgen' }
-  | { soort: 'weekdag'; ms: number }
-  | { soort: 'datum'; ms: number };
+/** Zoveel verslagen komen er bij elke klik op "Meer tonen" bij. */
+export const VERSLAGEN_ERBIJ = 10;
 
 /**
- * De dag waarop Mondig een verslag wist, in woorden: vandaag, morgen, een weekdag als dat binnen
- * een week is ("dinsdag"), anders een datum. `null` als Mondig de bewaartermijn niet kent.
+ * De bewaarde verslagen die in beeld staan, nieuwste eerst: de nieuwste `aantal` (standaard
+ * VERSLAGEN_ZICHTBAAR). Een aantal boven het totaal geeft alles.
+ */
+export function zichtbareVerslagen(
+  verslagen: readonly VerslagInfo[],
+  aantal: number = VERSLAGEN_ZICHTBAAR
+): VerslagInfo[] {
+  const nieuwsteEerst = [...verslagen].sort((a, b) => b.beginMs - a.beginMs);
+  return nieuwsteEerst.slice(0, aantal);
+}
+
+/** Wanneer Mondig een verslag verwijdert, ruw: vandaag, morgen of later (dan staat er een datum). */
+export type BewaarTot = 'vandaag' | 'morgen' | 'later';
+
+/**
+ * De dag waarop Mondig een verslag verwijdert, in woorden: vandaag, morgen of later. `null` als
+ * Mondig de bewaartermijn niet kent.
  */
 export function bewaarTot(wistMs: number | null, nu: number): BewaarTot | null {
   if (wistMs === null) return null;
@@ -683,9 +819,8 @@ export function bewaarTot(wistMs: number | null, nu: number): BewaarTot | null {
     return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   };
   const dagen = Math.round((begin(wistMs) - begin(nu)) / DAG_MS);
-  if (dagen <= 0) return { soort: 'vandaag' };
-  if (dagen === 1) return { soort: 'morgen' };
-  return dagen < 7 ? { soort: 'weekdag', ms: wistMs } : { soort: 'datum', ms: wistMs };
+  if (dagen <= 0) return 'vandaag';
+  return dagen === 1 ? 'morgen' : 'later';
 }
 
 /** De standaardnaam van een kant: "Jij" of "Anderen". */
@@ -706,6 +841,62 @@ export function beurtNaam(
   if (beurt.eigenNaam && beurt.spreker !== null && beurt.spreker !== '') return beurt.spreker;
   if (beurt.sprekernummer != null) return t.vergaderSpreker(beurt.sprekernummer);
   return kantNaam(beurt.kant, t);
+}
+
+/**
+ * Wat er op het label van een beurt staat: zoals `beurtNaam`, maar een eigen naam met een gemarkeerd
+ * gegeven erin staat er vervangen (`[GEGEVEN]`) als "Persoonsgegevens vervangen" aan staat, zoals
+ * Kopiëren en Opslaan hem geven.
+ */
+export function beurtNaamGetoond(
+  beurt: Pick<BeurtInfo, 'kant' | 'spreker' | 'sprekerGetoond' | 'eigenNaam'> &
+    Partial<Pick<BeurtInfo, 'sprekernummer'>>,
+  t: Pick<Berichten, 'sprekerJij' | 'sprekerAnderen' | 'vergaderSpreker'>
+): string {
+  return beurt.eigenNaam && beurt.sprekerGetoond != null && beurt.sprekerGetoond !== ''
+    ? beurt.sprekerGetoond
+    : beurtNaam(beurt, t);
+}
+
+/**
+ * De naam van een beurt zonder eigen naam: "Spreker 2" als de sprekers herkend zijn, anders "Jij"
+ * of "Anderen". Wat er na leegmaken staat.
+ */
+export function standaardNaam(
+  beurt: Pick<BeurtInfo, 'kant' | 'sprekernummer'>,
+  t: Pick<Berichten, 'sprekerJij' | 'sprekerAnderen' | 'vergaderSpreker'>
+): string {
+  return beurt.sprekernummer !== null
+    ? t.vergaderSpreker(beurt.sprekernummer)
+    : kantNaam(beurt.kant, t);
+}
+
+/**
+ * Wat de melding (en de schermlezer) zegt na een naam, uit wat Rust teruggaf: "Spreker 1 en
+ * Spreker 2 zijn nu Noor" als er sprekers samengingen, "Terug naar Spreker 2" na leegmaken (de naam
+ * die er dan echt staat), anders "Naam gegeven: Noor", met de naam zoals hij in het verslag staat.
+ */
+export function naamMelding(
+  stap: Pick<Sprekerstap, 'kant' | 'samengevoegd' | 'naam' | 'nummer'>,
+  t: Pick<
+    Berichten,
+    | 'sprekerJij'
+    | 'sprekerAnderen'
+    | 'vergaderSpreker'
+    | 'vergaderNaamTerug'
+    | 'vergaderNaamGegeven'
+    | 'vergaderZijnNu'
+  >
+): string {
+  const standaard = standaardNaam({ kant: stap.kant, sprekernummer: stap.nummer }, t);
+  if (stap.samengevoegd.length >= 2) {
+    const namen = stap.samengevoegd.map((nummer) =>
+      standaardNaam({ kant: stap.kant, sprekernummer: nummer }, t)
+    );
+    return t.vergaderZijnNu(namen, stap.naam ?? standaard);
+  }
+  if (stap.naam === null) return t.vergaderNaamTerug(standaard);
+  return t.vergaderNaamGegeven(stap.naam);
 }
 
 /** De naam waarmee het invoerveld begint: de eigen naam, of leeg bij de standaardnaam. */

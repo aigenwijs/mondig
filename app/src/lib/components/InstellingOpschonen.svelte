@@ -18,7 +18,7 @@
   import { foutUitCommando } from '#lib/taak.js';
 
   // "Dictaten opschonen" (ADR 0027): Uit (standaard), Met een eigen sneltoets, of Bij elk
-  // dictaat. Alleen met een taalmodel onder Notulen; zonder staat de keuzelijst uit met een
+  // dictaat. Alleen met een AI-dienst (de sectie AI-dienst); zonder staat de keuzelijst uit met een
   // verwijzing. De eerste keer per aanbieder eerst de vraag waar de tekst heen gaat. Bij "Met een
   // eigen sneltoets" staat de tweede sneltoets eronder, met dezelfde bediening als de gewone.
   // Direct bewaard, zonder Opslaan; Rust controleert alles nog eens.

@@ -5,7 +5,7 @@
   import X from '@lucide/svelte/icons/x';
   import { Button } from '#lib/components/ui/button/index.js';
   import { t } from '#lib';
-  import { allePunten, eersteZin, uitgaveVoor } from '#lib/changelog.js';
+  import { allePunten, eersteZin, uitgaveVoor, voorPlatform } from '#lib/changelog.js';
   import { vlak } from '#lib/stijl.js';
   import { versieStand } from '#lib/versie.svelte.js';
   import {
@@ -14,6 +14,7 @@
     versieZonderAchtervoegsel,
     zetLaatstGezienVersie
   } from '#lib/versie.js';
+  import { haalPlatform } from '#lib/platform.js';
   import { uitgaven } from '#lib/wijzigingen.js';
 
   // "Wat is er nieuw" na een update (ADR 0016): één keer per nieuwe versie, rustig, op
@@ -39,7 +40,9 @@
         return;
       }
       const uitgave = uitgaveVoor(uitgaven, info.versie);
-      const lijst = uitgave ? allePunten(uitgave) : [];
+      // Punten voor alleen de Mac staan niet op Windows.
+      const opMac = (await haalPlatform()) === 'mac';
+      const lijst = uitgave ? allePunten(voorPlatform(uitgave, opMac)) : [];
       if (lijst.length === 0) {
         // Niets te melden voor deze versie: stil onthouden, geen lege kaart.
         void zetLaatstGezienVersie(info.versie).catch(() => undefined);

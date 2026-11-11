@@ -180,14 +180,14 @@ pub enum DownloadFout {
         bestand: String,
     },
     /// Het bestand is groter dan de catalogus zegt.
-    #[error("Het gedownloade bestand {bestand} is groter dan verwacht en is weggegooid.")]
+    #[error("Het gedownloade bestand {bestand} is groter dan verwacht en is verwijderd.")]
     TeGroot {
         /// Het bestand waar het om ging.
         bestand: String,
     },
-    /// De controlesom klopt niet; het deelbestand is weggegooid.
+    /// De controlesom klopt niet; het deelbestand is verwijderd.
     #[error(
-        "Het gedownloade bestand {bestand} is niet intact (controlesom klopt niet) en is weggegooid."
+        "Het gedownloade bestand {bestand} is niet intact (controlesom klopt niet) en is verwijderd."
     )]
     HashKlopptNiet {
         /// Het bestand waar het om ging.
@@ -757,7 +757,7 @@ impl DownloadFout {
                 "Er ging iets mis op de schijf. Controleer of er genoeg ruimte vrij is en probeer het opnieuw."
             }
             Self::HashKlopptNiet { .. } | Self::TeGroot { .. } => {
-                "Het gedownloade bestand is beschadigd en is weggegooid. Download het opnieuw."
+                "Het gedownloade bestand is beschadigd en is verwijderd. Download het opnieuw."
             }
             Self::Geannuleerd => "De download is gestopt. Je kunt later verdergaan waar het bleef.",
             Self::NietVerwijderd { .. } => {

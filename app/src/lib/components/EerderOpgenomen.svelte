@@ -1,15 +1,19 @@
 <script lang="ts">
-  import { resolve } from '$app/paths';
   import { tick } from 'svelte';
   import { DropdownMenu } from 'bits-ui';
   import Ellipsis from '@lucide/svelte/icons/ellipsis';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import { Button } from '#lib/components/ui/button/index.js';
+  import BewaartermijnRegel from '#lib/components/BewaartermijnRegel.svelte';
+  import LijstMeer from '#lib/components/LijstMeer.svelte';
+  import ToonInMap from '#lib/components/ToonInMap.svelte';
   import { huidigeTaal, t } from '#lib';
   import { sectieKop, vlak } from '#lib/stijl.js';
   import {
+    VERSLAGEN_ERBIJ,
     VERSLAGEN_ZICHTBAAR,
+    vergaderingVerslagToonOpgeslagen,
     wistBinnenkort,
     zichtbareVerslagen,
     type VerslagInfo
@@ -17,7 +21,8 @@
   import { gegevensDelen, verslagTitel } from '#lib/verslagtitel.js';
 
   // De lijst "Eerder opgenomen" (N-C3, ADR 0022, ontwerp ux-naar-9 sectie 2): de laatste vijf
-  // bewaarde verslagen, nieuwste boven, met "Alle N tonen". Een klik opent het verslag, het menu
+  // bewaarde verslagen, nieuwste boven, met "Meer tonen" (tien erbij) en de telling "5 van 9"
+  // (UI-C, lijst met maat). Een klik opent het verslag, het menu
   // (⋯) heeft "Verslag wissen…" met een bevestigvraag. Onder de lijst staat hoe lang Mondig ze
   // bewaart, met een link naar de instelling. Daarboven in het menu "Opnieuw uitschrijven…" (N-C4):
   // dat opent het verslag en dan de dialoog, of staat grijs met de reden als de opname weg is. Zonder verslagen is er geen sectie. De lijst staat
@@ -36,16 +41,31 @@
     wis: (verslag: VerslagInfo) => void;
     /** Opent het verslag en daarna de dialoog "Opnieuw uitschrijven" (N-C4). */
     opnieuw?: (verslag: VerslagInfo) => void;
+    /** Een mislukte "Tonen in Verkenner": de melding in gewone taal. */
+    bijToonFout?: (melding: string) => void;
+    /** Een zin voor de schermlezer, in de statusregio van de pagina ("10 verslagen erbij getoond"). */
+    meld?: (zin: string) => void;
   }
 
-  let { verslagen, nu, bewaarDagen, bezig = false, open, wis, opnieuw }: Props = $props();
+  let {
+    verslagen,
+    nu,
+    bewaarDagen,
+    bezig = false,
+    open,
+    wis,
+    opnieuw,
+    bijToonFout,
+    meld
+  }: Props = $props();
 
-  let alles = $state(false);
+  // Hoeveel verslagen er in beeld staan: eerst vijf, bij elke klik op "Meer tonen" tien erbij.
+  let aantal = $state(VERSLAGEN_ZICHTBAAR);
   // De rij waar de vraag "Wissen?" bij openstaat.
   let wisId = $state<string | null>(null);
 
   const locale = $derived(huidigeTaal() === 'nl' ? 'nl-NL' : 'en-GB');
-  const zichtbaar = $derived(zichtbareVerslagen(verslagen, alles));
+  const zichtbaar = $derived(zichtbareVerslagen(verslagen, aantal));
 
   async function vraagWissen(verslag: VerslagInfo): Promise<void> {
     wisId = verslag.id;
@@ -80,13 +100,14 @@
     <div class="{vlak} flex flex-col">
       <ul class="m-0 flex list-none flex-col p-0" aria-label={t().vergaderEerderLabel}>
         {#each zichtbaar as verslag (verslag.id)}
-          {@const titel = verslagTitel(verslag, t(), locale)}
+          {@const titel = verslagTitel(verslag, t())}
           {@const delen = gegevensDelen(verslag, nu, t(), locale)}
           {@const wist = wistBinnenkort(verslag.wistMs, nu)}
           <li class="flex flex-col [&+&]:border-t [&+&]:border-lijn">
             <div class="flex items-center gap-1 pr-2">
               <button
                 type="button"
+                id="verslag-open-{verslag.id}"
                 class="flex min-w-0 flex-1 cursor-pointer flex-col items-start gap-0.5 rounded-groot px-4 py-2.5 text-left transition-colors outline-none hover:bg-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus aria-disabled:cursor-default aria-disabled:opacity-60"
                 aria-disabled={bezig}
                 title={titel}
@@ -104,6 +125,13 @@
                     >{/if}</span
                 >
               </button>
+              <!-- Alleen bij een verslag waarvan het opgeslagen bestand er nog staat. -->
+              {#if verslag.opgeslagenBekend}
+                <ToonInMap
+                  toon={() => vergaderingVerslagToonOpgeslagen(verslag.id)}
+                  bijFout={bijToonFout}
+                />
+              {/if}
               <DropdownMenu.Root>
                 <DropdownMenu.Trigger>
                   {#snippet child({ props })}
@@ -129,6 +157,13 @@
                       if (wisId !== null) e.preventDefault();
                     }}
                   >
+                    {#if verslag.opgeslagenBekend}
+                      <ToonInMap
+                        variant="menu"
+                        toon={() => vergaderingVerslagToonOpgeslagen(verslag.id)}
+                        bijFout={bijToonFout}
+                      />
+                    {/if}
                     {#if opnieuw}
                       {#if verslag.opnameAanwezig}
                         <DropdownMenu.Item
@@ -193,31 +228,30 @@
           </li>
         {/each}
       </ul>
-      <div
-        class="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-lijn px-4 py-2 text-klein"
-      >
-        {#if verslagen.length > VERSLAGEN_ZICHTBAAR}
-          <button
-            type="button"
-            class="cursor-pointer text-gedempt underline underline-offset-[3px] hover:text-tekst"
-            aria-expanded={alles}
-            onclick={() => {
-              alles = !alles;
-            }}>{alles ? t().vergaderMinderTonen : t().vergaderAlleTonen(verslagen.length)}</button
-          >
-        {/if}
-        {#if bewaarDagen !== null}
-          <span class="ml-auto text-dim"
-            >{t().vergaderBewaartRegel(bewaarDagen)}
-            <Button
-              href={`${resolve('/instellingen')}#bewaartermijn`}
-              variant="spook"
-              class="min-h-6 px-1 text-klein underline underline-offset-[3px]"
-              >{t().vergaderBewaartWijzigen}</Button
-            ></span
-          >
-        {/if}
-      </div>
+      <!-- Het volgende stuk van de lijst: tien erbij, met de telling ernaast. -->
+      <LijstMeer
+        id="eerder-meer"
+        getoond={zichtbaar.length}
+        totaal={verslagen.length}
+        meer={() => {
+          aantal += VERSLAGEN_ERBIJ;
+          return Promise.resolve();
+        }}
+        rij={(i: number) => {
+          const verslag = zichtbaar[i];
+          return verslag ? document.getElementById(`verslag-open-${verslag.id}`) : null;
+        }}
+        bijErbij={(erbij: number) => {
+          meld?.(t().vergaderVerslagenErbij(erbij));
+        }}
+      />
+      {#if bewaarDagen !== null}
+        <div
+          class="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-lijn px-4 py-2 text-klein"
+        >
+          <span class="ml-auto text-dim"><BewaartermijnRegel dagen={bewaarDagen} /></span>
+        </div>
+      {/if}
     </div>
   </section>
 {/if}

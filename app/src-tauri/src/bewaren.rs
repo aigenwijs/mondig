@@ -51,9 +51,6 @@ const SLEUTEL_AUDIO: &str = "bewaar_audio";
 const AAN: &str = "aan";
 const UIT: &str = "uit";
 
-/// Zoveel tekens mag een label hebben.
-const MAX_LABEL: usize = 80;
-
 // ---------------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------------
@@ -149,7 +146,8 @@ pub(crate) fn transcriptmap(app: &AppHandle) -> Option<PathBuf> {
     lees_keuzes(app).map
 }
 
-/// Het voorbeeld onder de bouwstenen: het interview uit het ontwerp, op het moment van nu.
+/// Het voorbeeld onder de bouwstenen: de gemeente en het onderwerp uit het ontwerp, op het
+/// moment van nu.
 fn voorbeeld(app: &AppHandle, keuzes: &Keuzes) -> String {
     let nu = bewaren::lokaal_moment(
         u64::try_from(
@@ -167,8 +165,10 @@ fn voorbeeld(app: &AppHandle, keuzes: &Keuzes) -> String {
         &keuzes.bouwstenen,
         &NaamGegevens {
             moment: &nu,
-            naam: "Interview wethouder",
-            label: Some("Z-2026-1043"),
+            datum: None,
+            klant: "Gemeente Vlaardingen",
+            onderwerp: "Intake",
+            terugval: "Intake",
             model: &model,
         },
         keuzes.formaat,
@@ -435,32 +435,22 @@ fn schrijf_atomair(pad: &Path, bytes: &[u8], vervangen: bool) -> io::Result<()> 
 
 /// De naam van een transcript volgens de bouwstenen.
 fn naam_voor(document: &Document, keuzes: &Keuzes, formaat: Formaat) -> String {
-    naam::bestandsnaam(
-        &keuzes.bouwstenen,
-        &NaamGegevens {
-            moment: &document.moment,
-            naam: &document.titel,
-            label: document.label.as_deref(),
-            model: &document.model,
-        },
-        formaat,
-    )
+    naam::bestandsnaam(&keuzes.bouwstenen, &document.naamgegevens(), formaat)
+}
+
+/// De naam die `document` krijgt in het standaardformaat, met de bouwstenen uit de instellingen:
+/// het voorbeeld onder de velden Datum, Klant en Onderwerp. Het echte bestand kan er nog een
+/// volgnummer bij krijgen als de naam al bestaat.
+pub(crate) fn voorbeeldnaam(app: &AppHandle, document: &Document) -> String {
+    let keuzes = lees_keuzes(app);
+    naam_voor(document, &keuzes, keuzes.formaat)
 }
 
 /// De bestandsnaam voor `document` met de standaardbouwstenen, zonder instellingen: voor tests in
 /// andere modules die willen zien wat er in de naam van het bestand komt.
 #[cfg(test)]
 pub(crate) fn standaardnaam(document: &Document, formaat: Formaat) -> String {
-    naam::bestandsnaam(
-        &STANDAARD_BOUWSTENEN,
-        &NaamGegevens {
-            moment: &document.moment,
-            naam: &document.titel,
-            label: document.label.as_deref(),
-            model: &document.model,
-        },
-        formaat,
-    )
+    naam::bestandsnaam(&STANDAARD_BOUWSTENEN, &document.naamgegevens(), formaat)
 }
 
 /// Het eerste volgnummer boven alle bestaande "Naam (n).ext" in de map. De map wordt één keer
@@ -486,7 +476,17 @@ fn document_van(app: &AppHandle, taak: TaakId) -> Result<Document, Foutmelding> 
             app.try_state::<crate::vergadering::VergaderingStaat>()
                 .and_then(|staat| staat.document(taak))
         })
-        .ok_or_else(|| Foutmelding::nieuw("Dit transcript is er niet meer.", Vervolg::Geen))
+        .ok_or_else(|| {
+            Foutmelding::nieuw("Dit uitschrift of verslag is er niet meer.", Vervolg::Geen)
+        })
+}
+
+/// De klant die de gebruiker bij dit transcript of verslag invulde, als die er is.
+fn klant_van(app: &AppHandle, taak: TaakId) -> Option<String> {
+    app.state::<BestandenStaat>().klant(taak).or_else(|| {
+        app.try_state::<crate::vergadering::VergaderingStaat>()
+            .and_then(|staat| staat.klant(taak))
+    })
 }
 
 /// De notulen die vóór het verslag komen (ADR 0026 punt 8); alleen een vergaderverslag met
@@ -527,6 +527,10 @@ fn schrijf(
     let opgeslagen = Opgeslagen::van(pad.clone())?;
     app.state::<BestandenStaat>()
         .noteer(app, taak, Ok(opgeslagen));
+    // De klant komt in de suggesties, nu het opslaan is gelukt (nooit bij typen).
+    crate::klanten::onthoud(klant_van(app, taak).as_deref());
+    // Een verslag onthoudt waar het staat, ook na een herstart (zie `Verslag::opgeslagen`).
+    crate::vergadering::noteer_opgeslagen(app, taak, &pad);
     let (audio, audio_fout) =
         match crate::vergadering::audio_naast_verslag(app, taak, &pad, vervangen) {
             None => (None, None),
@@ -584,7 +588,7 @@ fn schrijf_met_nummer(
         }
     }
     Err(Foutmelding::nieuw(
-        "Mondig vond geen vrije naam voor dit bestand. Kies een andere map of geef het een label.",
+        "Mondig vond geen vrije naam voor dit bestand. Kies een andere map of pas de naam aan.",
         Vervolg::Geen,
     ))
 }
@@ -810,7 +814,7 @@ fn zonder_volgnummer(naam: &str) -> String {
 /// Alleen als het bestand precies de naam heeft die de naamregel van 4-C zou geven (met of
 /// zonder volgnummer), en niet ouder is dan de opname. Zo hoort "2026-10-01 VN0001.docx" bij
 /// de dictafoonopname VN0001 van die dag, en niet bij een nieuwe opname die ook VN0001 heet.
-/// Een label in de naamregel kan niet worden nagegaan (het label hoort bij een transcript, niet
+/// Een klant in de naamregel kan niet worden nagegaan (de klant hoort bij een transcript, niet
 /// bij een opname): dan telt alleen het register. De tijd van de naam mag een paar minuten
 /// verschillen van de wijzigtijd, want het transcript was iets eerder klaar dan opgeslagen.
 fn is_transcript_van(
@@ -838,8 +842,10 @@ fn is_transcript_van(
                 bouwstenen,
                 &NaamGegevens {
                     moment: &moment,
-                    naam: bron_stam,
-                    label: None,
+                    datum: None,
+                    klant: "",
+                    onderwerp: bron_stam,
+                    terugval: bron_stam,
                     model,
                 },
                 formaat,
@@ -869,22 +875,43 @@ pub(crate) fn heeft_transcript(app: &AppHandle, bron: &Path, bron_ms: u64) -> bo
     is_transcript_van(&stam, bron_ms, &kandidaten, &keuzes.bouwstenen, &model)
 }
 
-/// Bewaart het label van een transcript (voor de naam en de gegevens van het document).
+/// Bewaart Klant, Onderwerp en Datum van een transcript (voor de naam en de gegevens van het
+/// document). Een veld dat gelijk is aan de standaard (de naam van de opname, de datum van het
+/// transcript) blijft "nooit aangeraakt"; een leeg veld valt weg uit de naam.
 #[tauri::command]
-pub(crate) fn bestand_zet_label(
+pub(crate) fn bestand_zet_naamvelden(
     staat: State<'_, BestandenStaat>,
     taak: TaakId,
-    label: String,
+    klant: String,
+    onderwerp: String,
+    datum: String,
 ) -> Result<(), Foutmelding> {
-    let label: String = label.chars().take(MAX_LABEL).collect();
-    if staat.zet_label(taak, label) {
+    if staat.zet_naamvelden(taak, &klant, &onderwerp, &datum) {
         Ok(())
     } else {
         Err(Foutmelding::nieuw(
-            "Dit transcript is er niet meer.",
+            "Dit uitschrift is er niet meer.",
             Vervolg::Geen,
         ))
     }
+}
+
+/// De bestandsnaam die het transcript met deze velden krijgt, in het standaardformaat en met de
+/// bouwstenen uit de instellingen. Rust rekent hem uit, zodat het voorbeeld in het scherm altijd
+/// gelijk is aan het echte bestand. Er verandert niets aan het transcript.
+#[tauri::command]
+pub(crate) fn bestand_naamvoorbeeld(
+    app: AppHandle,
+    staat: State<'_, BestandenStaat>,
+    taak: TaakId,
+    klant: String,
+    onderwerp: String,
+    datum: String,
+) -> Result<String, Foutmelding> {
+    let document = staat
+        .naam_document(taak, &klant, &onderwerp, &datum)
+        .ok_or_else(|| Foutmelding::nieuw("Dit uitschrift is er niet meer.", Vervolg::Geen))?;
+    Ok(voorbeeldnaam(&app, &document))
 }
 
 // ---------------------------------------------------------------------------
@@ -893,17 +920,18 @@ pub(crate) fn bestand_zet_label(
 
 /// Het laatst opgeslagen bestand van een transcript, als het er nog is.
 fn laatste(staat: &BestandenStaat, taak: TaakId) -> Result<PathBuf, Foutmelding> {
-    staat
-        .opgeslagen(taak)
-        .pop()
-        .map(|o| o.pad)
-        .filter(|pad| pad.is_file())
-        .ok_or_else(|| {
-            Foutmelding::nieuw(
-                "Het opgeslagen bestand staat niet meer op die plek.",
-                Vervolg::Geen,
-            )
-        })
+    bestaand_opgeslagen(staat.opgeslagen(taak).pop().map(|o| o.pad))
+}
+
+/// Een opgeslagen bestand als het er nog staat; anders de melding die Bestanden en "Eerder
+/// opgenomen" allebei geven.
+pub(crate) fn bestaand_opgeslagen(pad: Option<PathBuf>) -> Result<PathBuf, Foutmelding> {
+    pad.filter(|pad| pad.is_file()).ok_or_else(|| {
+        Foutmelding::nieuw(
+            "Het opgeslagen bestand staat niet meer op die plek.",
+            Vervolg::Geen,
+        )
+    })
 }
 
 fn start(
@@ -947,7 +975,17 @@ pub(crate) fn bestand_toon_opgeslagen(
     staat: State<'_, BestandenStaat>,
     taak: TaakId,
 ) -> Result<(), Foutmelding> {
-    let pad = laatste(&staat, taak)?;
+    toon_in_map(&laatste(&staat, taak)?)
+}
+
+/// Opent Verkenner of Finder met `pad` geselecteerd. Ook voor een verslag in de lijst "Eerder
+/// opgenomen", dat zijn pad zelf bewaart. Het pad komt nooit in het logboek.
+pub(crate) fn toon_in_map(pad: &Path) -> Result<(), Foutmelding> {
+    // Een pad uit `verslag.json` kan met de hand veranderd zijn. Een aanhalingsteken komt in een
+    // echte Windows-bestandsnaam niet voor, en zou Explorer hieronder extra argumenten geven.
+    if pad.to_string_lossy().contains('"') {
+        return bestaand_opgeslagen(None).map(|_| ());
+    }
     #[cfg(windows)]
     return start("explorer", |o| {
         use std::os::windows::process::CommandExt;
@@ -956,11 +994,11 @@ pub(crate) fn bestand_toon_opgeslagen(
     });
     #[cfg(target_os = "macos")]
     return start("open", |o| {
-        o.arg("-R").arg(&pad);
+        o.arg("-R").arg(pad);
     });
     #[cfg(all(not(windows), not(target_os = "macos")))]
     return start("xdg-open", |o| {
-        o.arg(pad.parent().unwrap_or(&pad));
+        o.arg(pad.parent().unwrap_or(pad));
     });
 }
 
@@ -1172,7 +1210,7 @@ mod tests {
 
     #[test]
     fn alleen_een_nieuwer_transcript_met_precies_de_naam_van_de_naamregel_telt() {
-        let regel = [Bouwsteen::Datum, Bouwsteen::Naam];
+        let regel = [Bouwsteen::Datum, Bouwsteen::Onderwerp];
         let datum = bewaren::lokaal_moment(NA).strftime("%Y-%m-%d").to_string();
         let eigen = format!("{datum} Teams-opname.docx");
         let met_nummer = format!("{datum} Teams-opname (2).docx");
@@ -1234,9 +1272,63 @@ mod tests {
             "Interview",
             1,
             &[tr("Interview.pdf", NA)],
-            &[Bouwsteen::Naam],
+            &[Bouwsteen::Onderwerp],
             ""
         ));
+    }
+
+    #[test]
+    fn de_nieuwe_standaard_met_een_lege_klant_herkent_een_bewaakt_transcript_nog() {
+        // Na de migratie van "datum,naam" staat de klant tussen datum en onderwerp; zonder klant
+        // verandert de naam niet, dus de bewaakte map vindt het transcript nog.
+        let regel = lees_bouwstenen("datum,naam");
+        assert_eq!(regel, STANDAARD_BOUWSTENEN);
+        let datum = bewaren::lokaal_moment(NA).strftime("%Y-%m-%d").to_string();
+        assert!(is_transcript_van(
+            "Teams-opname",
+            1,
+            &[tr(&format!("{datum} Teams-opname.docx"), NA)],
+            &regel,
+            ""
+        ));
+    }
+
+    #[test]
+    fn het_voorbeeld_volgt_klant_onderwerp_en_datum_van_het_document() {
+        let moment = bewaren::lokaal_moment(NA);
+        let mut document = Document {
+            titel: "Verslag".to_string(),
+            bron: String::new(),
+            model: "Parakeet".to_string(),
+            klant: None,
+            onderwerp: None,
+            datum: None,
+            standaard_onderwerp: "Interview".to_string(),
+            moment,
+            duur_ms: 0,
+            melding: None,
+            regels: Vec::new(),
+        };
+        let keuzes = Keuzes {
+            map: None,
+            bouwstenen: STANDAARD_BOUWSTENEN.to_vec(),
+            formaat: Formaat::Docx,
+            tijden: true,
+            automatisch: false,
+            audio: false,
+        };
+        let datum = bewaren::lokaal_moment(NA).strftime("%Y-%m-%d").to_string();
+        assert_eq!(
+            naam_voor(&document, &keuzes, keuzes.formaat),
+            format!("{datum} Interview.docx")
+        );
+        document.klant = Some("Gemeente Vlaardingen".to_string());
+        document.onderwerp = Some("Intake".to_string());
+        document.datum = Some("2026-10-30".to_string());
+        assert_eq!(
+            naam_voor(&document, &keuzes, keuzes.formaat),
+            "2026-10-30 Gemeente Vlaardingen Intake.docx"
+        );
     }
 
     fn tijdelijke_map(naam: &str) -> PathBuf {
@@ -1396,7 +1488,10 @@ mod tests {
             titel: "Vergadering van vandaag".to_string(),
             bron: String::new(),
             model: "Parakeet".to_string(),
-            label: Some("Z-12".to_string()),
+            klant: Some("Z-12".to_string()),
+            onderwerp: None,
+            datum: None,
+            standaard_onderwerp: "Vergadering van vandaag".to_string(),
             moment,
             duur_ms: 0,
             melding: None,
@@ -1404,7 +1499,7 @@ mod tests {
         };
         let keuzes = Keuzes {
             map: None,
-            bouwstenen: vec![Bouwsteen::Naam, Bouwsteen::Label],
+            bouwstenen: vec![Bouwsteen::Onderwerp, Bouwsteen::Klant],
             formaat: Formaat::Docx,
             tijden: true,
             automatisch: false,

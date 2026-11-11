@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { en } from './i18n/en';
 import { nl } from './i18n/nl';
-import {
-  bewaarTotTekst,
-  gegevensDelen,
-  standaardTitel,
-  verslagTitel,
-  wanneerTekst
-} from './verslagtitel';
+import { bewaarTotTekst, gegevensDelen, verslagTitel, wanneerTekst } from './verslagtitel';
 
 // De teksten rond een bewaard verslag (N-C3, ADR 0022): titel, gegevensregel in de lijst en de
 // zin "Mondig bewaart dit verslag tot ...".
@@ -17,27 +12,40 @@ const om = (dag: number, uur: number, minuut = 0): number =>
 const nu = om(4, 15);
 const locale = 'nl-NL';
 
-describe('de titel van een verslag', () => {
-  it('maakt zelf een titel uit soort en begin', () => {
-    expect(standaardTitel('online', om(2, 14), nl, locale)).toBe(
-      'Vergadering van 2 november, 14:00'
+describe('de titel van een verslag (keuze A)', () => {
+  const basis = { soort: 'online' as const };
+
+  it('zet klant en onderwerp met een middenpunt ertussen', () => {
+    expect(verslagTitel({ ...basis, klant: 'Gemeente Vlaardingen', onderwerp: 'Intake' }, nl)).toBe(
+      'Gemeente Vlaardingen · Intake'
     );
-    expect(standaardTitel('ruimte', om(2, 14), nl, locale)).toBe(
-      'Vergadering van 2 november, 14:00'
-    );
-    expect(standaardTitel('alleen', om(2, 9, 5), nl, locale)).toBe('Notitie van 2 november, 09:05');
   });
 
-  it('toont de naam die de gebruiker gaf, anders de titel van Mondig', () => {
-    const basis = { soort: 'online' as const, beginMs: om(2, 14) };
-    expect(verslagTitel({ ...basis, naam: 'Overleg speelveld' }, nl, locale)).toBe(
+  it('toont met alleen een klant of alleen een onderwerp dat ene stuk', () => {
+    expect(verslagTitel({ ...basis, klant: 'Gemeente Vlaardingen', onderwerp: '' }, nl)).toBe(
+      'Gemeente Vlaardingen'
+    );
+    expect(verslagTitel({ ...basis, klant: '', onderwerp: 'Overleg speelveld' }, nl)).toBe(
       'Overleg speelveld'
     );
-    expect(verslagTitel({ ...basis, naam: null }, nl, locale)).toBe(
-      'Vergadering van 2 november, 14:00'
+  });
+
+  it('is zonder klant en onderwerp het soortwoord, met de datum in de metaregel', () => {
+    expect(verslagTitel({ ...basis, klant: '', onderwerp: null }, nl)).toBe('Vergadering');
+    expect(verslagTitel({ ...basis, klant: '  ', onderwerp: '  ' }, nl)).toBe('Vergadering');
+    expect(verslagTitel({ soort: 'alleen', klant: '', onderwerp: null }, nl)).toBe('Notitie');
+    expect(verslagTitel({ ...basis, klant: '', onderwerp: null }, en)).toBe('Meeting');
+  });
+
+  it('is een onderwerp dat nooit is aangeraakt (null) het soortwoord, in de taal van de app', () => {
+    expect(verslagTitel({ ...basis, klant: 'Gemeente Vlaardingen', onderwerp: null }, en)).toBe(
+      'Gemeente Vlaardingen · Meeting'
     );
-    expect(verslagTitel({ ...basis, naam: '   ' }, nl, locale)).toBe(
-      'Vergadering van 2 november, 14:00'
+    expect(verslagTitel({ soort: 'alleen', klant: 'Gemeente', onderwerp: null }, nl)).toBe(
+      'Gemeente · Notitie'
+    );
+    expect(verslagTitel({ soort: 'alleen', klant: 'Gemeente', onderwerp: null }, en)).toBe(
+      'Gemeente · Note'
     );
   });
 });
@@ -69,7 +77,7 @@ describe('de gegevens onder de titel in de lijst', () => {
     expect(wanneerTekst(om(4, 9, 15), nu, nl, locale)).toBe('vandaag, 09:15');
   });
 
-  it('zegt "alleen ik" bij een notitie en Fysieke vergadering in de ruimte zonder sprekers', () => {
+  it('zegt "alleen ik" bij een notitie en In de ruimte in de ruimte zonder sprekers', () => {
     expect(
       gegevensDelen(
         { ...basis, soort: 'alleen', duurMs: 4 * 60_000, sprekers: null },
@@ -79,7 +87,7 @@ describe('de gegevens onder de titel in de lijst', () => {
       )
     ).toEqual(['Vandaag, 14:00', '4 min', 'alleen ik']);
     expect(gegevensDelen({ ...basis, soort: 'ruimte', sprekers: null }, nu, nl, locale)[2]).toBe(
-      'Fysieke vergadering'
+      'In de ruimte'
     );
   });
 
@@ -98,25 +106,25 @@ describe('de gegevens onder de titel in de lijst', () => {
   });
 });
 
-describe('Mondig bewaart dit verslag tot ...', () => {
-  it('noemt een weekdag als dat binnen een week is', () => {
+describe('wanneer Mondig het verslag verwijdert', () => {
+  it('noemt verder dan morgen de datum, ook binnen een week', () => {
     // Dinsdag 10 november.
-    expect(bewaarTotTekst(om(10, 14), nu, nl, locale)).toBe(
-      'Mondig bewaart dit verslag tot dinsdag'
-    );
+    expect(bewaarTotTekst(om(10, 14), nu, nl, locale)).toBe('Wordt op 10 november verwijderd');
+    expect(bewaarTotTekst(om(30, 14), nu, nl, locale)).toBe('Wordt op 30 november verwijderd');
   });
 
-  it('noemt morgen en vandaag', () => {
-    expect(bewaarTotTekst(om(5, 9), nu, nl, locale)).toBe('Mondig bewaart dit verslag tot morgen');
-    expect(bewaarTotTekst(om(4, 23), nu, nl, locale)).toBe(
-      'Mondig bewaart dit verslag tot vandaag'
-    );
+  it('noemt vandaag en morgen met de tijd', () => {
+    expect(bewaarTotTekst(om(5, 9), nu, nl, locale)).toBe('Wordt morgen om 09:00 verwijderd');
+    expect(bewaarTotTekst(om(4, 23), nu, nl, locale)).toBe('Wordt vandaag om 23:00 verwijderd');
   });
 
-  it('noemt verder weg een datum', () => {
-    expect(bewaarTotTekst(om(30, 14), nu, nl, locale)).toBe(
-      'Mondig bewaart dit verslag tot 30 november'
-    );
+  it('zet geen tijd bij een moment dat al voorbij is', () => {
+    expect(bewaarTotTekst(om(4, 9), nu, nl, locale)).toBe('Wordt vandaag verwijderd');
+  });
+
+  it('zegt het ook in het Engels', () => {
+    expect(bewaarTotTekst(om(12, 14), nu, en, 'en-GB')).toBe('Will be deleted on 12 November');
+    expect(bewaarTotTekst(om(4, 23), nu, en, 'en-GB')).toBe('Will be deleted today at 23:00');
   });
 
   it('zegt niets als de bewaartermijn onbekend is', () => {

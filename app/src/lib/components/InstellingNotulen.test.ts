@@ -29,11 +29,11 @@ describe('Notulen in Instellingen', () => {
     expect(tekst).not.toContain('Training staat uit');
   });
 
-  it('toont bij Mistral met een sleutel alleen "Opgeslagen", Testen en Wissen, geen sleutel', () => {
+  it('toont bij Mistral met een sleutel alleen "Opgeslagen", Testen en Verwijderen, geen sleutel', () => {
     const tekst = html();
     expect(tekst).toContain('Opgeslagen');
     expect(tekst).toContain('Testen');
-    expect(tekst).toContain('Wissen');
+    expect(tekst).toContain('Verwijderen');
     expect(tekst).not.toContain('type="password"');
   });
 

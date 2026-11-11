@@ -22,10 +22,10 @@ export const FORMATEN: readonly Formaat[] = [
 ];
 
 /** Een onderdeel van de bestandsnaam. */
-export type Bouwsteen = 'datum' | 'naam' | 'label' | 'tijd' | 'model';
+export type Bouwsteen = 'datum' | 'klant' | 'onderwerp' | 'tijd' | 'model';
 
 /** Alle bouwstenen, in de volgorde van het ontwerp. */
-export const BOUWSTENEN: readonly Bouwsteen[] = ['datum', 'naam', 'label', 'tijd', 'model'];
+export const BOUWSTENEN: readonly Bouwsteen[] = ['datum', 'klant', 'onderwerp', 'tijd', 'model'];
 
 /** Een map zoals Rust hem geeft. */
 export interface MapInfo {
@@ -43,7 +43,7 @@ export interface BewaarInstellingen {
   automatisch: boolean;
   /** De opname ook als WAV naast een vergaderverslag (standaard uit). */
   audio: boolean;
-  /** De naam die de bouwstenen nu geven, voor het interview uit het ontwerp. */
+  /** De naam die de bouwstenen nu geven, voor "Gemeente Vlaardingen" en "Intake". */
   voorbeeld: string;
 }
 
@@ -135,8 +135,27 @@ export function bestandBewaarBeslis(vraag: number, keuze: Keuze): Promise<Bewaar
   return invoke<BewaarUitslag>('bestand_bewaar_beslis', { vraag, keuze });
 }
 
-export function bestandZetLabel(taak: number, label: string): Promise<void> {
-  return invoke<undefined>('bestand_zet_label', { taak, label });
+/**
+ * Bewaart Klant, Onderwerp en Datum van een transcript (voor de naam en de gegevens van het
+ * document). Een veld gelijk aan de standaard blijft "nooit aangeraakt" in Rust.
+ */
+export function bestandZetNaamvelden(
+  taak: number,
+  klant: string,
+  onderwerp: string,
+  datum: string
+): Promise<void> {
+  return invoke<undefined>('bestand_zet_naamvelden', { taak, klant, onderwerp, datum });
+}
+
+/** De bestandsnaam die het transcript met deze velden krijgt; Rust rekent hem uit. */
+export function bestandNaamvoorbeeld(
+  taak: number,
+  klant: string,
+  onderwerp: string,
+  datum: string
+): Promise<string> {
+  return invoke<string>('bestand_naamvoorbeeld', { taak, klant, onderwerp, datum });
 }
 
 /** Opent het bestand dat Mondig net opsloeg. */
@@ -191,10 +210,10 @@ export function bouwsteenNaam(steen: Bouwsteen, t: Berichten): string {
   switch (steen) {
     case 'datum':
       return t.bouwsteenDatum;
-    case 'naam':
-      return t.bouwsteenNaam;
-    case 'label':
-      return t.bouwsteenLabel;
+    case 'klant':
+      return t.bouwsteenKlant;
+    case 'onderwerp':
+      return t.bouwsteenOnderwerp;
     case 'tijd':
       return t.bouwsteenTijd;
     case 'model':

@@ -3,13 +3,20 @@
 // Tauri leest die zelf; dit script houdt app/package.json, app/package-lock.json
 // en Cargo.lock gelijk. Draait op alle platforms, zonder afhankelijkheden.
 //
-//   node scripts/versie.mjs           toon de versie en controleer dat alles gelijk is
+//   node scripts/versie.mjs           toon de versie en controleer dat alles gelijk is, dat een
+//                                     uitgebrachte versie een changelog-kop heeft en dat er niet
+//                                     op een al getagde versie doorgebouwd wordt
 //   node scripts/versie.mjs 0.2.0     zet de versie overal
+//   node scripts/versie.mjs --uitgave v0.2.0
+//                                     alles van de aanroep zonder argument, plus: de versie is
+//                                     geen ontwikkelversie en de tag is precies v<versie>
+//                                     (de release-workflow roept dit aan)
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { controleerChangelog, controleerUitgave, controleerUitgebracht } from './lib/versiecontrole.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const cargoPad = join(root, 'Cargo.toml');
@@ -53,7 +60,27 @@ function huidig() {
   return { cargo, pkg, lockTop: lock.version, lockRoot: lock.packages?.['']?.version };
 }
 
-const nieuw = process.argv[2];
+/** De commit achter een ref, of null als de ref niet bestaat of git ontbreekt. */
+function gitCommit(ref) {
+  try {
+    return execFileSync('git', ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+const eerste = process.argv[2];
+const uitgave = eerste === '--uitgave';
+const nieuw = uitgave ? undefined : eerste;
+const tag = process.argv[3];
+
+if (uitgave && (tag === undefined || tag.trim() === '')) {
+  stop('--uitgave vraagt een tag, bijvoorbeeld: node scripts/versie.mjs --uitgave v0.6.0');
+}
 
 if (nieuw === undefined) {
   const v = huidig();
@@ -63,6 +90,19 @@ if (nieuw === undefined) {
   const alle = new Set([v.cargo, v.pkg, v.lockTop, v.lockRoot]);
   if (alle.size !== 1) stop('de versies lopen uit elkaar. Draai: node scripts/versie.mjs <versie>');
   console.log('Alle versies zijn gelijk.');
+
+  // Een versie zonder -dev is een uitgave: die hoort een changelog-kop te hebben en mag niet
+  // opnieuw gebruikt worden als de tag al op een andere commit staat.
+  const changelog = readFileSync(join(root, 'CHANGELOG.md'), 'utf8');
+  const fout =
+    controleerChangelog(v.cargo, changelog) ??
+    controleerUitgebracht(v.cargo, gitCommit(`v${v.cargo}`), gitCommit('HEAD'));
+  if (fout) stop(fout);
+  if (uitgave) {
+    const uitgaveFout = controleerUitgave(v.cargo, tag);
+    if (uitgaveFout) stop(uitgaveFout);
+    console.log(`Tag ${tag} hoort bij versie ${v.cargo}.`);
+  }
   process.exit(0);
 }
 

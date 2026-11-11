@@ -1,6 +1,8 @@
 # Controles en builds, alleen handmatig (Actions > CI > Run workflow). Er draait niets vanzelf bij
-# een PR of push: de controles draaien lokaal op Windows, gelijk aan wat hier staat. Kies bij het
+# een PR of push: de controles draaien lokaal op Windows. De job Controle roept dezelfde opdracht
+# aan (node scripts/controle.mjs); de lijst met controles staat in dat script. Kies bij het
 # starten welke jobs draaien.
+# Acties staan op een commit (SHA) met de versie als commentaar; Dependabot werkt ze bij.
 name: CI
 
 on:
@@ -15,7 +17,7 @@ on:
         type: boolean
         default: false
       macos:
-        description: "Build en rooktest op macOS, met de app als download"
+        description: "Build en rooktest op macOS (Apple Silicon), met de dmg als download"
         type: boolean
         default: false
 
@@ -36,7 +38,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # De debug-build met tests, werkproces en app past sinds fase 4 niet meer op de
       # standaardschijf van de runner ("No space left on device"). Voorgeïnstalleerde
@@ -57,9 +59,100 @@ jobs:
       - name: Rust installeren (versie uit rust-toolchain.toml)
         run: rustup toolchain install
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Frontend-pakketten installeren
+        working-directory: app
+        run: npm ci
+
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-deny@0.20.2,cargo-about@0.9.3
+
+      # Dezelfde opdracht als lokaal: de stappen staan in scripts/controle.mjs.
+      - name: Alle controles (dezelfde opdracht als lokaal)
+        run: node scripts/controle.mjs
+
+      # Geen Linux-app-build en geen rooktest onder xvfb: Mondig bouwt voorlopig alleen voor
+      # Windows (besluit, 1-11-2026; Mac en Linux volgen in sprint 3e). Deze
+      # job controleert de code; de Windows-build met installer en rooktest staat hieronder
+      # en draait op afroep.
+
+  windows:
+    name: Build en rooktest (Windows)
+    if: inputs.windows
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Rust installeren (versie uit rust-toolchain.toml)
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      # transcribe.cpp bouwt de Vulkan-module en vraagt daarvoor de headers, glslc en
+      # vulkan-1.lib (ADR 0011).
+      - name: Vulkan-SDK installeren
+        uses: jakoch/install-vulkan-sdk-action@7fe84289ddbf750f7eff9f8e4588e600e1dd06c8 # v1.8.1
+        with:
+          cache: true
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Frontend-pakketten installeren
+        working-directory: app
+        run: npm ci
+
+      # Bouwt het werkproces met Vulkan en de installer met werkproces, rekenmodules en
+      # C++-runtime erin (ADR 0012), zoals de release.
+      # De build maakt eerst de vermeldingen van derden voor in de app (ADR 0016).
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-about@0.9.3
+
+      - name: App bouwen met NSIS-installer en werkproces
+        working-directory: app
+        run: npm run bundel
+
+      - name: Rooktest
+        timeout-minutes: 5
+        shell: bash
+        run: bash scripts/rooktest.sh target/release/mondig.exe
+
+      - name: Installer bewaren
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mondig-windows-nsis
+          path: target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  macos:
+    name: Build en rooktest (macOS)
+    # Een macOS-minuut kost ruim tien keer een Linux-minuut (ADR 0004).
+    if: inputs.macos
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Rust installeren (versie uit rust-toolchain.toml)
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -74,143 +167,45 @@ jobs:
         working-directory: app
         run: npm run build
 
-      - name: cargo fmt
-        run: cargo fmt --all --check
+      # transcribe.cpp compileert de Metal-shaders met `xcrun metal` (ingebed in het werkproces).
+      # Sinds Xcode 26 is die compiler soms een apart onderdeel; haal het op als het ontbreekt.
+      - name: Metal-compiler controleren
+        run: |
+          if ! xcrun -sdk macosx metal --version; then
+            xcodebuild -downloadComponent MetalToolchain
+            xcrun -sdk macosx metal --version
+          fi
 
-      # --all-features: het nep-werkproces voor de supervisortests zit achter de feature
-      # `nep` en hoort niet in een releasebuild (ADR 0009); zonder de feature slaat
-      # cargo die tests stilletjes over.
-      - name: cargo clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-
-      - name: cargo test
-        run: cargo test --workspace --all-features
-
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-deny@0.20.2,cargo-about@0.9.3
-
-      - name: cargo deny
-        run: cargo deny check
-
-      - name: npm run check
-        working-directory: app
-        run: npm run check
-
-      - name: npm run lint
-        working-directory: app
-        run: npm run lint
-
-      - name: npm test
-        working-directory: app
-        run: npm test
-
-      - name: npm audit
-        working-directory: app
-        run: npm audit --audit-level=high
-
-      - name: npm-licenties
-        run: node scripts/npm-licenties.mjs
-
-      - name: Geen telemetrie in npm-pakketten
-        run: node scripts/geen-telemetrie.mjs
-
-      - name: Versies gelijk
-        run: node scripts/versie.mjs
-
-      # Geen Linux-app-build en geen rooktest onder xvfb: Mondig bouwt voorlopig alleen voor
-      # Windows (besluit, 1-11-2026; Mac en Linux volgen in sprint 3e). Deze
-      # job controleert de code; de Windows-build met installer en rooktest staat hieronder
-      # en draait op afroep.
-
-  windows:
-    name: Build en rooktest (Windows)
-    if: inputs.windows
-    runs-on: windows-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Rust installeren (versie uit rust-toolchain.toml)
-        run: rustup toolchain install
-
-      - uses: Swatinem/rust-cache@v2
-
-      # transcribe.cpp bouwt de Vulkan-module en vraagt daarvoor de headers, glslc en
-      # vulkan-1.lib (ADR 0011).
-      - name: Vulkan-SDK installeren
-        uses: jakoch/install-vulkan-sdk-action@v1
-        with:
-          cache: true
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-          cache-dependency-path: app/package-lock.json
-
-      - name: Frontend-pakketten installeren
-        working-directory: app
-        run: npm ci
-
-      # Bouwt het werkproces met Vulkan en de installer met werkproces, rekenmodules en
-      # C++-runtime erin (ADR 0012), zoals de release.
       # De build maakt eerst de vermeldingen van derden voor in de app (ADR 0016).
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-about@0.9.3
 
-      - name: App bouwen met NSIS-installer en werkproces
+      # Bouwt het werkproces met Metal en de .app en .dmg met het werkproces erin (ADR 0029).
+      - name: App bouwen met werkproces (app en dmg)
         working-directory: app
-        run: npm run bundel
+        run: npm run bundel:mac
 
+      # De rooktest draait op de gebouwde .app, zodat ook de plek van het werkproces getest is.
       - name: Rooktest
         timeout-minutes: 5
-        shell: bash
-        run: bash scripts/rooktest.sh target/release/mondig.exe
+        run: |
+          app="$(ls -d target/release/bundle/macos/*.app | head -n 1)"
+          ls -la "$app/Contents/MacOS"
+          test -f "$app/Contents/MacOS/mondig-engine"
+          hoofd="$(find "$app/Contents/MacOS" -type f ! -name mondig-engine | head -n 1)"
+          bash scripts/rooktest.sh "$hoofd"
 
-      - name: Installer bewaren
-        uses: actions/upload-artifact@v7
+      - name: Dmg bewaren
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: mondig-windows-nsis
-          path: target/release/bundle/nsis/*.exe
+          name: mondig-macos-dmg
+          path: target/release/bundle/dmg/*.dmg
           if-no-files-found: error
           retention-days: 7
 
-  macos:
-    name: Build en rooktest (macOS)
-    # Een macOS-minuut kost ruim tien keer een Linux-minuut (ADR 0004).
-    if: inputs.macos
-    runs-on: macos-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Rust installeren (versie uit rust-toolchain.toml)
-        run: rustup toolchain install
-
-      - uses: Swatinem/rust-cache@v2
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-          cache-dependency-path: app/package-lock.json
-
-      - name: Frontend-pakketten installeren
-        working-directory: app
-        run: npm ci
-
-      # Bouwt het werkproces met Metal, zodat die build op de Mac getest wordt.
-      - name: Werkproces bouwen (Metal)
-        run: cargo build --release -p mondig-engine
-
-      - name: App bouwen met bundel (app en dmg)
-        working-directory: app
-        run: npm run tauri build -- --bundles app,dmg
-
-      - name: Rooktest
-        timeout-minutes: 5
-        # Tot sprint 3e zit het werkproces niet in de .app; de rooktest draait daarom op de
-        # build in target/release, waar het werkproces naast de app staat.
-        run: bash scripts/rooktest.sh target/release/mondig
+      # Op de Mac raken de Rust-tests de Unix-paden; --all-features voor de supervisortests.
+      # Na het bewaren van de dmg, zodat een falende test de proefversie niet tegenhoudt; de
+      # job wordt dan wel rood.
+      - name: cargo test
+        run: cargo test --workspace --all-features

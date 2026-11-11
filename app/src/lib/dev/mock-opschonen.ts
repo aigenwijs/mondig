@@ -106,7 +106,7 @@ export function maakOpschonenMock(
           }
           if (stand !== 'uit') {
             const k = klaar();
-            if (k === null) return fout('Kies eerst een taalmodel onder Notulen.');
+            if (k === null) return fout('Kies eerst een AI-dienst onder Instellingen.');
             if (!bevestigd.has(k.aanbieder)) {
               if (arg(args, 'bevestigd') !== k.aanbieder) {
                 return fout('Bevestig eerst waar de tekst heen gaat.', 'opnieuw_proberen');

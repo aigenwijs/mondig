@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -62,6 +62,61 @@ fn annuleer_na(na: Duration) -> Arc<AtomicBool> {
         voor_draad.store(true, Ordering::SeqCst);
     });
     vlag
+}
+
+/// Milliseconden sinds 1970: dezelfde klok als de tijdlijn van het nep-werkproces.
+fn nu_ms() -> u64 {
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    u64::try_from(ms).unwrap()
+}
+
+/// Als [`annuleer_na`], maar onthoudt ook wanneer (in [`nu_ms`]) de vlag gezet werd.
+fn annuleer_na_gemeten(na: Duration) -> (Arc<AtomicBool>, Arc<AtomicU64>) {
+    let vlag = Arc::new(AtomicBool::new(false));
+    let gezet = Arc::new(AtomicU64::new(0));
+    let (voor_vlag, voor_gezet) = (Arc::clone(&vlag), Arc::clone(&gezet));
+    std::thread::spawn(move || {
+        std::thread::sleep(na);
+        voor_gezet.store(nu_ms(), Ordering::SeqCst);
+        voor_vlag.store(true, Ordering::SeqCst);
+    });
+    (vlag, gezet)
+}
+
+/// Diagnose bij een annulering die te laat aankomt: alle tijdstippen in ms na `begin`, van
+/// de test (vlag gezet, voortgang binnen) en van het nep-werkproces (zijn tijdlijn).
+fn annuleer_diagnose(
+    begin: u64,
+    gezet: u64,
+    voortgang: &[u64],
+    tijdlijn: &Path,
+    pid: &str,
+) -> String {
+    let na = |ms: u64| i128::from(ms) - i128::from(begin);
+    let werkproces: Vec<String> = std::fs::read_to_string(tijdlijn)
+        .unwrap_or_default()
+        .lines()
+        .map(|regel| match regel.split_once(' ') {
+            Some((ms, rest)) => match ms.parse::<u64>() {
+                Ok(ms) => format!("  {} ms: {rest}", na(ms)),
+                Err(_) => format!("  {regel}"),
+            },
+            None => format!("  {regel}"),
+        })
+        .collect();
+    let voortgang: Vec<String> = voortgang.iter().map(|&ms| na(ms).to_string()).collect();
+    format!(
+        "vlag gezet na {} ms; voortgang binnen na [{}] ms; prioriteit werkproces: {:?}\n\
+         tijdlijn werkproces:\n{}\n{}",
+        na(gezet),
+        voortgang.join(", "),
+        prioriteit(pid),
+        werkproces.join("\n"),
+        prioriteit_diagnose(pid),
+    )
 }
 
 #[test]
@@ -120,6 +175,7 @@ fn de_wachttijd_geldt_per_stuk_en_niet_voor_het_hele_bestand() {
 fn annuleren_breekt_het_bestand_af_en_het_werkproces_draait_door() {
     let map = tempfile::tempdir().unwrap();
     let pidbestand = map.path().join("pid.txt");
+    let tijdlijn = map.path().join("tijdlijn.txt");
     let extra = [
         ("MONDIG_NEP_STUKKEN", "4".to_string()),
         ("MONDIG_NEP_STUKTIJD_MS", "150".to_string()),
@@ -127,22 +183,41 @@ fn annuleren_breekt_het_bestand_af_en_het_werkproces_draait_door() {
             "MONDIG_NEP_PIDBESTAND",
             pidbestand.to_string_lossy().into_owned(),
         ),
+        (
+            "MONDIG_NEP_TIJDLIJN",
+            tijdlijn.to_string_lossy().into_owned(),
+        ),
     ];
     let mut sup = geladen(instellingen("stukken", &extra));
     let pid = std::fs::read_to_string(&pidbestand).unwrap();
 
     let begin = Instant::now();
-    let vlag = annuleer_na(Duration::from_millis(200));
+    let begin_ms = nu_ms();
+    let (vlag, gezet) = annuleer_na_gemeten(Duration::from_millis(200));
+    let mut voortgang = Vec::new();
     let fout = sup
-        .transcribeer_bestand(Path::new("x.mp4"), Some(UUR), &mut |_| {}, &vlag)
+        .transcribeer_bestand(
+            Path::new("x.mp4"),
+            Some(UUR),
+            &mut |_| voortgang.push(nu_ms()),
+            &vlag,
+        )
         .unwrap_err();
+    let duur = begin.elapsed();
     assert!(matches!(fout, EngineFout::Geannuleerd), "{fout:?}");
     assert!(!fout.kan_aan_apparaat_liggen());
     // Na hooguit één stuk extra, ruim binnen de afbreektijd.
     assert!(
-        begin.elapsed() < Duration::from_millis(450),
-        "{:?}",
-        begin.elapsed()
+        duur < Duration::from_millis(450),
+        "{duur:?}
+{}",
+        annuleer_diagnose(
+            begin_ms,
+            gezet.load(Ordering::SeqCst),
+            &voortgang,
+            &tijdlijn,
+            &pid
+        )
     );
     assert!(sup.draait());
 
@@ -223,6 +298,46 @@ fn prioriteit(pid: &str) -> String {
     String::from_utf8_lossy(&uit.stdout).trim().to_string()
 }
 
+/// Mac en Linux: diagnose bij een onverwachte prioriteit. `ps` van het werkproces, zijn
+/// ouder en dit testproces, en wat `nice` vanuit dit testproces echt instelt. Zo is te zien
+/// of het proces-id klopt, of het testproces zelf al een andere nice-waarde heeft (`nice -n`
+/// telt op bij de huidige waarde), en of `nice` een waarschuwing gaf.
+#[cfg(unix)]
+fn prioriteit_diagnose(pid: &str) -> String {
+    use std::process::Command;
+    let uitvoer = |opdracht: &mut Command| match opdracht.output() {
+        Ok(uit) => format!(
+            "{}{}",
+            String::from_utf8_lossy(&uit.stdout),
+            String::from_utf8_lossy(&uit.stderr)
+        ),
+        Err(fout) => format!("starten mislukt: {fout}\n"),
+    };
+    let ps = |p: &str| uitvoer(Command::new("ps").args(["-o", "pid,ppid,ni,pri,comm", "-p", p]));
+    let ouder = uitvoer(Command::new("ps").args(["-o", "ppid=", "-p", pid]));
+    let eigen = std::process::id().to_string();
+    let direct = uitvoer(Command::new("/usr/bin/nice").args([
+        "-n",
+        "10",
+        "/bin/sh",
+        "-c",
+        "ps -o ni= -p $$",
+    ]));
+    format!(
+        "werkproces:\n{}ouder van het werkproces:\n{}testproces ({eigen}):\n{}\
+         /usr/bin/nice -n 10 vanuit de test geeft: {}",
+        ps(pid),
+        ps(ouder.trim()),
+        ps(&eigen),
+        direct.trim(),
+    )
+}
+
+#[cfg(windows)]
+fn prioriteit_diagnose(_pid: &str) -> String {
+    String::new()
+}
+
 #[test]
 fn het_achtergrondwerkproces_draait_op_een_lagere_prioriteit() {
     let map = tempfile::tempdir().unwrap();
@@ -233,8 +348,15 @@ fn het_achtergrondwerkproces_draait_op_een_lagere_prioriteit() {
     )];
     let sup = geladen(instellingen("ok", &extra));
     let pid = std::fs::read_to_string(&pidbestand).unwrap();
-    let verwacht = if cfg!(windows) { "BelowNormal" } else { "10" };
-    assert_eq!(prioriteit(&pid), verwacht);
+    // Mac en Linux: `nice -n 10` telt op bij de waarde van de ouder. Op de macOS-runner van
+    // GitHub draait het testproces zelf al op -10, dus het werkproces komt daar op 0.
+    let (verwacht, normaal) = if cfg!(windows) {
+        ("BelowNormal".to_string(), "Normal".to_string())
+    } else {
+        let eigen: i32 = prioriteit(&std::process::id().to_string()).parse().unwrap();
+        ((eigen + 10).min(19).to_string(), eigen.to_string())
+    };
+    assert_eq!(prioriteit(&pid), verwacht, "{}", prioriteit_diagnose(&pid));
 
     // Ter vergelijking: het dicteerwerkproces draait normaal.
     let mut dicteren = instellingen("ok", &extra);
@@ -242,8 +364,12 @@ fn het_achtergrondwerkproces_draait_op_een_lagere_prioriteit() {
     let sup_dicteren = geladen(dicteren);
     let pid_dicteren = std::fs::read_to_string(&pidbestand).unwrap();
     assert_ne!(pid, pid_dicteren);
-    let normaal = if cfg!(windows) { "Normal" } else { "0" };
-    assert_eq!(prioriteit(&pid_dicteren), normaal);
+    assert_eq!(
+        prioriteit(&pid_dicteren),
+        normaal,
+        "{}",
+        prioriteit_diagnose(&pid_dicteren)
+    );
     drop((sup, sup_dicteren));
 }
 

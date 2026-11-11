@@ -80,6 +80,23 @@ export function mockUitvoer(tekst: string, persoon: MockPersoon): string {
   return uit + tekst.slice(positie);
 }
 
+/**
+ * Een naam of titel voor Kopiëren en opslaan, zoals `Markeringen::voor_naam` in Rust: vervangen als
+ * de schakelaar aan staat, maar een datum blijft staan, want die is in een naam meestal gewoon een
+ * datum.
+ */
+export function mockNaam(tekst: string, persoon: MockPersoon): string {
+  if (!persoon.vervangen) return tekst;
+  let uit = '';
+  let positie = 0;
+  for (const m of mockMarkeringen(tekst, persoon)) {
+    if (m.soort === 'datum') continue;
+    uit += tekst.slice(positie, m.van) + PLAATSVERVANGERS[m.soort];
+    positie = m.tot;
+  }
+  return uit + tekst.slice(positie);
+}
+
 export function mockPersoonStand(persoon: MockPersoon): PersoonStand {
   return { vervangen: persoon.vervangen, eigen: [...persoon.eigen] };
 }

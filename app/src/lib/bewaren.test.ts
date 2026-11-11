@@ -38,21 +38,34 @@ describe('formaten', () => {
 
 describe('bouwstenen van de bestandsnaam', () => {
   it('een klik zet een blokje achteraan of haalt het eruit', () => {
-    expect(wisselBouwsteen(['datum', 'naam'], 'label')).toEqual(['datum', 'naam', 'label']);
-    expect(wisselBouwsteen(['datum', 'naam', 'label'], 'naam')).toEqual(['datum', 'label']);
+    expect(wisselBouwsteen(['datum', 'onderwerp'], 'klant')).toEqual([
+      'datum',
+      'onderwerp',
+      'klant'
+    ]);
+    expect(wisselBouwsteen(['datum', 'onderwerp', 'klant'], 'onderwerp')).toEqual([
+      'datum',
+      'klant'
+    ]);
     expect(wisselBouwsteen([], 'model')).toEqual(['model']);
   });
 
   it('eerst de gekozen blokjes in hun volgorde, dan de rest', () => {
-    expect(steenVolgorde(['label', 'datum'])).toEqual(['label', 'datum', 'naam', 'tijd', 'model']);
+    expect(steenVolgorde(['klant', 'datum'])).toEqual([
+      'klant',
+      'datum',
+      'onderwerp',
+      'tijd',
+      'model'
+    ]);
     expect(steenVolgorde([])).toEqual([...BOUWSTENEN]);
   });
 
   it('heeft een naam voor elk blokje', () => {
     expect(BOUWSTENEN.map((s) => bouwsteenNaam(s, nl))).toEqual([
       'Datum',
-      'Naam van de opname',
-      'Label',
+      'Klant',
+      'Onderwerp',
       'Tijd',
       'Model'
     ]);
@@ -88,44 +101,47 @@ describe('het volgnummer voor "Opslaan als (2)"', () => {
 
 describe('volgorde van de bestandsnaam', () => {
   it('schuift een blokje naar voren of naar achteren', () => {
-    expect(schuifBouwsteen(['datum', 'naam'], 'datum', 1)).toEqual(['naam', 'datum']);
-    expect(schuifBouwsteen(['datum', 'naam'], 'naam', -1)).toEqual(['naam', 'datum']);
-    expect(schuifBouwsteen(['datum', 'naam', 'tijd'], 'naam', 1)).toEqual([
+    expect(schuifBouwsteen(['datum', 'onderwerp'], 'datum', 1)).toEqual(['onderwerp', 'datum']);
+    expect(schuifBouwsteen(['datum', 'onderwerp'], 'onderwerp', -1)).toEqual([
+      'onderwerp',
+      'datum'
+    ]);
+    expect(schuifBouwsteen(['datum', 'onderwerp', 'tijd'], 'onderwerp', 1)).toEqual([
       'datum',
       'tijd',
-      'naam'
+      'onderwerp'
     ]);
   });
 
   it('blijft binnen de rij en laat een uitgezet blokje met rust', () => {
-    expect(schuifBouwsteen(['datum', 'naam'], 'datum', -1)).toEqual(['datum', 'naam']);
-    expect(schuifBouwsteen(['datum', 'naam'], 'naam', 1)).toEqual(['datum', 'naam']);
-    expect(schuifBouwsteen(['datum', 'naam'], 'model', 1)).toEqual(['datum', 'naam']);
+    expect(schuifBouwsteen(['datum', 'onderwerp'], 'datum', -1)).toEqual(['datum', 'onderwerp']);
+    expect(schuifBouwsteen(['datum', 'onderwerp'], 'onderwerp', 1)).toEqual(['datum', 'onderwerp']);
+    expect(schuifBouwsteen(['datum', 'onderwerp'], 'model', 1)).toEqual(['datum', 'onderwerp']);
   });
 
   it('verplaatst een blokje naar een gekozen plek', () => {
-    expect(verplaatsBouwsteen(['datum', 'naam', 'tijd'], 'tijd', 0)).toEqual([
+    expect(verplaatsBouwsteen(['datum', 'onderwerp', 'tijd'], 'tijd', 0)).toEqual([
       'tijd',
       'datum',
-      'naam'
+      'onderwerp'
     ]);
-    expect(verplaatsBouwsteen(['datum', 'naam', 'tijd'], 'datum', 99)).toEqual([
-      'naam',
+    expect(verplaatsBouwsteen(['datum', 'onderwerp', 'tijd'], 'datum', 99)).toEqual([
+      'onderwerp',
       'tijd',
       'datum'
     ]);
-    expect(verplaatsBouwsteen(['datum', 'naam'], 'datum', -3)).toEqual(['datum', 'naam']);
+    expect(verplaatsBouwsteen(['datum', 'onderwerp'], 'datum', -3)).toEqual(['datum', 'onderwerp']);
   });
 
   it('wijzigt de lijst die erin gaat niet', () => {
-    const lijst = Object.freeze(['datum', 'naam'] as const);
-    expect(schuifBouwsteen(lijst, 'datum', 1)).toEqual(['naam', 'datum']);
-    expect(lijst).toEqual(['datum', 'naam']);
+    const lijst = Object.freeze(['datum', 'onderwerp'] as const);
+    expect(schuifBouwsteen(lijst, 'datum', 1)).toEqual(['onderwerp', 'datum']);
+    expect(lijst).toEqual(['datum', 'onderwerp']);
   });
 
   it('geeft de plek vanaf 1 voor de aankondiging', () => {
-    expect(plekVanBouwsteen(['naam', 'datum'], 'datum')).toBe(2);
-    expect(plekVanBouwsteen(['naam', 'datum'], 'model')).toBeNull();
+    expect(plekVanBouwsteen(['onderwerp', 'datum'], 'datum')).toBe(2);
+    expect(plekVanBouwsteen(['onderwerp', 'datum'], 'model')).toBeNull();
   });
 
   it('de aankondiging noemt blokje, plek en totaal, in beide talen', () => {
@@ -134,7 +150,7 @@ describe('volgorde van de bestandsnaam', () => {
   });
 
   it('een gewisseld blokje komt achteraan, daarna is het te verplaatsen', () => {
-    const met = wisselBouwsteen(['datum', 'naam'], 'tijd');
-    expect(verplaatsBouwsteen(met, 'tijd', 0)).toEqual(['tijd', 'datum', 'naam']);
+    const met = wisselBouwsteen(['datum', 'onderwerp'], 'tijd');
+    expect(verplaatsBouwsteen(met, 'tijd', 0)).toEqual(['tijd', 'datum', 'onderwerp']);
   });
 });

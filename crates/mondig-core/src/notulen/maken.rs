@@ -241,7 +241,7 @@ pub fn maak(
         let gebruiker = format!("{kop}\n\n{}", invoer.regels[stuk.clone()].join("\n"));
         let aanvraag = aanvraag(
             instellingen,
-            opdracht(taal),
+            &opdracht(taal, invoer.labels),
             gebruiker,
             "notulen",
             json_schema(),

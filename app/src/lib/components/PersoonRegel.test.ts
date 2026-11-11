@@ -5,20 +5,19 @@ import PersoonRegel from './PersoonRegel.svelte';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 
-const regels = [
-  {
-    sleutel: 1,
-    startMs: 0,
-    eindMs: 1000,
-    tekst: 'Mijn BSN is 111222333.',
-    markeringen: [{ soort: 'bsn' as const, van: 11, tot: 20 }]
-  }
-];
+const regel = {
+  sleutel: 1,
+  startMs: 0,
+  eindMs: 1000,
+  tekst: 'Mijn BSN is 111222333.',
+  markeringen: [{ soort: 'bsn' as const, van: 11, tot: 20 }]
+};
+const regels = [regel];
 
-function html(vervangen: boolean): string {
+function html(vervangen: boolean, lijst: (typeof regel)[] = regels): string {
   return render(PersoonRegel, {
     props: {
-      regels,
+      regels: lijst,
       persoon: { vervangen, eigen: [] },
       zetVervangen: () => Promise.resolve(null),
       haalWeg: () => Promise.resolve(null),
@@ -75,5 +74,22 @@ describe('persoonsgegevens als één regel', () => {
     expect(uit).toContain('aria-checked="true"');
     expect(uit).toContain('aria-labelledby="persoon-switch"');
     expect(uit).toContain('aria-describedby="persoon-stand"');
+  });
+
+  it('heeft bij nul gevonden gegevens geen schakelaar', () => {
+    const geenGegevens = [{ ...regel, tekst: 'Niets bijzonders.', markeringen: [] }];
+    const uit = html(false, geenGegevens);
+    expect(uit).not.toContain('role="switch"');
+    expect(leesbaar(uit)).not.toContain('Niet vervangen');
+    expect(leesbaar(uit)).toContain('Geen persoonsgegevens');
+  });
+
+  it('houdt de schakelaar als het vervangen aanstaat, ook bij nul gegevens', () => {
+    const geenGegevens = [{ ...regel, tekst: 'Niets bijzonders.', markeringen: [] }];
+    expect(html(true, geenGegevens)).toContain('role="switch"');
+  });
+
+  it('geeft de teller een vaste id, het doel van de focus als de schakelaar verdwijnt', () => {
+    expect(html(false)).toContain('id="persoon-teller"');
   });
 });

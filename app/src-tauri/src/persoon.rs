@@ -52,7 +52,7 @@ pub(crate) fn persoon_info(markeringen: &Markeringen) -> PersoonInfo {
 }
 
 /// Zet de persoonsgegevens in de velden van een document die de gebruiker zelf kan hebben getypt
-/// (de naam van het bestand, het label, de namen van sprekers) om, als "Persoonsgegevens
+/// (de naam van het bestand, klant en onderwerp, de namen van sprekers) om, als "Persoonsgegevens
 /// vervangen" aan staat. De tekst van de regels doet de aanroeper zelf. Een titel die Mondig zelf
 /// maakt ("Vergadering 3 november") gaat niet door de vervanging: `eigen_titel` is dan `false`.
 pub(crate) fn vervang_velden(document: &mut Document, m: &Markeringen, eigen_titel: bool) {
@@ -62,8 +62,11 @@ pub(crate) fn vervang_velden(document: &mut Document, m: &Markeringen, eigen_tit
     if eigen_titel {
         document.titel = m.voor_naam(&document.titel);
         document.bron = m.voor_naam(&document.bron);
+        document.standaard_onderwerp = m.voor_naam(&document.standaard_onderwerp);
     }
-    document.label = document.label.take().map(|l| m.voor_naam(&l));
+    document.klant = document.klant.take().map(|k| m.voor_naam(&k));
+    document.onderwerp = document.onderwerp.take().map(|o| m.voor_naam(&o));
+    document.datum = document.datum.take().map(|d| m.voor_naam(&d));
     for regel in &mut document.regels {
         regel.spreker = regel.spreker.take().map(|s| m.voor_naam(&s));
     }

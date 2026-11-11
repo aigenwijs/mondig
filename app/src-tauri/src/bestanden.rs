@@ -9,6 +9,11 @@
 //!   schermlezer);
 //! - event `bestanden-slepen`: `true` zolang er bestanden boven het venster hangen.
 //!
+//! Levert een drop van een andere app niets op (geen pad en geen bestandsbelofte, alleen te
+//! zien met de Mac-haak), dan staat dat in de stand (`nietGepakt`) en zegt het scherm in gewone
+//! taal wat wel kan. Een lege drop van binnen Mondig blijft stil. Op de Mac haalt een haak in
+//! de webview bestandsbeloftes op, zoals van Dictafoon, Foto's en Mail (ADR 0030).
+//!
 //! Een fout bij toevoegen (geen model, gestopte wachtrij) staat in de stand, zodat een
 //! scherm dat pas na het slepen opent hem nog ziet ([`bestanden_stand`]).
 //!
@@ -34,12 +39,14 @@ use mondig_core::aanbieder::{LokaleEngine, Uitgeschreven};
 use mondig_core::afspelen;
 use mondig_core::audio::{self, EXTENSIES};
 use mondig_core::bestanden::{Bestandsuitslag, Wachtrij};
+use mondig_core::bewaren::naam::{eigen_waarde, standaard_datum};
 use mondig_core::bewaren::{self, Document, Regel};
 use mondig_core::bewerken::Bewerkingen;
 use mondig_core::download::{self, ModelStatus};
 use mondig_core::engine::protocol::Apparaat;
 use mondig_core::engine::supervisor::Instellingen;
-use mondig_core::gesprek::sprekernaam;
+use mondig_core::gesprek::{Sprekerlabels, schone_naamveld};
+use mondig_core::logboek::{self, Gebeurtenis as LogGebeurtenis, SleepbordType};
 use mondig_core::model::{Gebruik, Model};
 use mondig_core::persoonsgegevens::Markeringen;
 use mondig_core::proef;
@@ -90,8 +97,13 @@ struct Item {
     begin: Option<Instant>,
     verwerking_ms: Option<u64>,
     transcript: Option<Klaar>,
-    /// Het label van de gebruiker (zaaknummer), voor de naam en de gegevens van het document.
-    label: String,
+    /// De klant die de gebruiker invulde, voor de naam en de gegevens van het document.
+    klant: String,
+    /// Het onderwerp voor de bestandsnaam. `None`: nooit aangeraakt, dan geldt de naam van de
+    /// opname (zonder extensie).
+    onderwerp: Option<String>,
+    /// De datum voor de bestandsnaam. `None`: de datum waarop het transcript klaar was.
+    datum: Option<String>,
     /// De bestanden die Mondig van dit transcript opsloeg, het laatste achteraan.
     opgeslagen: Vec<Opgeslagen>,
     /// Is het transcript na het opslaan nog verbeterd of anders gemarkeerd? Dan staat er in het
@@ -127,7 +139,9 @@ impl Item {
             begin: None,
             verwerking_ms: None,
             transcript: None,
-            label: String::new(),
+            klant: String::new(),
+            onderwerp: None,
+            datum: None,
             opgeslagen: Vec::new(),
             verouderd: false,
             bewaar_fout: None,
@@ -191,6 +205,8 @@ pub(crate) struct BestandenStand {
     versie: u64,
     lijst: Vec<BestandInfo>,
     fout: Option<Foutmelding>,
+    /// De laatste drop leverde geen bestand op; het scherm zegt wat wel kan (ADR 0030).
+    niet_gepakt: bool,
 }
 
 /// Eén stuk tekst met tijdcodes, voor de interface.
@@ -225,8 +241,14 @@ pub(crate) struct BestandTranscript {
     /// Wat bij het lezen opviel, zoals een afgebroken bestand, in gewone taal.
     waarschuwing: Option<String>,
     regels: Vec<TranscriptRegel>,
-    /// Het label van de gebruiker.
-    label: String,
+    /// De klant zoals de gebruiker hem invulde; leeg zonder klant.
+    klant: String,
+    /// Het onderwerp voor de bestandsnaam: wat de gebruiker invulde, anders de naam van de
+    /// opname, als echte tekst.
+    onderwerp: String,
+    /// De datum voor de bestandsnaam (2026-11-02): wat de gebruiker invulde, anders de datum
+    /// waarop het transcript klaar was.
+    datum: String,
     /// Staat het bronbestand er nog? Zo niet, dan kan een regel niet worden afgespeeld (V-1).
     audio_aanwezig: bool,
     /// De stand van "Persoonsgegevens markeren en vervangen" (V-2).
@@ -239,6 +261,8 @@ struct Lijst {
     versie: u64,
     items: Vec<Item>,
     fout: Option<Foutmelding>,
+    /// Zie [`BestandenStand`]; gaat weg bij het volgende toevoegen.
+    niet_gepakt: bool,
 }
 
 impl Lijst {
@@ -247,6 +271,7 @@ impl Lijst {
             versie: self.versie,
             lijst: self.items.iter().map(BestandInfo::from).collect(),
             fout: self.fout.clone(),
+            niet_gepakt: self.niet_gepakt,
         }
     }
 
@@ -295,9 +320,22 @@ pub(crate) struct BestandenStaat {
     /// De stopvlag van het stuk geluid dat nu wordt klaargezet (V-1): een nieuwe klik op een
     /// regel stopt het vorige, zodat er nooit twee lange leesbeurten tegelijk lopen.
     afspelen: Mutex<Option<Arc<AtomicBool>>>,
+    /// De standaardnamen van de sprekers in de taal van de app, voor scherm, Kopiëren en Opslaan.
+    /// De interface geeft ze door ([`crate::vergadering::vergadering_zet_labels`]); tot dan zijn ze
+    /// Nederlands.
+    labels: Mutex<Sprekerlabels>,
 }
 
 impl BestandenStaat {
+    /// Onthoudt de standaardnamen van de sprekers zoals de interface ze doorgaf.
+    pub(crate) fn zet_labels(&self, labels: Sprekerlabels) {
+        *slot(&self.labels) = labels;
+    }
+
+    fn sprekerlabels(&self) -> Sprekerlabels {
+        slot(&self.labels).clone()
+    }
+
     /// Is er een bestand aan het wachten of aan het werk?
     pub(crate) fn is_bezig(&self) -> bool {
         slot(&self.lijst)
@@ -701,7 +739,10 @@ fn voeg_toe_met(
         let stand = if bewaakt.is_some() {
             slot(&staat.lijst).stand()
         } else {
-            wijzig(app, &staat.lijst, |lijst| lijst.fout = Some(fout.clone()))
+            wijzig(app, &staat.lijst, |lijst| {
+                lijst.fout = Some(fout.clone());
+                lijst.niet_gepakt = false;
+            })
         };
         return (stand, Some(fout), false);
     }
@@ -782,7 +823,10 @@ fn voeg_toe_met(
     let stand = if bewaakt.is_some() {
         slot(&staat.lijst).stand()
     } else {
-        wijzig(app, &staat.lijst, |lijst| lijst.fout.clone_from(&fout))
+        wijzig(app, &staat.lijst, |lijst| {
+            lijst.fout.clone_from(&fout);
+            lijst.niet_gepakt = false;
+        })
     };
     (stand, fout, behandeld)
 }
@@ -866,8 +910,16 @@ pub(crate) fn bestand_weghalen(
     })
 }
 
+/// De naam van de opname zonder extensie: het onderwerp zolang de gebruiker dat niet aanraakte, en
+/// de titel van het document.
+fn standaard_onderwerp(item: &Item) -> String {
+    PathBuf::from(&item.naam)
+        .file_stem()
+        .map_or_else(|| item.naam.clone(), |s| s.to_string_lossy().into_owned())
+}
+
 /// Het transcript van een item, als het er is.
-fn maak_transcript(item: &Item) -> Option<BestandTranscript> {
+fn maak_transcript(item: &Item, labels: &Sprekerlabels) -> Option<BestandTranscript> {
     let klaar = item.transcript.as_ref()?;
     let gefilterd = &klaar.uitgeschreven.gefilterd;
     let transcript = &gefilterd.transcript;
@@ -880,8 +932,16 @@ fn maak_transcript(item: &Item) -> Option<BestandTranscript> {
         soevereiniteit: Soevereiniteit::Lokaal,
         melding: gefilterd.uitkomst.melding(),
         waarschuwing: waarschuwing_tekst(&klaar.uitgeschreven),
-        regels: scherm_regels(klaar),
-        label: item.label.clone(),
+        regels: scherm_regels(klaar, labels),
+        klant: item.klant.clone(),
+        onderwerp: item
+            .onderwerp
+            .clone()
+            .unwrap_or_else(|| standaard_onderwerp(item)),
+        datum: item
+            .datum
+            .clone()
+            .unwrap_or_else(|| standaard_datum(&bewaren::lokaal_moment(klaar.op_ms))),
         audio_aanwezig: item.pad.is_file(),
         persoon: persoon_info(&klaar.persoon),
     })
@@ -893,8 +953,9 @@ pub(crate) fn bestand_transcript(
     staat: State<'_, BestandenStaat>,
     taak: TaakId,
 ) -> Option<BestandTranscript> {
+    let labels = staat.sprekerlabels();
     let lijst = slot(&staat.lijst);
-    maak_transcript(lijst.items.iter().find(|i| i.taak == taak)?)
+    maak_transcript(lijst.items.iter().find(|i| i.taak == taak)?, &labels)
 }
 
 /// Past de markeringen van persoonsgegevens van een transcript aan (V-2) en geeft het transcript
@@ -905,6 +966,7 @@ fn wijzig_persoon(
     taak: TaakId,
     wijziging: impl FnOnce(&mut Markeringen) -> Result<(), Foutmelding>,
 ) -> Result<BestandTranscript, Foutmelding> {
+    let labels = staat.sprekerlabels();
     let (uitslag, veranderd) = {
         let mut lijst = slot(&staat.lijst);
         let item = lijst.item(taak).ok_or_else(geen_transcript)?;
@@ -915,7 +977,7 @@ fn wijzig_persoon(
         if veranderd && !item.opgeslagen.is_empty() {
             item.verouderd = true;
         }
-        (maak_transcript(item), veranderd && item.verouderd)
+        (maak_transcript(item, &labels), veranderd && item.verouderd)
     };
     if veranderd {
         // De lijst toont dan dat het opgeslagen bestand niet meer klopt.
@@ -978,6 +1040,7 @@ pub(crate) fn bestand_zet_tekst(
     index: usize,
     tekst: String,
 ) -> Result<Vec<TranscriptRegel>, Foutmelding> {
+    let labels = staat.sprekerlabels();
     let (regels, verouderd) = {
         let mut lijst = slot(&staat.lijst);
         let item = lijst.item(taak).ok_or_else(geen_transcript)?;
@@ -989,7 +1052,7 @@ pub(crate) fn bestand_zet_tekst(
             .map(|(segment, _)| segment.tekst.trim().to_string())
             .ok_or_else(geen_regel)?;
         let veranderd = klaar.bewerkt.zet(index, &origineel, &tekst);
-        let regels = scherm_regels(klaar);
+        let regels = scherm_regels(klaar, &labels);
         if veranderd && !item.opgeslagen.is_empty() {
             item.verouderd = true;
         }
@@ -1041,12 +1104,12 @@ pub(crate) async fn bestand_audio_stuk(
 }
 
 fn geen_transcript() -> Foutmelding {
-    Foutmelding::nieuw("Dit transcript staat er niet meer.", Vervolg::Geen)
+    Foutmelding::nieuw("Dit uitschrift staat er niet meer.", Vervolg::Geen)
 }
 
 fn geen_regel() -> Foutmelding {
     Foutmelding::nieuw(
-        "Deze regel staat niet (meer) in het transcript.",
+        "Deze regel staat niet (meer) in het uitschrift.",
         Vervolg::Geen,
     )
 }
@@ -1056,29 +1119,77 @@ fn geen_regel() -> Foutmelding {
 // ---------------------------------------------------------------------------
 
 impl BestandenStaat {
-    /// Het transcript als [`Document`] om te bewaren, met het label dat nu geldt. `None` als
+    /// Het transcript als [`Document`] om te bewaren, met de velden die nu gelden. `None` als
     /// er (nog) geen transcript is.
     pub(crate) fn document(&self, taak: TaakId) -> Option<Document> {
+        self.document_met(taak, None)
+    }
+
+    /// Een document zonder tekst met de velden zoals de gebruiker ze nu typt (nog niet bewaard),
+    /// alleen om de bestandsnaam uit te rekenen. Dezelfde stappen als [`Self::document`].
+    pub(crate) fn naam_document(
+        &self,
+        taak: TaakId,
+        klant: &str,
+        onderwerp: &str,
+        datum: &str,
+    ) -> Option<Document> {
+        self.document_met(taak, Some((klant, onderwerp, datum)))
+    }
+
+    /// Het document van `taak`. Met `getypt` (klant, onderwerp, datum) gelden die velden in plaats
+    /// van de bewaarde, en blijft de tekst weg.
+    fn document_met(&self, taak: TaakId, getypt: Option<(&str, &str, &str)>) -> Option<Document> {
+        let labels = self.sprekerlabels();
         let lijst = slot(&self.lijst);
         let item = lijst.items.iter().find(|i| i.taak == taak)?;
         let klaar = item.transcript.as_ref()?;
         let gefilterd = &klaar.uitgeschreven.gefilterd;
-        let titel = PathBuf::from(&item.naam)
-            .file_stem()
-            .map_or_else(|| item.naam.clone(), |s| s.to_string_lossy().into_owned());
+        let titel = standaard_onderwerp(item);
+        let moment = bewaren::lokaal_moment(klaar.op_ms);
+        let (klant, onderwerp, datum) = match getypt {
+            Some((klant, onderwerp, datum)) => (
+                schone_naamveld(klant),
+                eigen_waarde(onderwerp, &titel),
+                eigen_waarde(datum, &standaard_datum(&moment)),
+            ),
+            None => (
+                item.klant.clone(),
+                item.onderwerp.clone(),
+                item.datum.clone(),
+            ),
+        };
         let mut document = Document {
+            standaard_onderwerp: titel.clone(),
             titel,
             bron: item.naam.clone(),
             model: klaar.model.clone(),
-            label: Some(item.label.clone()).filter(|l| !l.trim().is_empty()),
-            moment: bewaren::lokaal_moment(klaar.op_ms),
+            klant: Some(klant).filter(|k| !k.trim().is_empty()),
+            onderwerp,
+            datum,
+            moment,
             duur_ms: ms(gefilterd.transcript.audio_duur),
             melding: gefilterd.uitkomst.melding().map(str::to_string),
-            regels: export_regels(klaar),
+            regels: if getypt.is_some() {
+                Vec::new()
+            } else {
+                export_regels(klaar, &labels)
+            },
         };
-        // De naam van het bestand, het label en de titel kunnen namen of nummers bevatten.
+        // De naam van het bestand, de klant, het onderwerp en de titel kunnen namen of nummers
+        // bevatten.
         vervang_velden(&mut document, &klaar.persoon, true);
         Some(document)
+    }
+
+    /// De klant van `taak`, als die is ingevuld.
+    pub(crate) fn klant(&self, taak: TaakId) -> Option<String> {
+        slot(&self.lijst)
+            .items
+            .iter()
+            .find(|i| i.taak == taak)
+            .map(|i| i.klant.clone())
+            .filter(|k| !k.trim().is_empty())
     }
 
     /// Komt dit bestand uit de bewaakte map? Dan met de gegevens om het als gedaan te noteren.
@@ -1090,16 +1201,29 @@ impl BestandenStaat {
             .and_then(|i| i.bewaakt.clone())
     }
 
-    /// Bewaart het label van een transcript. `false` als het transcript er niet meer is.
-    pub(crate) fn zet_label(&self, taak: TaakId, label: String) -> bool {
+    /// Bewaart klant, onderwerp en datum van een transcript. Een veld gelijk aan de standaard (de
+    /// naam van de opname, de datum van het transcript) blijft "nooit aangeraakt". `false` als het
+    /// transcript er niet meer is.
+    pub(crate) fn zet_naamvelden(
+        &self,
+        taak: TaakId,
+        klant: &str,
+        onderwerp: &str,
+        datum: &str,
+    ) -> bool {
         let mut lijst = slot(&self.lijst);
-        match lijst.item(taak) {
-            Some(item) => {
-                item.label = label;
-                true
-            }
-            None => false,
-        }
+        let Some(item) = lijst.item(taak) else {
+            return false;
+        };
+        // Zonder transcript is er nog geen naam om te bewaren.
+        let Some(klaar) = &item.transcript else {
+            return false;
+        };
+        let standaard = standaard_datum(&bewaren::lokaal_moment(klaar.op_ms));
+        item.datum = eigen_waarde(datum, &standaard);
+        item.klant = schone_naamveld(klant);
+        item.onderwerp = eigen_waarde(onderwerp, &standaard_onderwerp(item));
+        true
     }
 
     /// Onthoudt een bestand dat Mondig opsloeg (of de fout bij automatisch opslaan) en
@@ -1180,8 +1304,8 @@ impl BestandenStaat {
 }
 
 /// Slepen boven het hoofdvenster. Bij loslaten gaan de bestanden in de wachtrij en opent het
-/// scherm Bestanden, ook als de gebruiker op een ander scherm was. Een fout bij toevoegen
-/// staat in de stand, die het scherm bij het openen ophaalt.
+/// scherm Bestanden, ook als de gebruiker op een ander scherm was. Een fout bij toevoegen, of
+/// een drop zonder bestand, staat in de stand, die het scherm bij het openen ophaalt.
 pub(crate) fn bij_slepen(app: &AppHandle, event: &DragDropEvent) {
     match event {
         DragDropEvent::Enter { paths, .. } if !paths.is_empty() => {
@@ -1192,18 +1316,147 @@ pub(crate) fn bij_slepen(app: &AppHandle, event: &DragDropEvent) {
         }
         DragDropEvent::Drop { paths, .. } => {
             let _ = app.emit("bestanden-slepen", false);
+            // Wat de Mac-haak over deze drop meldde; die meldt het eerder dan Tauri.
+            let VolgendeDrop {
+                typen,
+                beloftes,
+                van_buiten,
+            } = slot(&VOLGENDE_DROP).take().unwrap_or_default();
             if paths.is_empty() {
-                return;
+                // Alleen typenamen, voor de tester: wat stuurt een app als Dictafoon mee?
+                logboek::log(&LogGebeurtenis::SlepenZonderPaden {
+                    beloftes: u64::try_from(beloftes).unwrap_or(u64::MAX),
+                    typen: SleepbordType::lijst(&typen),
+                });
             }
-            let paden = paths.clone();
-            let app = app.clone();
-            // Niet op de thread van het venster: de koppen lezen kan even duren.
-            std::thread::spawn(move || {
-                voeg_toe(&app, paden);
-                let _ = app.emit("navigeer", "/bestanden");
-            });
+            match na_drop(paths, beloftes, van_buiten) {
+                NaDrop::Toevoegen => voeg_toe_gesleept(app, paths.clone()),
+                // De bestanden komen via de haak binnen (`bij_mac_melding`); of het is een
+                // lege drop van binnen Mondig of zonder haak, die stil blijft.
+                NaDrop::Overgenomen | NaDrop::Negeren => {}
+                NaDrop::NietGepakt => niet_gepakt(app),
+            }
         }
         _ => {}
+    }
+}
+
+/// Wat de Mac-haak meldde over de drop die Tauri nog moet doorgeven. Op andere platforms (en
+/// op de Mac zonder haak) blijft dit leeg.
+static VOLGENDE_DROP: Mutex<Option<VolgendeDrop>> = Mutex::new(None);
+
+/// Zie [`VOLGENDE_DROP`].
+#[derive(Default)]
+struct VolgendeDrop {
+    /// De typenamen op het sleepbord.
+    typen: Vec<String>,
+    /// Hoeveel beloftes de haak ophaalt.
+    beloftes: usize,
+    /// Kwam de drop van een andere app?
+    van_buiten: bool,
+}
+
+/// Wat er gebeurt als Tauri een drop doorgeeft.
+#[derive(Debug, PartialEq, Eq)]
+enum NaDrop {
+    /// De paden gaan in de wachtrij.
+    Toevoegen,
+    /// De Mac-haak haalt beloftes op en geeft ook de paden door; die van Tauri zouden dubbel zijn.
+    Overgenomen,
+    /// Iets van een andere app, maar niets te pakken: de melding in gewone taal.
+    NietGepakt,
+    /// Leeg, en niet aantoonbaar van buiten (tekst die binnen Mondig versleept wordt, of geen
+    /// haak): stil, zoals vroeger.
+    Negeren,
+}
+
+/// `van_buiten` komt alleen van de Mac-haak; zonder haak is het `false`.
+fn na_drop(paden: &[PathBuf], beloftes: usize, van_buiten: bool) -> NaDrop {
+    if beloftes > 0 {
+        NaDrop::Overgenomen
+    } else if !paden.is_empty() {
+        NaDrop::Toevoegen
+    } else if van_buiten {
+        NaDrop::NietGepakt
+    } else {
+        NaDrop::Negeren
+    }
+}
+
+/// Zet gesleepte bestanden in de wachtrij en opent het scherm Bestanden. Niet op de thread
+/// van het venster: de koppen lezen kan even duren.
+fn voeg_toe_gesleept(app: &AppHandle, paden: Vec<PathBuf>) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        voeg_toe(&app, paden);
+        let _ = app.emit("navigeer", "/bestanden");
+    });
+}
+
+/// Een drop die niets opleverde: de stand zegt het en het scherm Bestanden gaat open.
+fn niet_gepakt(app: &AppHandle) {
+    let staat = app.state::<BestandenStaat>();
+    wijzig(app, &staat.lijst, |lijst| lijst.niet_gepakt = true);
+    let _ = app.emit("navigeer", "/bestanden");
+}
+
+/// Een melding van de Mac-haak (ADR 0030).
+#[cfg(target_os = "macos")]
+fn bij_mac_melding(app: &AppHandle, melding: mondig_mac_slepen::Melding) {
+    use mondig_mac_slepen::Melding;
+    match melding {
+        Melding::BelofteBoven => {
+            let _ = app.emit("bestanden-slepen", true);
+        }
+        Melding::Losgelaten {
+            typen,
+            beloftes,
+            van_buiten,
+        } => {
+            *slot(&VOLGENDE_DROP) = Some(VolgendeDrop {
+                typen,
+                beloftes,
+                van_buiten,
+            });
+        }
+        Melding::Bestand(pad) => voeg_toe_gesleept(app, vec![pad]),
+        Melding::Mislukt => niet_gepakt(app),
+    }
+}
+
+/// Plaatst op de Mac de haak voor bestandsbeloftes op de webview van het hoofdvenster
+/// (ADR 0030). Lukt dat niet, dan staat de reden in het logboek en werkt slepen zoals
+/// zonder haak: paden uit de Finder wel, beloftes niet.
+#[cfg(target_os = "macos")]
+#[expect(
+    unsafe_code,
+    reason = "de haak krijgt de WKWebView als ruwe pointer van Tauri"
+)]
+pub(crate) fn plaats_mac_haak(app: &AppHandle) {
+    let niet = |reden: &'static str| logboek::log(&LogGebeurtenis::SleephaakNiet { reden });
+    let Some(venster) = app.get_webview_window("main") else {
+        niet("geen_venster");
+        return;
+    };
+    // De tijdelijke map voor beloftes, in de cache van de app. Bij het starten leeg: een
+    // opname blijft niet langer bewaard dan nodig (ADR 0008).
+    let Ok(map) = app.path().app_cache_dir().map(|map| map.join("gesleept")) else {
+        niet("geen_map");
+        return;
+    };
+    let _ = std::fs::remove_dir_all(&map);
+    let app = app.clone();
+    let gelukt = venster.with_webview(move |webview| {
+        let ontvanger = Box::new(move |melding| bij_mac_melding(&app, melding));
+        // SAFETY: `inner()` is de WKWebView van het hoofdvenster, die bestaat zolang de app
+        // draait (sluiten verbergt het venster). `with_webview` draait op de hoofdthread.
+        if let Err(fout) = unsafe { mondig_mac_slepen::installeer(webview.inner(), map, ontvanger) }
+        {
+            logboek::log(&LogGebeurtenis::SleephaakNiet { reden: fout.code() });
+        }
+    });
+    if gelukt.is_err() {
+        niet("geen_webview");
     }
 }
 
@@ -1269,7 +1522,7 @@ fn persoon_per_uiting(klaar: &Klaar) -> Vec<(Vec<MarkeringInfo>, String)> {
 /// De regels van het transcript op het scherm, met de spreker ("Spreker 1") als de sprekers
 /// herkend zijn (4b-D) en de tekst zoals de gebruiker hem verbeterde (V-1). Regels zonder tekst
 /// vallen weg; `index` blijft de plek in het hele transcript.
-fn scherm_regels(klaar: &Klaar) -> Vec<TranscriptRegel> {
+fn scherm_regels(klaar: &Klaar, labels: &Sprekerlabels) -> Vec<TranscriptRegel> {
     let teksten = uiting_teksten(klaar);
     let mut persoon = persoon_per_uiting(klaar).into_iter();
     klaar
@@ -1285,7 +1538,7 @@ fn scherm_regels(klaar: &Klaar) -> Vec<TranscriptRegel> {
                 start_ms: s.start_ms,
                 eind_ms: s.eind_ms,
                 tekst,
-                spreker: spreker.map(sprekernaam),
+                spreker: spreker.map(|n| labels.spreker(n)),
                 markeringen,
                 uitvoer,
             })
@@ -1296,7 +1549,7 @@ fn scherm_regels(klaar: &Klaar) -> Vec<TranscriptRegel> {
 /// De regels voor een export (tekst, Word, pdf, ondertitels), met dezelfde sprekers en
 /// dezelfde verbeterde tekst als het scherm. Zonder sprekers is `spreker` overal `None`, dus de
 /// exports zijn dan ongewijzigd.
-fn export_regels(klaar: &Klaar) -> Vec<Regel> {
+fn export_regels(klaar: &Klaar, labels: &Sprekerlabels) -> Vec<Regel> {
     klaar
         .uitgeschreven
         .uitingen()
@@ -1306,7 +1559,7 @@ fn export_regels(klaar: &Klaar) -> Vec<Regel> {
             start_ms: s.start_ms,
             eind_ms: s.eind_ms,
             tekst: uitvoer,
-            spreker: spreker.map(sprekernaam),
+            spreker: spreker.map(|n| labels.spreker(n)),
         })
         .collect()
 }
@@ -1314,6 +1567,31 @@ fn export_regels(klaar: &Klaar) -> Vec<Regel> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn een_lege_drop_van_buiten_geeft_de_melding() {
+        // Van een andere app, zonder pad en zonder belofte: melden.
+        assert_eq!(na_drop(&[], 0, true), NaDrop::NietGepakt);
+        // Leeg van binnen Mondig (versleepte tekst) of zonder haak (Windows, Linux): stil.
+        assert_eq!(na_drop(&[], 0, false), NaDrop::Negeren);
+        // Paden uit de Finder of de Verkenner: gewoon toevoegen.
+        let pad = [PathBuf::from("opname.m4a")];
+        assert_eq!(na_drop(&pad, 0, true), NaDrop::Toevoegen);
+        assert_eq!(na_drop(&pad, 0, false), NaDrop::Toevoegen);
+        // Beloftes: de haak geeft alles door, ook de paden die Tauri meestuurt.
+        assert_eq!(na_drop(&[], 2, true), NaDrop::Overgenomen);
+        assert_eq!(na_drop(&pad, 1, true), NaDrop::Overgenomen);
+    }
+
+    #[test]
+    fn een_lege_drop_staat_in_de_stand() {
+        let lijst = Lijst {
+            niet_gepakt: true,
+            ..Lijst::default()
+        };
+        assert!(lijst.stand().niet_gepakt);
+        assert!(!Lijst::default().stand().niet_gepakt);
+    }
     use mondig_core::aanbieder::Transcript;
     use mondig_core::engine::protocol::Segment;
     use mondig_core::filter::{self, Meting};
@@ -1375,18 +1653,48 @@ mod tests {
     #[test]
     fn zonder_sprekers_blijven_scherm_en_export_zoals_ze_waren() {
         let uit = klaar(uitgeschreven(None));
-        let scherm = scherm_regels(&uit);
+        let scherm = scherm_regels(&uit, &Sprekerlabels::default());
         assert_eq!(scherm.len(), 2, "een regel zonder tekst valt weg");
         assert!(scherm.iter().all(|r| r.spreker.is_none()));
-        let export = export_regels(&uit);
+        let export = export_regels(&uit, &Sprekerlabels::default());
         assert_eq!(export.len(), 3);
         assert!(export.iter().all(|r| r.spreker.is_none()));
     }
 
     #[test]
+    fn scherm_en_export_gebruiken_de_sprekerlabels_van_de_app() {
+        let uit = klaar(uitgeschreven(Some(vec![Some(1), Some(1), Some(2)])));
+        let en = Sprekerlabels {
+            jij: "You".into(),
+            anderen: "Others".into(),
+            sprekers: (1..=8).map(|n| format!("Speaker {n}")).collect(),
+        };
+        let scherm: Vec<_> = scherm_regels(&uit, &en)
+            .into_iter()
+            .map(|r| r.spreker)
+            .collect();
+        assert_eq!(
+            scherm,
+            vec![Some("Speaker 1".to_string()), Some("Speaker 2".to_string())]
+        );
+        let export: Vec<_> = export_regels(&uit, &en)
+            .into_iter()
+            .map(|r| r.spreker)
+            .collect();
+        assert_eq!(
+            export,
+            vec![
+                Some("Speaker 1".to_string()),
+                Some("Speaker 1".to_string()),
+                Some("Speaker 2".to_string())
+            ]
+        );
+    }
+
+    #[test]
     fn met_sprekers_krijgt_elke_regel_zijn_spreker_op_scherm_en_in_de_export() {
         let uit = klaar(uitgeschreven(Some(vec![Some(1), Some(1), Some(2)])));
-        let scherm: Vec<_> = scherm_regels(&uit)
+        let scherm: Vec<_> = scherm_regels(&uit, &Sprekerlabels::default())
             .into_iter()
             .map(|r| (r.tekst, r.spreker))
             .collect();
@@ -1397,7 +1705,10 @@ mod tests {
                 ("Dank u wel.".to_string(), Some("Spreker 2".to_string())),
             ]
         );
-        let export: Vec<_> = export_regels(&uit).into_iter().map(|r| r.spreker).collect();
+        let export: Vec<_> = export_regels(&uit, &Sprekerlabels::default())
+            .into_iter()
+            .map(|r| r.spreker)
+            .collect();
         assert_eq!(
             export,
             vec![
@@ -1416,11 +1727,14 @@ mod tests {
             titel: "Interview".to_string(),
             bron: "interview.m4a".to_string(),
             model: "Parakeet Ultra".to_string(),
-            label: None,
+            klant: None,
+            onderwerp: None,
+            datum: None,
+            standaard_onderwerp: "Interview".to_string(),
             moment: bewaren::lokaal_moment(0),
             duur_ms: 12_000,
             melding: None,
-            regels: export_regels(&uit),
+            regels: export_regels(&uit, &Sprekerlabels::default()),
         };
         let tekst = |formaat| String::from_utf8(maak(&document, formaat, true).unwrap()).unwrap();
         // Tekst, ondertitels (SRT met het label, VTT met een stem) en de rest.
@@ -1449,7 +1763,7 @@ mod tests {
     #[test]
     fn een_bewerkte_regel_staat_op_het_scherm_met_zijn_plek_in_het_hele_transcript() {
         let klaar = bewerkt_transcript();
-        let scherm = scherm_regels(&klaar);
+        let scherm = scherm_regels(&klaar, &Sprekerlabels::default());
         // De lege regel (plek 1) staat niet op het scherm, maar plek 2 blijft plek 2.
         assert_eq!(
             scherm
@@ -1484,7 +1798,7 @@ mod tests {
         // Word, OpenDocument en pdf zijn binair en gecomprimeerd: de tekst is er niet in te
         // zoeken, maar zonder de bewerking zijn ze anders.
         let zonder = Document {
-            regels: export_regels(&klaar_zonder_bewerking()),
+            regels: export_regels(&klaar_zonder_bewerking(), &Sprekerlabels::default()),
             ..document
         };
         for formaat in [Formaat::Docx, Formaat::Odt, Formaat::Pdf] {
@@ -1503,11 +1817,14 @@ mod tests {
             titel: "Interview".to_string(),
             bron: "interview.m4a".to_string(),
             model: "Parakeet Ultra".to_string(),
-            label: None,
+            klant: None,
+            onderwerp: None,
+            datum: None,
+            standaard_onderwerp: "Interview".to_string(),
             moment: bewaren::lokaal_moment(0),
             duur_ms: 12_000,
             melding: None,
-            regels: export_regels(klaar),
+            regels: export_regels(klaar, &Sprekerlabels::default()),
         }
     }
 
@@ -1517,12 +1834,15 @@ mod tests {
         let origineel = klaar.uitgeschreven.uitingen()[2].0.tekst.trim().to_string();
         assert!(!klaar.bewerkt.zet(2, &origineel, "   \n"));
         assert!(
-            scherm_regels(&klaar)[1]
+            scherm_regels(&klaar, &Sprekerlabels::default())[1]
                 .tekst
                 .starts_with("Dank u wel, voorzitter.")
         );
         assert!(klaar.bewerkt.zet(2, &origineel, &origineel));
-        assert_eq!(scherm_regels(&klaar)[1].tekst, "Dank u wel.");
+        assert_eq!(
+            scherm_regels(&klaar, &Sprekerlabels::default())[1].tekst,
+            "Dank u wel."
+        );
     }
 
     #[test]
@@ -1535,7 +1855,7 @@ mod tests {
                 .bewerkt
                 .zet(2, "Dank u wel.", "Bel 06 12345678 of mail jan@example.com.")
         );
-        let scherm = scherm_regels(&klaar);
+        let scherm = scherm_regels(&klaar, &Sprekerlabels::default());
         let regel = &scherm[1];
         assert_eq!(regel.markeringen.len(), 2);
         assert_eq!(
@@ -1551,7 +1871,7 @@ mod tests {
         assert!(tekst(&klaar, Formaat::Txt).contains("06 12345678"));
         // Aan: Kopiëren en elke export krijgen de plaatsvervangers, het scherm houdt de tekst.
         klaar.persoon.zet_vervangen(true);
-        let scherm = scherm_regels(&klaar);
+        let scherm = scherm_regels(&klaar, &Sprekerlabels::default());
         assert_eq!(scherm[1].uitvoer, "Bel [TELEFOON] of mail [E-MAIL].");
         assert!(scherm[1].tekst.contains("06 12345678"));
         for formaat in [
@@ -1571,7 +1891,7 @@ mod tests {
         // Een weggehaalde markering blijft staan in de tekst.
         klaar.persoon.haal_weg("jan@example.com");
         assert_eq!(
-            scherm_regels(&klaar)[1].uitvoer,
+            scherm_regels(&klaar, &Sprekerlabels::default())[1].uitvoer,
             "Bel [TELEFOON] of mail jan@example.com."
         );
     }
@@ -1583,23 +1903,25 @@ mod tests {
         let o2 = klaar.uitgeschreven.uitingen()[2].0.tekst.trim().to_string();
         klaar.bewerkt.zet(0, &o0, "Mijn nummer is 06 1234");
         klaar.bewerkt.zet(2, &o2, "5678 en dat was het.");
-        let scherm = scherm_regels(&klaar);
+        let scherm = scherm_regels(&klaar, &Sprekerlabels::default());
         assert_eq!(scherm[0].markeringen.len(), 1);
         assert_eq!(scherm[1].markeringen.len(), 1);
         klaar.persoon.zet_vervangen(true);
-        let regels = export_regels(&klaar);
+        let regels = export_regels(&klaar, &Sprekerlabels::default());
         assert_eq!(regels[0].tekst, "Mijn nummer is [TELEFOON]");
         assert!(!regels[2].tekst.contains("5678"), "{}", regels[2].tekst);
     }
 
     #[test]
-    fn naam_titel_en_label_gaan_door_de_vervanging_maar_een_datum_in_een_naam_niet() {
+    fn naam_titel_klant_en_onderwerp_gaan_door_de_vervanging_maar_een_datum_in_een_naam_niet() {
         let mut klaar = klaar(uitgeschreven(None));
         klaar.persoon.markeer("Jan de Vries").unwrap();
         let mut document = document_met(&klaar);
         document.titel = "2026-11-03 Interview Jan de Vries".to_string();
         document.bron = "2026-11-03 Interview Jan de Vries.m4a".to_string();
-        document.label = Some("Zaak Jan de Vries".to_string());
+        document.klant = Some("Zaak Jan de Vries".to_string());
+        document.onderwerp = Some("Intake Jan de Vries".to_string());
+        document.datum = Some("Jan de Vries 3 november".to_string());
         // Uit: ongewijzigd.
         crate::persoon::vervang_velden(&mut document, &klaar.persoon, true);
         assert_eq!(document.titel, "2026-11-03 Interview Jan de Vries");
@@ -1607,7 +1929,13 @@ mod tests {
         crate::persoon::vervang_velden(&mut document, &klaar.persoon, true);
         assert_eq!(document.titel, "2026-11-03 Interview [GEGEVEN]");
         assert_eq!(document.bron, "2026-11-03 Interview [GEGEVEN].m4a");
-        assert_eq!(document.label.as_deref(), Some("Zaak [GEGEVEN]"));
+        assert_eq!(document.klant.as_deref(), Some("Zaak [GEGEVEN]"));
+        assert_eq!(document.onderwerp.as_deref(), Some("Intake [GEGEVEN]"));
+        assert_eq!(document.datum.as_deref(), Some("[GEGEVEN] 3 november"));
+        // De bestandsnaam zelf bevat dan ook geen naam meer.
+        let naam = crate::bewaren::standaardnaam(&document, mondig_core::bewaren::Formaat::Docx);
+        assert!(!naam.contains("Jan"), "{naam}");
+        assert!(naam.contains("Zaak [GEGEVEN] Intake [GEGEVEN]"), "{naam}");
     }
 
     #[test]

@@ -7,6 +7,7 @@ import {
   deelTekst,
   gemarkeerdeStukken,
   naarTreffer,
+  lijstToets,
   neemtSpatieOver,
   PLAATSVERVANGER,
   snelheidFactor,
@@ -150,6 +151,39 @@ describe('afspelen', () => {
   });
 });
 
+describe('toetsen voor de verslaglijst', () => {
+  const toets = (key: string, extra: Record<string, boolean> = {}) => ({
+    key,
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    shiftKey: false,
+    target: null,
+    ...extra
+  });
+  const zichtbaar = { actief: true, heeftGeluid: true };
+  const verborgen = { actief: false, heeftGeluid: true };
+
+  it('opent het zoekveld met Ctrl+F of ⌘F en speelt af met spatie als de lijst in beeld is', () => {
+    expect(lijstToets(toets('f', { ctrlKey: true }), zichtbaar)).toBe('zoeken');
+    expect(lijstToets(toets('F', { metaKey: true }), zichtbaar)).toBe('zoeken');
+    expect(lijstToets(toets(' '), zichtbaar)).toBe('afspelen');
+  });
+
+  it('doet niets als de lijst niet in beeld is, zodat er geen onzichtbaar geluid of zoekveld komt', () => {
+    expect(lijstToets(toets(' '), verborgen)).toBeNull();
+    expect(lijstToets(toets('f', { ctrlKey: true }), verborgen)).toBeNull();
+    expect(lijstToets(toets('f', { metaKey: true }), verborgen)).toBeNull();
+  });
+
+  it('speelt niet af zonder geluid of met een andere toets', () => {
+    expect(lijstToets(toets(' '), { actief: true, heeftGeluid: false })).toBeNull();
+    expect(lijstToets(toets(' ', { shiftKey: true }), zichtbaar)).toBeNull();
+    expect(lijstToets(toets('a'), zichtbaar)).toBeNull();
+    expect(lijstToets(toets('f', { ctrlKey: true, altKey: true }), zichtbaar)).toBeNull();
+  });
+});
+
 describe('vervangen in beeld', () => {
   const regel: VerslagRegel = {
     sleutel: 1,
@@ -222,5 +256,26 @@ describe('plaatsvervangers gelijk aan Rust', () => {
 
   it('heeft geen soort die in Rust niet bestaat', () => {
     expect(Object.keys(PLAATSVERVANGER).sort()).toEqual(Object.keys(uitRust).sort());
+  });
+});
+
+describe('zoeken op de naam van een spreker', () => {
+  it('vindt een regel ook op de naam van de spreker, vóór de treffers in de tekst', () => {
+    const teksten = ['Hallo Noor.', 'Dag.', 'Tot ziens.'];
+    expect(vindTreffers(teksten, 'noor', ['Noor', 'Bram', 'Noor'])).toEqual([
+      { regel: 0, van: 0, tot: 0, naam: true },
+      { regel: 0, van: 6, tot: 10 },
+      { regel: 2, van: 0, tot: 0, naam: true }
+    ]);
+    // Zonder namen (in de ruimte zonder sprekers) alleen de tekst.
+    expect(vindTreffers(teksten, 'noor')).toEqual([{ regel: 0, van: 6, tot: 10 }]);
+  });
+
+  it('kleurt in de tekst alleen de treffers in de tekst', () => {
+    const treffers = vindTreffers(['Hallo Noor.'], 'noor', ['Noor']);
+    const delen = deelTekst('Hallo Noor.', treffers, 0);
+    expect(delen.filter((d) => d.treffer).map((d) => d.tekst)).toEqual(['Noor']);
+    // De actieve treffer is de naam, dus de treffer in de tekst is niet actief.
+    expect(delen.some((d) => d.actief)).toBe(false);
   });
 });

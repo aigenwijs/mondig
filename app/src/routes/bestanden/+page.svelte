@@ -4,12 +4,15 @@
   import Check from '@lucide/svelte/icons/check';
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
   import FolderOpen from '@lucide/svelte/icons/folder-open';
-  import FileText from '@lucide/svelte/icons/file-text';
+  import AudioLines from '@lucide/svelte/icons/audio-lines';
   import Film from '@lucide/svelte/icons/film';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import Upload from '@lucide/svelte/icons/upload';
+  import X from '@lucide/svelte/icons/x';
   import InstellingSprekers from '#lib/components/InstellingSprekers.svelte';
+  import ToonInMap from '#lib/components/ToonInMap.svelte';
   import Transcript from '#lib/components/Transcript.svelte';
+  import VerwijderVraag from '#lib/components/VerwijderVraag.svelte';
   import { Button } from '#lib/components/ui/button/index.js';
   import { t } from '#lib';
   import {
@@ -19,7 +22,10 @@
     bestandTranscript,
     bestandWeghalen,
     duurTekst,
+    foutVanStand,
     isNieuwer,
+    rijKnop,
+    vraagBijWeghalen,
     luisterNaarSlepen,
     luisterNaarStand,
     stand,
@@ -56,6 +62,7 @@
   let standFout = $state<Foutmelding | null>(null);
   let schermFout = $state<Foutmelding | null>(null);
   const fout = $derived(schermFout ?? standFout);
+  const zonderModel = $derived(fout?.vervolg === 'opnieuw_downloaden');
   let slepen = $state(false);
   let kiezen = $state(false);
   // Per bestand de tekst "nog ongeveer ...", als er genoeg gemeten is.
@@ -79,7 +86,7 @@
     if (!isNieuwer(nieuw, versie)) return;
     versie = nieuw.versie;
     lijst = nieuw.lijst;
-    standFout = nieuw.fout;
+    standFout = foutVanStand(nieuw, t());
     werkWachtrijBij();
   }
 
@@ -168,6 +175,29 @@
     await tick();
     // De knop met focus is weg: naar de hoofdactie.
     kiesKnop?.focus();
+  }
+
+  // De prullenbak bij een klaar bestand: is het uitschrift opgeslagen, dan meteen weg uit de lijst
+  // (het bestand blijft staan, dat zegt de melding); anders eerst de vraag (ontwerpsysteem §5).
+  let wegVraagOpen = $state(false);
+  let wegTaak = $state<number | null>(null);
+
+  async function klikWeg(bestand: BestandInfo): Promise<void> {
+    if (vraagBijWeghalen(bestand)) {
+      wegTaak = bestand.taak;
+      wegVraagOpen = true;
+      return;
+    }
+    const opgeslagen = bestand.toestand.type === 'klaar' && bestand.opgeslagen !== null;
+    await weghalen(bestand.taak);
+    if (opgeslagen) lijstMelding = t().bestandOpgeslagenBlijft;
+  }
+
+  async function bevestigWeg(): Promise<void> {
+    const taak = wegTaak;
+    wegVraagOpen = false;
+    wegTaak = null;
+    if (taak !== null) await weghalen(taak);
   }
 
   /** Opent de opslagmap in de Verkenner; de fout komt in gewone taal boven de lijst. */
@@ -348,8 +378,13 @@
         <p class="m-0 text-klein text-dim">{waarTekst}</p>
       {/if}
       {#if !slepen}
-        <Button class="mt-1.5" bind:ref={kiesKnop} onclick={kies} aria-disabled={kiezen}
-          >{t().bestandenKiezen}</Button
+        <!-- Zonder spraakmodel is "Spraakmodel downloaden" de hoofdactie, dus is dit de tweede knop. -->
+        <Button
+          class="mt-1.5"
+          variant={zonderModel ? 'tweede' : 'primair'}
+          bind:ref={kiesKnop}
+          onclick={kies}
+          aria-disabled={kiezen}>{t().bestandenKiezen}</Button
         >
         <!-- Geldt voor de bestanden die hierna binnenkomen (zelfde instelling als bij
              vergaderingen en op Modellen). -->
@@ -373,7 +408,7 @@
         {@const toestand = bestand.toestand}
         {@const isFout = toestand.type === 'fout'}
         {@const loopt = toestand.type === 'verwerkt'}
-        {@const wacht = toestand.type === 'wacht'}
+        {@const knop = rijKnop(toestand)}
         <li class={rijKlasse}>
           <div class="{vierkant} {isFout ? 'text-fout-tekst' : ''}">
             {#if isFout}
@@ -383,7 +418,7 @@
             {:else if bestand.video}
               <Film size={16} aria-hidden="true" />
             {:else}
-              <FileText size={16} aria-hidden="true" />
+              <AudioLines size={16} aria-hidden="true" />
             {/if}
           </div>
           <div class="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -421,6 +456,16 @@
                 ></div>
               </div>
             {/if}
+            {#if bestand.opgeslagen}
+              <!-- Het opgeslagen bestand in Verkenner of Finder; is het intussen weg, dan zegt
+                   Rust dat in een melding bovenaan. -->
+              <ToonInMap
+                taak={bestand.taak}
+                bijFout={(melding: string) => {
+                  schermFout = { melding, vervolg: 'geen' };
+                }}
+              />
+            {/if}
             {#if toestand.type === 'klaar' && bestand.heeftTranscript}
               <Button
                 variant="tweede"
@@ -429,29 +474,46 @@
                 onclick={() => open(bestand.taak)}>{t().bestandOpenen}</Button
               >
             {/if}
-            {#if loopt}
+            <!-- Kruisje voor annuleren en uit de rij halen, prullenbak alleen bij klaar. -->
+            {#if knop.soort === 'annuleren'}
               <Button
                 variant="spook"
                 title={t().bestandAnnulerenKort}
                 aria-label={t().bestandAnnuleren(bestand.naam)}
-                onclick={() => annuleer(bestand.taak)}
-                ><Trash2 size={16} aria-hidden="true" /></Button
+                onclick={() => annuleer(bestand.taak)}><X size={16} aria-hidden="true" /></Button
               >
             {:else}
               <Button
                 variant="spook"
-                title={wacht ? t().bestandUitRijKort : t().bestandWeghalenKort}
-                aria-label={wacht
+                title={knop.soort === 'uitRij'
+                  ? t().bestandUitRijKort
+                  : bestand.opgeslagen
+                    ? t().bestandWeghalenKortOpgeslagen
+                    : t().bestandWeghalenKort}
+                aria-label={knop.soort === 'uitRij'
                   ? t().bestandUitRij(bestand.naam)
                   : t().bestandWeghalen(bestand.naam)}
-                onclick={() => weghalen(bestand.taak)}
-                ><Trash2 size={16} aria-hidden="true" /></Button
+                onclick={() => klikWeg(bestand)}
+                >{#if knop.icoon === 'kruis'}<X size={16} aria-hidden="true" />{:else}<Trash2
+                    size={16}
+                    aria-hidden="true"
+                  />{/if}</Button
               >
             {/if}
           </div>
         </li>
       {/each}
     </ul>
+    <!-- Een klaar uitschrift dat nog niet is opgeslagen: eerst de vraag, want de tekst is dan weg. -->
+    <VerwijderVraag
+      id="bestand-weg"
+      knop={false}
+      bind:open={wegVraagOpen}
+      vraag={t().bestandWeghalenVraag}
+      uitleg={t().bestandWeghalenOnopgeslagen}
+      focusTerug={() => kiesKnop}
+      verwijder={bevestigWeg}
+    />
     <p class="m-0 text-klein text-dim">{t().bestandenDicterenGaatVoor}</p>
     {@render sprekersRegel()}
   {/if}

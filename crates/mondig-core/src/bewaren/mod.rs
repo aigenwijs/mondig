@@ -5,7 +5,7 @@
 //! het bestand terechtkomt en hoe het heet, bepaalt de app met [`naam::bestandsnaam`] en de
 //! map uit de instelling of de mapkiezer; de webview geeft nooit zelf een pad.
 //!
-//! De gegevens (datum, bron, duur, model, label en "Lokaal verwerkt") staan in elk document
+//! De gegevens (datum, bron, duur, model, klant en "Op deze computer") staan in elk document
 //! zichtbaar bovenaan en, waar het formaat dat kent, ook in de documenteigenschappen, zodat
 //! een archief ze kan lezen. Alleen SRT kent geen plek voor gegevens.
 //!
@@ -20,10 +20,22 @@ pub use jiff::Zoned;
 use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 
-use crate::gesprek::{Gesprek, Vergadersoort};
+use crate::gesprek::{Gesprek, Sprekerlabels, Vergadersoort};
 
 /// Hoe de verwerking in de gegevens heet (het soevereiniteitslabel van de lokale engine).
-pub const LOKAAL_VERWERKT: &str = "Lokaal verwerkt";
+pub const LOKAAL_VERWERKT: &str = "Op deze computer";
+
+/// De waarde van "Verwerking" voor dit document. Zonder notulen, of met notulen die op deze
+/// computer zijn gemaakt, is alles lokaal verwerkt: "Op deze computer". Maakte een aanbieder buiten
+/// deze computer de notulen, dan zegt de regel dat met het soevereiniteitslabel: "Uitschrift op
+/// deze computer, notulen door Mistral (Europees)". Dat de tekst van een verslag naar een
+/// aanbieder ging, mag een archief niet verzwijgen (ADR 0017, aanvulling 10-11-2026).
+pub(crate) fn verwerking(notulen: Option<&Notulenblok>) -> String {
+    match notulen.and_then(|n| n.verwerking.as_deref()) {
+        Some(aanbieder) => format!("Uitschrift op deze computer, notulen door {aanbieder}"),
+        None => LOKAAL_VERWERKT.to_string(),
+    }
+}
 
 /// De taal van een document: die van de notulen (en dus van de interface, ADR 0026 punt 9) als
 /// die erbij staan, anders Nederlands.
@@ -144,8 +156,17 @@ pub struct Document {
     pub bron: String,
     /// Het spraakmodel, kort ("Parakeet Ultra").
     pub model: String,
-    /// Een label van de gebruiker, zoals een zaaknummer.
-    pub label: Option<String>,
+    /// De klant die de gebruiker invulde, zoals een gemeente of een zaaknummer.
+    pub klant: Option<String>,
+    /// Het onderwerp voor de bestandsnaam. `None`: de gebruiker raakte het nooit aan, dan geldt
+    /// `standaard_onderwerp`. `Some("")`: de gebruiker wiste het, dan valt het weg uit de naam.
+    pub onderwerp: Option<String>,
+    /// De datum voor de bestandsnaam zoals de gebruiker hem typte. `None`: de datum van
+    /// `moment`. `Some("")`: valt weg uit de naam.
+    pub datum: Option<String>,
+    /// De standaard voor het onderwerp en wat de naam wordt als er niets overblijft: de naam
+    /// van de opname, of het soortwoord ("Vergadering", "Notitie") bij een verslag.
+    pub standaard_onderwerp: String,
     /// Wanneer het transcript klaar was, in de tijdzone van de computer.
     pub moment: Zoned,
     /// De duur van de opname.
@@ -181,6 +202,9 @@ pub struct Notulenblok {
     pub verslagkop: String,
     /// De taal van de notulen; die bepaalt ook de taal van het document.
     pub taal: crate::notulen::Taal,
+    /// Door wie de notulen zijn gemaakt als dat buiten deze computer gebeurde, met het
+    /// soevereiniteitslabel ("Mistral (Europees)"). `None`: op deze computer gemaakt.
+    pub verwerking: Option<String>,
 }
 
 /// Eén regel van een [`Notulenblok`].
@@ -388,8 +412,19 @@ impl Document {
     /// gaan samengevoegd in `melding`.
     #[must_use]
     pub fn van_gesprek(gesprek: &Gesprek, model: &str, moment: Zoned) -> Self {
+        Self::van_gesprek_met(gesprek, model, moment, &Sprekerlabels::default())
+    }
+
+    /// Zoals [`Document::van_gesprek`], maar met de standaardnamen van de sprekers in de taal van
+    /// de app ("You", "Others", "Speaker 1"). Een naam die de gebruiker gaf, blijft staan.
+    #[must_use]
+    pub fn van_gesprek_met(
+        gesprek: &Gesprek,
+        model: &str,
+        moment: Zoned,
+        labels: &Sprekerlabels,
+    ) -> Self {
         let melding = (!gesprek.meldingen.is_empty()).then(|| gesprek.meldingen.join(" "));
-        let met_sprekers = gesprek.met_sprekers();
         Self {
             titel: format!("{} {}", gesprek.soort.titelwoord(), datum_voluit(&moment)),
             bron: match gesprek.soort {
@@ -398,7 +433,10 @@ impl Document {
             }
             .to_string(),
             model: model.to_string(),
-            label: None,
+            klant: None,
+            onderwerp: None,
+            datum: None,
+            standaard_onderwerp: gesprek.soort.titelwoord().to_string(),
             moment,
             duur_ms: u64::try_from(gesprek.duur.as_millis()).unwrap_or(u64::MAX),
             melding,
@@ -409,25 +447,25 @@ impl Document {
                     start_ms: b.start_ms,
                     eind_ms: b.eind_ms,
                     tekst: b.tekst.clone(),
-                    spreker: met_sprekers.then(|| b.spreker()),
+                    spreker: gesprek.verslaglabel_met(b, labels),
                 })
                 .collect(),
         }
     }
 
-    /// De titel, schoongemaakt; "Transcript" als hij leeg is.
+    /// De titel, schoongemaakt; "Uitschrift" als hij leeg is.
     pub(crate) fn titel(&self) -> String {
         let titel = schone_tekst(&self.titel);
         if titel.is_empty() {
-            "Transcript".to_string()
+            "Uitschrift".to_string()
         } else {
             titel
         }
     }
 
-    /// Het label, schoongemaakt, als het er is.
-    pub(crate) fn label(&self) -> Option<String> {
-        self.label
+    /// De klant, schoongemaakt, als die er is.
+    pub(crate) fn klant(&self) -> Option<String> {
+        self.klant
             .as_deref()
             .map(schone_tekst)
             .filter(|l| !l.is_empty())
@@ -435,22 +473,36 @@ impl Document {
 
     /// De gegevens bovenaan het document en in de eigenschappen, in deze volgorde.
     pub(crate) fn gegevens(&self) -> Vec<(&'static str, String)> {
+        self.gegevens_met(None)
+    }
+
+    /// Als [`Document::gegevens`], met de verwerking zoals die bij deze notulen hoort.
+    pub(crate) fn gegevens_met(
+        &self,
+        notulen: Option<&Notulenblok>,
+    ) -> Vec<(&'static str, String)> {
         let mut gegevens = vec![
             ("Datum", datum_voluit(&self.moment)),
             ("Bron", schone_tekst(&self.bron)),
             ("Duur", duur(self.duur_ms)),
             ("Model", schone_tekst(&self.model)),
         ];
-        if let Some(label) = self.label() {
-            gegevens.push(("Label", label));
+        if let Some(klant) = self.klant() {
+            gegevens.push(("Klant", klant));
         }
-        gegevens.push(("Verwerking", LOKAAL_VERWERKT.to_string()));
+        gegevens.push(("Verwerking", verwerking(notulen)));
         gegevens
     }
 
     /// Eén zin met de gegevens voor het veld "beschrijving" van een document.
+    #[cfg(test)]
     pub(crate) fn beschrijving(&self) -> String {
-        self.gegevens()
+        self.beschrijving_met(None)
+    }
+
+    /// Als [`Document::beschrijving`], met de verwerking zoals die bij deze notulen hoort.
+    pub(crate) fn beschrijving_met(&self, notulen: Option<&Notulenblok>) -> String {
+        self.gegevens_met(notulen)
             .iter()
             .filter(|(sleutel, _)| *sleutel != "Datum")
             .map(|(sleutel, waarde)| format!("{sleutel}: {waarde}"))
@@ -481,12 +533,26 @@ pub(crate) mod tests {
             .expect("geldig moment")
     }
 
+    /// Notulen zonder tekst, alleen voor de gegevens: `verwerking` is de aanbieder buiten deze
+    /// computer, of `None` voor notulen die op deze computer zijn gemaakt.
+    pub(crate) fn blok(verwerking: Option<&str>) -> Notulenblok {
+        Notulenblok {
+            regels: vec![Notulenregel::Kop("Notulen".to_string())],
+            verslagkop: "Verslag".to_string(),
+            taal: crate::notulen::Taal::default(),
+            verwerking: verwerking.map(str::to_string),
+        }
+    }
+
     pub(crate) fn document() -> Document {
         Document {
             titel: "Interview wethouder".to_string(),
             bron: "Interview wethouder.m4a".to_string(),
             model: "Parakeet Ultra".to_string(),
-            label: Some("Z-2026-1043".to_string()),
+            klant: Some("Z-2026-1043".to_string()),
+            onderwerp: None,
+            datum: None,
+            standaard_onderwerp: "Interview wethouder".to_string(),
             moment: moment(),
             duur_ms: 1_394_000,
             melding: None,
@@ -562,6 +628,39 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn een_alinea_in_de_ruimte_die_niemand_aanwees_heeft_in_de_export_geen_spreker() {
+        use crate::gesprek::{Beurt, Gesprek, Kant, Spoorstand, Vergadersoort};
+        use std::time::Duration;
+
+        let alinea = |start_ms: u64, nummer: Option<u8>| Beurt {
+            kant: Kant::Jij,
+            sprekernummer: nummer,
+            start_ms,
+            eind_ms: start_ms + 900,
+            tekst: "Tekst.".to_string(),
+            naam: None,
+            verbeterd: false,
+        };
+        let gesprek = Gesprek {
+            beurten: vec![alinea(0, None), alinea(9_000, Some(1))],
+            duur: Duration::from_secs(10),
+            meldingen: Vec::new(),
+            jij: Spoorstand::Opgenomen,
+            anderen: Spoorstand::Ontbrak,
+            weggelaten: 0,
+            soort: Vergadersoort::Ruimte,
+        };
+        let regels = Document::van_gesprek(&gesprek, "m", moment()).regels;
+        assert_eq!(
+            regels
+                .iter()
+                .map(|r| r.spreker.as_deref())
+                .collect::<Vec<_>>(),
+            vec![None, Some("Spreker 1")]
+        );
+    }
+
+    #[test]
     fn een_gesprek_wordt_een_document_met_een_spreker_per_beurt() {
         use crate::gesprek::{Beurt, Gesprek, Kant, Spoorstand, Vergadersoort};
         use std::time::Duration;
@@ -603,7 +702,10 @@ pub(crate) mod tests {
             doc.melding.as_deref(),
             Some("Eerste melding. Tweede melding.")
         );
-        assert_eq!(doc.label, None);
+        assert_eq!(doc.klant, None);
+        assert_eq!(doc.onderwerp, None);
+        assert_eq!(doc.datum, None);
+        assert_eq!(doc.standaard_onderwerp, "Vergadering");
         let kort: Vec<_> = doc
             .regels
             .iter()
@@ -697,22 +799,38 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn gegevens_in_vaste_volgorde_met_label() {
+    fn verwerking_zegt_wie_de_notulen_maakte() {
+        assert_eq!(verwerking(None), "Op deze computer");
+        assert_eq!(verwerking(Some(&blok(None))), "Op deze computer");
+        assert_eq!(
+            verwerking(Some(&blok(Some("Mistral (Europees)")))),
+            "Uitschrift op deze computer, notulen door Mistral (Europees)"
+        );
+        let met = document().beschrijving_met(Some(&blok(Some("Mistral (Europees)"))));
+        assert!(
+            met.ends_with(
+                "Verwerking: Uitschrift op deze computer, notulen door Mistral (Europees)"
+            )
+        );
+    }
+
+    #[test]
+    fn gegevens_in_vaste_volgorde_met_klant() {
         let doc = document();
         let sleutels: Vec<_> = doc.gegevens().into_iter().map(|(s, _)| s).collect();
         assert_eq!(
             sleutels,
-            ["Datum", "Bron", "Duur", "Model", "Label", "Verwerking"]
+            ["Datum", "Bron", "Duur", "Model", "Klant", "Verwerking"]
         );
         assert_eq!(
             doc.beschrijving(),
-            "Bron: Interview wethouder.m4a; Duur: 23:14; Model: Parakeet Ultra; Label: Z-2026-1043; Verwerking: Lokaal verwerkt"
+            "Bron: Interview wethouder.m4a; Duur: 23:14; Model: Parakeet Ultra; Klant: Z-2026-1043; Verwerking: Op deze computer"
         );
         let zonder = Document {
-            label: Some("  ".to_string()),
+            klant: Some("  ".to_string()),
             ..document()
         };
-        assert!(zonder.gegevens().iter().all(|(s, _)| *s != "Label"));
+        assert!(zonder.gegevens().iter().all(|(s, _)| *s != "Klant"));
     }
 
     #[test]

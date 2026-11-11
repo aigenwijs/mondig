@@ -17,6 +17,7 @@
 
 use std::sync::Mutex;
 
+use serde::Deserialize;
 use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::{AppHandle, Manager, Wry};
 
@@ -46,6 +47,53 @@ pub(crate) struct MenuStand {
     pub kopieer_aan: bool,
 }
 
+/// De teksten van het menu in de taal van de app. Rust kent die taal niet (`taal.rs`), dus de
+/// interface geeft ze door, bij het starten en bij een taalwissel, net als de sprekernamen
+/// (`vergadering_zet_labels`). Zo staan alle vertalingen op één plek (`nl.ts` en `en.ts`). Tot de
+/// interface ze doorgeeft, geldt Nederlands.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Labels {
+    pub openen: String,
+    pub opname_starten: String,
+    /// "Opname starten (eerst het verslag afmaken)": de reden dat starten nu niet kan.
+    pub opname_starten_eerst_afmaken: String,
+    /// Het begin van de statusregel: "Opname loopt", gevolgd door " \u{b7} 12:35".
+    pub opname_loopt: String,
+    pub stoppen: String,
+    pub kopieer: String,
+    pub map: String,
+    pub instellingen: String,
+    pub over: String,
+    pub afsluiten: String,
+    /// De tooltip van het pictogram tijdens een opname, per soort. `{tijd}` wordt de opnametijd:
+    /// "Mondig neemt een vergadering op ({tijd})".
+    pub tip_online: String,
+    pub tip_ruimte: String,
+    pub tip_alleen: String,
+}
+
+impl Default for Labels {
+    fn default() -> Self {
+        let s = str::to_string;
+        Self {
+            openen: s("Mondig openen"),
+            opname_starten: s("Opname starten"),
+            opname_starten_eerst_afmaken: s("Opname starten (eerst het verslag afmaken)"),
+            opname_loopt: s("Opname loopt"),
+            stoppen: s("Stoppen en uitschrijven"),
+            kopieer: s("Laatste dictaat kopiëren"),
+            map: s("Map openen"),
+            instellingen: s("Instellingen"),
+            over: s("Over Mondig"),
+            afsluiten: s("Afsluiten"),
+            tip_online: s("Mondig neemt een vergadering op ({tijd})"),
+            tip_ruimte: s("Mondig neemt een vergadering in de ruimte op ({tijd})"),
+            tip_alleen: s("Mondig neemt een notitie op ({tijd})"),
+        }
+    }
+}
+
 /// Eén regel van het menu.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Regel {
@@ -68,8 +116,8 @@ pub(crate) const ID_OVER: &str = "over";
 pub(crate) const ID_AFSLUITEN: &str = "afsluiten";
 
 /// De tekst van de statusregel tijdens een opname: "Opname loopt · 12:35".
-pub(crate) fn status_tekst(tijd: &str) -> String {
-    format!("Opname loopt \u{b7} {tijd}")
+pub(crate) fn status_tekst(labels: &Labels, tijd: &str) -> String {
+    format!("{} \u{b7} {tijd}", labels.opname_loopt)
 }
 
 fn item(id: &'static str, tekst: &str, aan: bool) -> Regel {
@@ -82,38 +130,34 @@ fn item(id: &'static str, tekst: &str, aan: bool) -> Regel {
 
 /// De regels van het menu voor deze stand. `tijd` is de verstreken opnametijd ("12:35"), alleen
 /// van belang tijdens een opname.
-pub(crate) fn regels(stand: MenuStand, tijd: &str) -> Vec<Regel> {
-    let mut lijst = vec![item(ID_OPENEN, "Mondig openen", true), Regel::Scheiding];
+pub(crate) fn regels(stand: MenuStand, tijd: &str, labels: &Labels) -> Vec<Regel> {
+    let mut lijst = vec![item(ID_OPENEN, &labels.openen, true), Regel::Scheiding];
     match stand.opname {
         OpnameStand::Rust | OpnameStand::VerslagOpen => {
-            lijst.push(item(ID_OPNAME_START, "Opname starten", true));
+            lijst.push(item(ID_OPNAME_START, &labels.opname_starten, true));
         }
-        OpnameStand::Bezig => lijst.push(item(ID_OPNAME_START, "Opname starten", false)),
+        OpnameStand::Bezig => lijst.push(item(ID_OPNAME_START, &labels.opname_starten, false)),
         OpnameStand::VerslagVast => lijst.push(item(
             ID_OPNAME_START,
-            "Opname starten (eerst het verslag afmaken)",
+            &labels.opname_starten_eerst_afmaken,
             false,
         )),
         OpnameStand::Loopt => {
             lijst.push(Regel::Item {
                 id: ID_OPNAME_STATUS,
-                tekst: status_tekst(tijd),
+                tekst: status_tekst(labels, tijd),
                 aan: false,
             });
-            lijst.push(item(ID_OPNAME_STOP, "Stoppen en uitschrijven", true));
+            lijst.push(item(ID_OPNAME_STOP, &labels.stoppen, true));
         }
     }
-    lijst.push(item(
-        ID_KOPIEER,
-        "Laatste dictaat kopiëren",
-        stand.kopieer_aan,
-    ));
+    lijst.push(item(ID_KOPIEER, &labels.kopieer, stand.kopieer_aan));
     lijst.push(Regel::Scheiding);
-    lijst.push(item(ID_MAP, "Map openen", true));
-    lijst.push(item(ID_INSTELLINGEN, "Instellingen", true));
-    lijst.push(item(ID_OVER, "Over Mondig", true));
+    lijst.push(item(ID_MAP, &labels.map, true));
+    lijst.push(item(ID_INSTELLINGEN, &labels.instellingen, true));
+    lijst.push(item(ID_OVER, &labels.over, true));
     lijst.push(Regel::Scheiding);
-    lijst.push(item(ID_AFSLUITEN, "Afsluiten", true));
+    lijst.push(item(ID_AFSLUITEN, &labels.afsluiten, true));
     lijst
 }
 
@@ -140,6 +184,7 @@ struct Binnen {
 struct Boek {
     stand: MenuStand,
     tijd: String,
+    labels: Labels,
     /// De versie van de vergaderstand waar `stand.opname` bij hoort: een oudere melding, die na
     /// het loslaten van het slot van de vergadering te laat aankomt, wordt genegeerd.
     versie: u64,
@@ -160,6 +205,16 @@ impl Boek {
             return false;
         }
         self.stand.opname = opname;
+        self.opbouw += 1;
+        true
+    }
+
+    /// Zet de teksten in een andere taal; `true` als het menu opnieuw gebouwd moet worden.
+    fn zet_labels(&mut self, labels: Labels) -> bool {
+        if self.labels == labels {
+            return false;
+        }
+        self.labels = labels;
         self.opbouw += 1;
         true
     }
@@ -187,10 +242,11 @@ fn bouw(
     app: &AppHandle,
     stand: MenuStand,
     tijd: &str,
+    labels: &Labels,
 ) -> tauri::Result<(Menu<Wry>, Option<MenuItem<Wry>>)> {
     let menu = Menu::new(app)?;
     let mut status = None;
-    for regel in regels(stand, tijd) {
+    for regel in regels(stand, tijd, labels) {
         match regel {
             Regel::Scheiding => menu.append(&PredefinedMenuItem::separator(app)?)?,
             Regel::Item { id, tekst, aan } => {
@@ -205,12 +261,24 @@ fn bouw(
     Ok((menu, status))
 }
 
+/// Eén tekst in de taal van de app, voor wat buiten het menu staat (de tooltip tijdens een
+/// opname). `kies` wijst de tekst aan; alleen die wordt gekopieerd, zodat de tikker niet elke
+/// paar seconden alle teksten onder het slot kloont. Zonder staat (de tray bestaat nog niet) geldt
+/// Nederlands.
+pub(crate) fn label(app: &AppHandle, kies: impl FnOnce(&Labels) -> &String) -> String {
+    match app.try_state::<TrayStaat>() {
+        Some(staat) => kies(&slot(&staat).boek.labels).clone(),
+        None => kies(&Labels::default()).clone(),
+    }
+}
+
 /// Een kopie van wat het menu nodig heeft, onder het slot genomen.
-fn momentopname(staat: &TrayStaat) -> (MenuStand, String, u64) {
+fn momentopname(staat: &TrayStaat) -> (MenuStand, String, Labels, u64) {
     let binnen = slot(staat);
     (
         binnen.boek.stand,
         binnen.boek.tijd.clone(),
+        binnen.boek.labels.clone(),
         binnen.boek.opbouw,
     )
 }
@@ -218,8 +286,8 @@ fn momentopname(staat: &TrayStaat) -> (MenuStand, String, u64) {
 /// Het eerste menu, bij het bouwen van het systeemvakicoon.
 pub(crate) fn maak_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let staat = app.state::<TrayStaat>();
-    let (stand, tijd, opbouw) = momentopname(&staat);
-    let (menu, status) = bouw(app, stand, &tijd)?;
+    let (stand, tijd, labels, opbouw) = momentopname(&staat);
+    let (menu, status) = bouw(app, stand, &tijd, &labels)?;
     let mut binnen = slot(&staat);
     if binnen.boek.opbouw == opbouw {
         binnen.status = status;
@@ -230,11 +298,11 @@ pub(crate) fn maak_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 
 /// Bouwt het menu opnieuw en zet het, zonder dat het slot vastligt tijdens de menuaanroepen.
 fn ververs(app: &AppHandle, staat: &TrayStaat) {
-    let (stand, tijd, opbouw) = momentopname(staat);
+    let (stand, tijd, labels, opbouw) = momentopname(staat);
     let Some(tray) = app.tray_by_id("hoofd") else {
         return;
     };
-    let Ok((menu, status)) = bouw(app, stand, &tijd) else {
+    let Ok((menu, status)) = bouw(app, stand, &tijd, &labels) else {
         return;
     };
     {
@@ -275,13 +343,33 @@ pub(crate) fn zet_tijd(app: &AppHandle, tijd: &str) {
     let Some(staat) = app.try_state::<TrayStaat>() else {
         return;
     };
-    let status = {
+    let (status, tekst) = {
         let mut binnen = slot(&staat);
         binnen.boek.tijd = tijd.to_string();
-        binnen.status.clone()
+        (
+            binnen.status.clone(),
+            status_tekst(&binnen.boek.labels, tijd),
+        )
     };
     if let Some(status) = status {
-        let _ = status.set_text(status_tekst(tijd));
+        let _ = status.set_text(tekst);
+    }
+}
+
+/// Geeft het menu de teksten in de taal van de app. De interface roept dit aan bij het starten
+/// en als de taal wisselt; een wissel bouwt het menu opnieuw.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Tauri geeft een commando de AppHandle per waarde mee; een verwijzing kan niet"
+)]
+#[tauri::command]
+pub(crate) fn systeemvak_zet_labels(app: AppHandle, labels: Labels) {
+    let Some(staat) = app.try_state::<TrayStaat>() else {
+        return;
+    };
+    let nodig = slot(&staat).boek.zet_labels(labels);
+    if nodig {
+        ververs(&app, &staat);
     }
 }
 
@@ -297,6 +385,7 @@ mod tests_stand {
                 kopieer_aan: false,
             },
             "00:00",
+            &Labels::default(),
         );
         assert!(open.contains(&Regel::Item {
             id: ID_OPNAME_START,
@@ -309,6 +398,7 @@ mod tests_stand {
                 kopieer_aan: false,
             },
             "00:00",
+            &Labels::default(),
         );
         assert!(vast.contains(&Regel::Item {
             id: ID_OPNAME_START,
@@ -332,6 +422,70 @@ mod tests_stand {
         assert!(binnen.zet_kopieer(true));
         assert!(!binnen.zet_kopieer(true));
         assert_eq!(binnen.opbouw, 3);
+    }
+
+    fn engels() -> Labels {
+        Labels {
+            openen: "Open Mondig".to_string(),
+            opname_starten: "Start recording".to_string(),
+            opname_starten_eerst_afmaken: "Start recording (finish the report first)".to_string(),
+            opname_loopt: "Recording".to_string(),
+            stoppen: "Stop and transcribe".to_string(),
+            kopieer: "Copy last dictation".to_string(),
+            map: "Open folder".to_string(),
+            instellingen: "Settings".to_string(),
+            over: "About Mondig".to_string(),
+            afsluiten: "Quit".to_string(),
+            tip_online: "Mondig is recording a meeting ({tijd})".to_string(),
+            tip_ruimte: "Mondig is recording an in-room meeting ({tijd})".to_string(),
+            tip_alleen: "Mondig is recording a note ({tijd})".to_string(),
+        }
+    }
+
+    #[test]
+    fn een_taalwissel_bouwt_het_menu_opnieuw_en_dezelfde_taal_niet() {
+        let mut binnen = Boek::default();
+        // Nederlands is de standaard, dus dezelfde teksten doorgeven bouwt niets opnieuw.
+        assert!(!binnen.zet_labels(Labels::default()));
+        assert!(binnen.zet_labels(engels()));
+        assert!(!binnen.zet_labels(engels()));
+        assert_eq!(binnen.opbouw, 1);
+        assert_eq!(
+            status_tekst(&binnen.labels, "0:05"),
+            "Recording \u{b7} 0:05"
+        );
+    }
+
+    #[test]
+    fn het_menu_volgt_de_doorgegeven_teksten() {
+        let lijst = regels(
+            MenuStand {
+                opname: OpnameStand::Loopt,
+                kopieer_aan: true,
+            },
+            "12:35",
+            &engels(),
+        );
+        let teksten: Vec<String> = lijst
+            .iter()
+            .filter_map(|r| match r {
+                Regel::Item { tekst, .. } => Some(tekst.clone()),
+                Regel::Scheiding => None,
+            })
+            .collect();
+        assert_eq!(
+            teksten,
+            [
+                "Open Mondig",
+                "Recording \u{b7} 12:35",
+                "Stop and transcribe",
+                "Copy last dictation",
+                "Open folder",
+                "Settings",
+                "About Mondig",
+                "Quit"
+            ]
+        );
     }
 }
 
@@ -378,7 +532,7 @@ mod tests {
 
     #[test]
     fn in_rust_staat_opname_starten_onder_mondig_openen() {
-        let lijst = regels(stand(OpnameStand::Rust, false), "00:00");
+        let lijst = regels(stand(OpnameStand::Rust, false), "00:00", &Labels::default());
         assert_eq!(
             ids(&lijst),
             [
@@ -402,7 +556,7 @@ mod tests {
 
     #[test]
     fn tijdens_een_opname_staat_de_status_bovenaan_en_is_ze_uitgeschakeld() {
-        let lijst = regels(stand(OpnameStand::Loopt, true), "12:35");
+        let lijst = regels(stand(OpnameStand::Loopt, true), "12:35", &Labels::default());
         assert_eq!(
             ids(&lijst),
             [
@@ -430,7 +584,11 @@ mod tests {
 
     #[test]
     fn tijdens_het_uitschrijven_of_voorbereiden_is_opname_starten_uitgeschakeld() {
-        let lijst = regels(stand(OpnameStand::Bezig, false), "00:00");
+        let lijst = regels(
+            stand(OpnameStand::Bezig, false),
+            "00:00",
+            &Labels::default(),
+        );
         assert!(!aan(&lijst, ID_OPNAME_START));
         assert_eq!(tekst(&lijst, ID_OPNAME_START), "Opname starten");
         assert!(!ids(&lijst).contains(&ID_OPNAME_STOP));
@@ -443,6 +601,9 @@ mod tests {
 
     #[test]
     fn de_tijd_boven_het_uur_heeft_uren() {
-        assert_eq!(status_tekst("1:02:03"), "Opname loopt \u{b7} 1:02:03");
+        assert_eq!(
+            status_tekst(&Labels::default(), "1:02:03"),
+            "Opname loopt \u{b7} 1:02:03"
+        );
     }
 }

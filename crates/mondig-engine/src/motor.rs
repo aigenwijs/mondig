@@ -132,6 +132,16 @@ fn kaart_naam(beschrijving: &str, naam: &str) -> String {
     }
 }
 
+/// Stopte het model zelf (lus of grens bereikt) en is er tekst tot dat punt? Annuleren valt
+/// hier niet onder: dat blijft een fout, zodat een geannuleerd bestand ook echt stopt.
+fn afgebroken_met_tekst(fout: &transcribe_cpp::Error) -> bool {
+    matches!(
+        fout,
+        transcribe_cpp::Error::OutputRepetition { .. }
+            | transcribe_cpp::Error::OutputTruncated { .. }
+    ) && fout.partial().is_some()
+}
+
 /// Laadt een GGUF-model. `Gpu` vraagt strikt om de videokaart-backend van dit platform: is
 /// die er niet, of is het proces al met alleen de processor gestart, dan komt er een fout
 /// en valt de supervisor terug op de processor.
@@ -271,21 +281,31 @@ impl Motor {
     }
 
     /// Schrijft 16 kHz mono samples uit.
+    ///
+    /// Raakt het model in een lus (het herhaalt zichzelf) of loopt het tegen zijn grens aan,
+    /// dan stopt transcribe.cpp en geeft het de tekst tot dat punt mee, met de herhaling
+    /// eruit. Die houden we: zo laat één moeilijk verstaanbaar stuk niet de hele opname
+    /// mislukken. Wat na dat punt in het stuk gezegd werd, valt weg.
     pub(crate) fn transcribeer(
         &mut self,
         samples: &[f32],
         duur_ms: u64,
     ) -> Result<Vec<Segment>, String> {
-        let resultaat = self
-            .session
-            .run(
-                samples,
-                &RunOptions {
-                    language: self.taal.clone(),
-                    ..Default::default()
-                },
-            )
-            .map_err(|f| f.to_string())?;
+        let uitkomst = self.session.run(
+            samples,
+            &RunOptions {
+                language: self.taal.clone(),
+                ..Default::default()
+            },
+        );
+        let resultaat = match uitkomst {
+            Ok(resultaat) => resultaat,
+            Err(f) if afgebroken_met_tekst(&f) => {
+                eprintln!("[mondig-engine] stuk afgebroken, tekst tot dan bewaard: {f}");
+                f.partial().cloned().unwrap_or_default()
+            }
+            Err(f) => return Err(f.to_string()),
+        };
         let ms = |t: i64| u64::try_from(t).unwrap_or(0);
         // Woordtijden waar het model ze geeft (Parakeet en Whisper; Canary niet, ADR 0011).
         // Elk woord hoort bij een segment via `seg_index`.
@@ -400,5 +420,54 @@ impl Motor {
             .collect();
         segmenten.sort_by_key(|s| (s.start_ms, s.eind_ms, s.spreker));
         Ok(segmenten)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use transcribe_cpp::{Error, Transcript};
+
+    fn deel() -> Box<Transcript> {
+        Box::new(Transcript {
+            text: "dit is wat er gezegd werd".into(),
+            ..Default::default()
+        })
+    }
+
+    #[test]
+    fn een_lus_met_tekst_wordt_bewaard() {
+        let fout = Error::OutputRepetition {
+            message: "lus".into(),
+            partial: Some(deel()),
+        };
+        assert!(afgebroken_met_tekst(&fout));
+    }
+
+    #[test]
+    fn een_bereikte_grens_met_tekst_wordt_bewaard() {
+        let fout = Error::OutputTruncated {
+            message: "grens".into(),
+            partial: Some(deel()),
+        };
+        assert!(afgebroken_met_tekst(&fout));
+    }
+
+    #[test]
+    fn een_lus_zonder_tekst_blijft_een_fout() {
+        let fout = Error::OutputRepetition {
+            message: "lus".into(),
+            partial: None,
+        };
+        assert!(!afgebroken_met_tekst(&fout));
+    }
+
+    #[test]
+    fn annuleren_blijft_een_fout() {
+        let fout = Error::Aborted {
+            message: "geannuleerd".into(),
+            partial: Some(deel()),
+        };
+        assert!(!afgebroken_met_tekst(&fout));
     }
 }

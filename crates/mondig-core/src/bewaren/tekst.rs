@@ -37,7 +37,7 @@ pub(super) fn txt(document: &Document, notulen: Option<&Notulenblok>, tijden: bo
     let mut regels = vec![document.titel()];
     regels.extend(
         document
-            .gegevens()
+            .gegevens_met(notulen)
             .into_iter()
             .map(|(sleutel, waarde)| format!("{sleutel}: {waarde}")),
     );
@@ -118,7 +118,7 @@ fn md_tekst(tekst: &str) -> String {
 /// Markdown (.md): een kop, de gegevens als lijst en per regel een alinea.
 pub(super) fn md(document: &Document, notulen: Option<&Notulenblok>, tijden: bool) -> Vec<u8> {
     let mut uit = format!("# {}\n\n", md_tekst(&document.titel()));
-    for (sleutel, waarde) in document.gegevens() {
+    for (sleutel, waarde) in document.gegevens_met(notulen) {
         let _ = writeln!(uit, "- **{sleutel}:** {}", md_tekst(&waarde));
     }
     uit.push('\n');
@@ -225,7 +225,7 @@ pub(super) fn html(document: &Document, notulen: Option<&Notulenblok>, tijden: b
         "<title>{titel}</title>\n<style>{HTML_OPMAAK}</style>\n</head>\n<body>\n"
     );
     let _ = writeln!(uit, "<h1>{titel}</h1>\n<dl>");
-    for (sleutel, waarde) in document.gegevens() {
+    for (sleutel, waarde) in document.gegevens_met(notulen) {
         let _ = writeln!(
             uit,
             "<dt>{}</dt><dd>{}</dd>",
@@ -473,12 +473,36 @@ mod tests {
         assert!(
             met.starts_with("\u{feff}Interview wethouder\r\nDatum: 1 november 2026, 14:32\r\n")
         );
-        assert!(met.contains("Label: Z-2026-1043\r\nVerwerking: Lokaal verwerkt\r\n\r\n"));
+        assert!(met.contains("Klant: Z-2026-1043\r\nVerwerking: Op deze computer\r\n\r\n"));
         assert!(met.contains("00:00  Goedemiddag, fijn dat u tijd heeft.\r\n"));
         assert!(met.contains("00:07  Ja, dank u."));
         let zonder = tekst(txt(&document(), None, false));
         assert!(zonder.contains("\r\nGoedemiddag, fijn dat u tijd heeft.\r\n"));
         assert!(!zonder.contains("00:07"));
+    }
+
+    #[test]
+    fn txt_noemt_een_aanbieder_buiten_deze_computer_en_anders_lokaal() {
+        use super::super::tests::blok;
+        let extern_tekst = tekst(txt(
+            &document(),
+            Some(&blok(Some("Mistral (Europees)"))),
+            true,
+        ));
+        assert!(
+            extern_tekst.contains(
+                "Verwerking: Uitschrift op deze computer, notulen door Mistral (Europees)"
+            )
+        );
+        let lokaal = tekst(txt(&document(), Some(&blok(None)), true));
+        assert!(lokaal.contains("Verwerking: Op deze computer"));
+        let md_tekst = String::from_utf8(md(
+            &document(),
+            Some(&blok(Some("Mistral (Europees)"))),
+            true,
+        ))
+        .unwrap();
+        assert!(md_tekst.contains("notulen door Mistral (Europees)"));
     }
 
     #[test]
@@ -496,7 +520,7 @@ mod tests {
         let met = tekst(md(&document(), None, true));
         assert!(!met.starts_with('\u{feff}'), "Markdown heeft geen BOM");
         assert!(met.starts_with("# Interview wethouder\n\n- **Datum:** 1 november 2026, 14:32\n"));
-        assert!(met.contains("- **Label:** Z-2026-1043\n"));
+        assert!(met.contains("- **Klant:** Z-2026-1043\n"));
         assert!(met.contains("`00:00` Goedemiddag, fijn dat u tijd heeft.\n\n"));
         // &, < en > krijgen een backslash zodat ze geen opmaak worden.
         assert!(met.contains(
@@ -555,7 +579,7 @@ mod tests {
     fn html_is_zelfstandig_en_alles_is_ge_escaped() {
         let doc = Document {
             titel: "<script>alert(1)</script> & \"quotes\"".to_string(),
-            label: Some("<b>zaak</b>".to_string()),
+            klant: Some("<b>zaak</b>".to_string()),
             regels: vec![Regel {
                 start_ms: 0,
                 eind_ms: 1_000,
@@ -629,7 +653,7 @@ mod tests {
         assert!(
             uit.starts_with("WEBVTT\n\nNOTE\nInterview wethouder\nDatum: 1 november 2026, 14:32\n")
         );
-        assert!(uit.contains("Verwerking: Lokaal verwerkt\n\n00:00:00.000 --> 00:00:07.000\n"));
+        assert!(uit.contains("Verwerking: Op deze computer\n\n00:00:00.000 --> 00:00:07.000\n"));
         assert!(uit.contains("markt &amp; minder &lt;auto's&gt;.\n"));
         // Elk blok: een tijdregel, tekst, en een lege regel; in de tekst nergens "-->".
         let blokken: Vec<&str> = uit.trim_end().split("\n\n").collect();

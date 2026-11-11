@@ -3,11 +3,26 @@
 
 import type { OpgeschoondDoor } from './opschonen';
 
-/** Hoe lang Mondig dictaten bewaart: de waarden van de store (`dictaten_bewaren`). */
-export type DictatenTermijn = 'niet' | '24u' | '7d';
+/**
+ * Hoe lang Mondig dictaten bewaart: de waarden van de store (`dictaten_bewaren`). `laatste10`
+ * heeft geen tijdgrens: Rust houdt altijd de tien nieuwste (ADR 0021, aanvulling 10-11-2026).
+ */
+export type DictatenTermijn = 'niet' | 'laatste10' | '24u' | '7d' | '30d';
 
-/** De drie keuzes, in de volgorde van de keuzelijst. */
-export const DICTATEN_TERMIJNEN: readonly DictatenTermijn[] = ['niet', '24u', '7d'];
+/** De vijf keuzes, in de volgorde van de keuzelijst. */
+export const DICTATEN_TERMIJNEN: readonly DictatenTermijn[] = [
+  'niet',
+  'laatste10',
+  '24u',
+  '7d',
+  '30d'
+];
+
+/** Zoveel dictaten toont de lijst eerst. */
+export const LIJST_EERSTE = 10;
+
+/** Zoveel komen er bij elke klik op "Meer tonen" bij. */
+export const LIJST_MEER = 20;
 
 /** De standaard (ADR 0021 punt 5), ook als Rust niet te bereiken is. */
 export const STANDAARD_DICTATEN_TERMIJN: DictatenTermijn = '24u';
@@ -33,10 +48,13 @@ export interface LaatsteDictaat {
   id: string | null;
 }
 
-/** Het antwoord van `dictaten_stand`: de termijn en de lijst, nieuwste eerst. */
+/** Het antwoord van `dictaten_stand`: de termijn en een deel van de lijst, nieuwste eerst. */
 export interface DictatenAntwoord {
   termijn: DictatenTermijn;
+  /** De nieuwste dictaten tot de gevraagde limiet; niet per se alle. */
   dictaten: BewaardDictaat[];
+  /** Hoeveel dictaten er in totaal gelden, voor de telling "10 van 37". */
+  totaal: number;
   /** Het aantal bestanden op schijf, ook wat nog moet verlopen: zoveel gaat weg bij Wissen. */
   bewaard: number;
   laatste: LaatsteDictaat | null;
@@ -45,8 +63,11 @@ export interface DictatenAntwoord {
 const UUR_MS = 3_600_000;
 const DUUR_MS: Record<DictatenTermijn, number> = {
   niet: 0,
+  // Laatste 10 heeft geen tijdgrens; het aantal regelt Rust.
+  laatste10: Number.POSITIVE_INFINITY,
   '24u': 24 * UUR_MS,
-  '7d': 7 * 24 * UUR_MS
+  '7d': 7 * 24 * UUR_MS,
+  '30d': 30 * 24 * UUR_MS
 };
 
 /**
@@ -80,6 +101,20 @@ export function laatsteLosTonen(
 /** Is dit een termijn die Rust kent? Een onbekende waarde valt terug op de standaard. */
 export function termijnUit(waarde: unknown): DictatenTermijn {
   return DICTATEN_TERMIJNEN.find((t) => t === waarde) ?? STANDAARD_DICTATEN_TERMIJN;
+}
+
+/**
+ * De bevestigvraag toont een aantal; tussen vragen en bevestigen kan het veranderd zijn (een
+ * nieuw dictaat, een verlopen dictaat). Telt Rust opnieuw: is het getal anders (en niet 0), dan
+ * blijft de vraag staan met het nieuwe getal, zodat de gebruiker nooit meer wist dan hij zag.
+ * Bij 0 valt er niets meer weg en kan de keuze zonder meer door.
+ */
+export async function herbevestig(
+  getoond: number,
+  tel: () => Promise<number>
+): Promise<{ doorgaan: boolean; aantal: number }> {
+  const aantal = await tel();
+  return { doorgaan: aantal === getoond || aantal === 0, aantal };
 }
 
 /** Een groep dictaten van één dag. */
@@ -132,12 +167,4 @@ export function datumKop(ms: number, taal: string): string {
   return new Intl.DateTimeFormat(taal, { weekday: 'long', day: 'numeric', month: 'long' }).format(
     new Date(ms)
   );
-}
-
-/**
- * Moet Mondig eerst vragen voor deze wijziging van de termijn? Alleen bij Niet bewaren, en
- * alleen als er bewaarde dictaten zijn die daarmee wegaan (ADR 0021 punt 6).
- */
-export function vraagVoorTermijn(nieuw: DictatenTermijn, bewaardAantal: number): boolean {
-  return nieuw === 'niet' && bewaardAantal > 0;
 }

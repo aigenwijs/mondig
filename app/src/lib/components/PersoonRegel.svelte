@@ -60,6 +60,21 @@
     return lijst;
   });
 
+  // De schakelaar staat er alleen bij gevonden gegevens (of als het vervangen aanstaat). Verdwijnt
+  // hij terwijl hij de focus heeft (je haalt de laatste markering weg), dan gaat de focus naar de
+  // teller in hetzelfde blok, niet naar het begin van de pagina (ontwerpsysteem §6). `$effect.pre`
+  // loopt voor het DOM verandert, zodat de schakelaar de focus dan nog heeft.
+  const toonSchakelaar = $derived(gemarkeerd.length > 0 || persoon.vervangen);
+  let schakelBlok = $state<HTMLElement | null>(null);
+  let schakelerToonde = false;
+  $effect.pre(() => {
+    const toon = toonSchakelaar;
+    if (schakelerToonde && !toon && schakelBlok?.contains(document.activeElement)) {
+      document.getElementById('persoon-teller')?.focus();
+    }
+    schakelerToonde = toon;
+  });
+
   async function actie(werk: () => Promise<string | null>, gelukt: string): Promise<boolean> {
     meldFout(null);
     const melding = await werk();
@@ -99,7 +114,7 @@
   <Popover.Root bind:open={lijstOpen}>
     <Popover.Trigger>
       {#snippet child({ props })}
-        <Button {...props} variant="spook" class="-ml-2 text-tekst">
+        <Button {...props} id="persoon-teller" variant="spook" class="-ml-2 text-tekst">
           {t().persoonTeller(gemarkeerd.length)}<ChevronDown size={14} aria-hidden="true" />
         </Button>
       {/snippet}
@@ -183,21 +198,27 @@
     </Popover.Portal>
   </Popover.Root>
 
-  <Schakelaar
-    aan={persoon.vervangen}
-    wijzig={(aan: boolean) => {
-      void actie(() => zetVervangen(aan), '');
-    }}
-    labelledby="persoon-switch"
-    describedby="persoon-stand"
-  />
-  <span id="persoon-switch" class="sr-only">{t().persoonSwitch}</span>
-  <span id="persoon-stand" class="min-w-[9.5rem] flex-1 text-klein text-gedempt"
-    ><b class="font-medium text-tekst"
-      >{persoon.vervangen ? t().persoonStandAan : t().persoonStandUit}</b
-    >
-    {persoon.vervangen ? t().persoonStandAanRest : t().persoonStandUitRest}</span
-  >
+  <!-- Zonder gevonden gegevens heeft de schakelaar geen effect, dus staat hij er niet (UI-check
+       punt 16). Staat het vervangen al aan, dan blijft hij, zodat je het kunt uitzetten. -->
+  {#if toonSchakelaar}
+    <span class="contents" bind:this={schakelBlok}>
+      <Schakelaar
+        aan={persoon.vervangen}
+        wijzig={(aan: boolean) => {
+          void actie(() => zetVervangen(aan), '');
+        }}
+        labelledby="persoon-switch"
+        describedby="persoon-stand"
+      />
+      <span id="persoon-switch" class="sr-only">{t().persoonSwitch}</span>
+      <span id="persoon-stand" class="min-w-[9.5rem] flex-1 text-klein text-gedempt"
+        ><b class="font-medium text-tekst"
+          >{persoon.vervangen ? t().persoonStandAan : t().persoonStandUit}</b
+        >
+        {persoon.vervangen ? t().persoonStandAanRest : t().persoonStandUitRest}</span
+      >
+    </span>
+  {/if}
 
   <Popover.Root bind:open={uitlegOpen}>
     <Popover.Trigger>

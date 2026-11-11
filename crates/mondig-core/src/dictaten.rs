@@ -9,6 +9,10 @@
 //! `opname::vergadering::verlopen`): bij een dictaat heeft een melding vooraf geen doel en
 //! maakt een dag wachten van 24 uur in de praktijk 48 uur.
 //!
+//! Naast de tijdstanden is er "Laatste 10" (ADR 0021, aanvulling 10-11-2026): geen tijdgrens,
+//! wel nooit meer dan de tien nieuwste. Elke wisronde past dezelfde regel toe, en na elk nieuw
+//! dictaat roept de app die ronde meteen aan.
+//!
 //! Bij twijfel wissen (ADR 0021 punt 5): een dictaat met een tijd meer dan een uur in de
 //! toekomst (klok teruggezet) telt als verlopen. Dictaattekst en bestandsnamen komen nooit in
 //! het logboek; deze module logt niets.
@@ -45,6 +49,9 @@ const TOEKOMST_TOLERANTIE_MS: u64 = 3_600_000;
 /// De versie van het bestandsformaat.
 const VERSIE: u32 = 1;
 
+/// Zoveel dictaten bewaart de stand Laatste 10.
+const LAATSTE_AANTAL: usize = 10;
+
 /// Telt dictaten binnen dezelfde milliseconde, zodat twee namen nooit samenvallen.
 static TELLER: AtomicU64 = AtomicU64::new(0);
 
@@ -53,10 +60,14 @@ static TELLER: AtomicU64 = AtomicU64::new(0);
 pub enum Termijn {
     /// Niets naar schijf; het laatste dictaat blijft alleen in het geheugen.
     Niet,
+    /// De tien nieuwste, hoe oud ook. Geen tijdgrens.
+    Laatste10,
     /// 24 uur.
     Dag,
     /// 7 dagen.
     Week,
+    /// 30 dagen.
+    Maand,
 }
 
 impl Termijn {
@@ -64,31 +75,62 @@ impl Termijn {
     /// niet te lezen is.
     pub const STANDAARD: Self = Self::Dag;
 
-    /// De waarde in de instellingen: `niet`, `24u` of `7d`.
+    /// Alle standen, in de volgorde van de keuzelijst.
+    pub const ALLE: [Self; 5] = [
+        Self::Niet,
+        Self::Laatste10,
+        Self::Dag,
+        Self::Week,
+        Self::Maand,
+    ];
+
+    /// De waarde in de instellingen: `niet`, `laatste10`, `24u`, `7d` of `30d`.
     #[must_use]
     pub const fn sleutel(self) -> &'static str {
         match self {
             Self::Niet => "niet",
+            Self::Laatste10 => "laatste10",
             Self::Dag => "24u",
             Self::Week => "7d",
+            Self::Maand => "30d",
         }
     }
 
     /// De termijn bij een waarde uit de instellingen, of `None` als die onbekend is.
     #[must_use]
     pub fn uit_sleutel(sleutel: &str) -> Option<Self> {
-        [Self::Niet, Self::Dag, Self::Week]
-            .into_iter()
-            .find(|t| t.sleutel() == sleutel)
+        Self::ALLE.into_iter().find(|t| t.sleutel() == sleutel)
     }
 
-    /// De bewaartijd; bij [`Termijn::Niet`] nul, dus alles telt als verlopen.
+    /// De bewaartijd; bij [`Termijn::Niet`] nul, dus alles telt als verlopen. Bij
+    /// [`Termijn::Laatste10`] is er geen tijdgrens (`None`).
     #[must_use]
-    pub const fn duur(self) -> Duration {
+    pub const fn duur(self) -> Option<Duration> {
         match self {
-            Self::Niet => Duration::ZERO,
-            Self::Dag => Duration::from_hours(24),
-            Self::Week => Duration::from_hours(7 * 24),
+            Self::Niet => Some(Duration::ZERO),
+            Self::Laatste10 => None,
+            Self::Dag => Some(Duration::from_hours(24)),
+            Self::Week => Some(Duration::from_hours(7 * 24)),
+            Self::Maand => Some(Duration::from_hours(30 * 24)),
+        }
+    }
+
+    /// Hoeveel dictaten er hoogstens blijven, of `None` als alleen de tijd telt.
+    #[must_use]
+    pub const fn max_aantal(self) -> Option<usize> {
+        match self {
+            Self::Laatste10 => Some(LAATSTE_AANTAL),
+            _ => None,
+        }
+    }
+
+    /// De termijn voor bestanden die geen leesbaar dictaat zijn (beschadigd, of een restant
+    /// van het schrijven). Zonder tijdgrens ruimen we die na 24 uur op, zodat ze niet blijven
+    /// liggen.
+    const fn voor_restanten(self) -> Self {
+        match self {
+            Self::Laatste10 => Self::Dag,
+            andere => andere,
         }
     }
 }
@@ -150,7 +192,7 @@ pub enum VerwijderFout {
     #[error("Dit dictaat bestaat niet.")]
     OngeldigId,
     /// Het bestand ging niet weg.
-    #[error("Mondig kon het dictaat niet wissen.")]
+    #[error("Mondig kon het dictaat niet verwijderen.")]
     Mislukt,
 }
 
@@ -229,10 +271,13 @@ fn lees_bestand(pad: &Path) -> Option<Dictaat> {
 }
 
 /// Is een dictaat met deze tijd verlopen? Ouder dan de termijn (`tijd + termijn <= nu`), of
-/// meer dan een uur in de toekomst.
+/// meer dan een uur in de toekomst. Bij Laatste 10 telt alleen het laatste; het aantal regelt
+/// [`te_wissen`].
 fn is_verlopen(tijd_ms: u64, termijn: Termijn, nu_ms: u64) -> bool {
-    tijd_ms.saturating_add(ms(termijn.duur())) <= nu_ms
-        || tijd_ms > nu_ms.saturating_add(TOEKOMST_TOLERANTIE_MS)
+    let te_oud = termijn
+        .duur()
+        .is_some_and(|duur| tijd_ms.saturating_add(ms(duur)) <= nu_ms);
+    te_oud || tijd_ms > nu_ms.saturating_add(TOEKOMST_TOLERANTIE_MS)
 }
 
 /// De tijd van een eigen bestand dat geen leesbaar dictaat is (beschadigd, of een restant van
@@ -292,10 +337,9 @@ fn bewaar_met(
     Ok(id)
 }
 
-/// De bewaarde dictaten, nieuwste eerst. Wat verlopen is, staat er niet in, ook als het
-/// bestand er nog ligt (ADR 0021 punt 4). Onleesbare bestanden worden overgeslagen.
-#[must_use]
-pub fn lijst(basis: &Path, termijn: Termijn, nu_ms: u64) -> Vec<Dictaat> {
+/// De dictaten die nu gelden, nieuwste eerst: wat verlopen is staat er niet in (ADR 0021
+/// punt 4) en bij Laatste 10 nooit meer dan tien. Onleesbare bestanden worden overgeslagen.
+fn geldende(basis: &Path, termijn: Termijn, nu_ms: u64) -> Vec<Dictaat> {
     let mut dictaten: Vec<Dictaat> = eigen_bestanden(basis)
         .iter()
         .filter_map(|pad| lees_bestand(pad))
@@ -307,7 +351,36 @@ pub fn lijst(basis: &Path, termijn: Termijn, nu_ms: u64) -> Vec<Dictaat> {
             .cmp(&a.tijd_unix_ms)
             .then_with(|| b.id.cmp(&a.id))
     });
+    if let Some(max) = termijn.max_aantal() {
+        dictaten.truncate(max);
+    }
     dictaten
+}
+
+/// De bewaarde dictaten, nieuwste eerst. Wat verlopen is, staat er niet in, ook als het
+/// bestand er nog ligt (ADR 0021 punt 4); bij Laatste 10 zijn het er hoogstens tien.
+#[must_use]
+pub fn lijst(basis: &Path, termijn: Termijn, nu_ms: u64) -> Vec<Dictaat> {
+    geldende(basis, termijn, nu_ms)
+}
+
+/// Een stuk van de lijst, met het totaal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Deel {
+    /// De dictaten van `begin` af, hoogstens `limiet`, nieuwste eerst.
+    pub dictaten: Vec<Dictaat>,
+    /// Hoeveel dictaten er in totaal gelden (niet alleen in dit deel), voor "10 van 37".
+    pub totaal: usize,
+}
+
+/// Een deel van de lijst: `limiet` dictaten vanaf plaats `begin` (0 is het nieuwste), plus het
+/// totaal. Zo hoeft niet alle tekst over de brug naar de interface.
+#[must_use]
+pub fn lijst_deel(basis: &Path, termijn: Termijn, nu_ms: u64, begin: usize, limiet: usize) -> Deel {
+    let alle = geldende(basis, termijn, nu_ms);
+    let totaal = alle.len();
+    let dictaten = alle.into_iter().skip(begin).take(limiet).collect();
+    Deel { dictaten, totaal }
 }
 
 /// Het aantal eigen dictaatbestanden op schijf, verlopen of niet. Voor de bevestigvraag
@@ -376,19 +449,65 @@ pub fn wis_alles(basis: &Path) -> Gewist {
     wis_paden(&eigen_bestanden(basis))
 }
 
-/// Wist wat verlopen is, zonder markering of wachttijd: weg als `tijd + termijn <= nu`, of als
-/// de tijd meer dan een uur in de toekomst ligt. Bij [`Termijn::Niet`] is alles verlopen.
+/// De bestanden die bij deze termijn weg moeten: wat verlopen is (`tijd + termijn <= nu`, of
+/// meer dan een uur in de toekomst), en bij Laatste 10 alles behalve de tien nieuwste. Het
+/// dictaat `behoud` (het net bewaarde) blijft altijd staan en telt als een van de tien, ook als
+/// de klok achteruit liep en zijn tijd daardoor oud of in de toekomst lijkt.
+fn te_wissen(basis: &Path, termijn: Termijn, nu_ms: u64, behoud: Option<&str>) -> Vec<PathBuf> {
+    let mut weg = Vec::new();
+    let mut vast = 0;
+    // Leesbare dictaten die de tijdtoets doorstaan: (tijd, naam, pad), voor de telling.
+    let mut blijft: Vec<(u64, String, PathBuf)> = Vec::new();
+    for pad in eigen_bestanden(basis) {
+        // Eén keer lezen: de tijd uit het bestand, anders de wijzigingstijd.
+        if let Some(d) = lees_bestand(&pad) {
+            if behoud == Some(d.id.as_str()) {
+                vast = 1;
+            } else if is_verlopen(d.tijd_unix_ms, termijn, nu_ms) {
+                weg.push(pad);
+            } else {
+                blijft.push((d.tijd_unix_ms, d.id, pad));
+            }
+        } else if is_verlopen(wijzigingstijd_ms(&pad), termijn.voor_restanten(), nu_ms) {
+            weg.push(pad);
+        }
+    }
+    if let Some(max) = termijn.max_aantal() {
+        blijft.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.cmp(&a.1)));
+        weg.extend(
+            blijft
+                .into_iter()
+                .skip(max.saturating_sub(vast))
+                .map(|(_, _, pad)| pad),
+        );
+    }
+    weg
+}
+
+/// Wist wat bij de termijn niet meer mag blijven, zonder markering of wachttijd: wat verlopen
+/// is (`tijd + termijn <= nu`, of meer dan een uur in de toekomst) en bij Laatste 10 alles
+/// behalve de tien nieuwste. Bij [`Termijn::Niet`] is alles verlopen.
 #[must_use]
 pub fn wis_verlopen(basis: &Path, termijn: Termijn, nu_ms: u64) -> Gewist {
-    let te_wissen: Vec<PathBuf> = eigen_bestanden(basis)
-        .into_iter()
-        .filter(|pad| {
-            // Eén keer lezen: de tijd uit het bestand, anders de wijzigingstijd.
-            let tijd = lees_bestand(pad).map_or_else(|| wijzigingstijd_ms(pad), |d| d.tijd_unix_ms);
-            is_verlopen(tijd, termijn, nu_ms)
-        })
-        .collect();
-    wis_paden(&te_wissen)
+    wis_paden(&te_wissen(basis, termijn, nu_ms, None))
+}
+
+/// Als [`wis_verlopen`], maar het dictaat met id `behoud` blijft altijd staan: voor direct na
+/// het bewaren, zodat een nieuw dictaat nooit zijn eigen wisronde niet overleeft.
+#[must_use]
+pub fn wis_verlopen_behalve(basis: &Path, termijn: Termijn, nu_ms: u64, behoud: &str) -> Gewist {
+    wis_paden(&te_wissen(basis, termijn, nu_ms, Some(behoud)))
+}
+
+/// Hoeveel dictaten er wegvallen als `termijn` nu zou gelden, voor de bevestigvraag bij een
+/// kortere of strengere stand. Precies wat [`wis_verlopen`] zou wissen, zonder iets te wissen;
+/// restanten van het schrijven tellen niet mee.
+#[must_use]
+pub fn wegvallend(basis: &Path, termijn: Termijn, nu_ms: u64) -> usize {
+    te_wissen(basis, termijn, nu_ms, None)
+        .iter()
+        .filter(|pad| naam_van(pad).is_some_and(is_dictaatnaam))
+        .count()
 }
 
 #[cfg(test)]
@@ -409,12 +528,180 @@ mod tests {
 
     #[test]
     fn de_sleutels_gaan_heen_en_terug() {
-        for t in [Termijn::Niet, Termijn::Dag, Termijn::Week] {
+        for t in Termijn::ALLE {
             assert_eq!(Termijn::uit_sleutel(t.sleutel()), Some(t));
         }
+        assert_eq!(Termijn::uit_sleutel("laatste10"), Some(Termijn::Laatste10));
+        assert_eq!(Termijn::uit_sleutel("30d"), Some(Termijn::Maand));
         assert_eq!(Termijn::uit_sleutel("1u"), None);
         assert_eq!(Termijn::uit_sleutel(""), None);
         assert_eq!(Termijn::STANDAARD, Termijn::Dag);
+    }
+
+    /// Bewaart `aantal` dictaten, elk een uur later dan het vorige, te beginnen `aantal` uur
+    /// voor `nu`. Geeft de id's, oudste eerst.
+    fn bewaar_reeks(basis: &Path, aantal: u64, nu: u64) -> Vec<String> {
+        (0..aantal)
+            .map(|i| bewaar(basis, &format!("dictaat {i}"), nu - (aantal - i) * UUR).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn laatste_10_houdt_de_tiende_en_wist_de_elfde() {
+        let basis = tempfile::tempdir().unwrap();
+        let nu = 1000 * DAG;
+        // Heel oud mag blijven: er is geen tijdgrens.
+        let ids = bewaar_reeks(basis.path(), 11, nu - 400 * DAG);
+        let uitslag = wis_verlopen(basis.path(), Termijn::Laatste10, nu);
+        assert_eq!(uitslag.aantal, 1);
+        assert_eq!(uitslag.ids, [ids[0].clone()]);
+        let over = lijst(basis.path(), Termijn::Laatste10, nu);
+        assert_eq!(over.len(), 10);
+        assert_eq!(over[0].tekst, "dictaat 10");
+        assert_eq!(over[9].tekst, "dictaat 1");
+        assert_eq!(namen(basis.path()).len(), 10);
+    }
+
+    #[test]
+    fn laatste_10_toont_nooit_meer_dan_tien_ook_voor_de_opruimronde() {
+        let basis = tempfile::tempdir().unwrap();
+        let nu = 100 * DAG;
+        bewaar_reeks(basis.path(), 14, nu);
+        let zichtbaar = lijst(basis.path(), Termijn::Laatste10, nu);
+        assert_eq!(zichtbaar.len(), 10);
+        assert_eq!(zichtbaar[0].tekst, "dictaat 13");
+        assert_eq!(namen(basis.path()).len(), 14, "de bestanden liggen er nog");
+        let deel = lijst_deel(basis.path(), Termijn::Laatste10, nu, 0, 100);
+        assert_eq!(deel.totaal, 10);
+    }
+
+    #[test]
+    fn laatste_10_wist_een_toekomstig_dictaat_en_ruimt_restanten_na_een_dag_op() {
+        let basis = tempfile::tempdir().unwrap();
+        let nu = nu_ms();
+        bewaar(basis.path(), "te ver", nu + 2 * UUR).unwrap();
+        bewaar(basis.path(), "goed", nu).unwrap();
+        fs::write(basis.path().join("dictaat-5-0.json.nieuw"), "half").unwrap();
+        // Een restant van zojuist blijft; een toekomstig dictaat gaat.
+        assert_eq!(wis_verlopen(basis.path(), Termijn::Laatste10, nu).aantal, 1);
+        // Na twee dagen is het restant (wijzigingstijd nu) ouder dan 24 uur.
+        assert_eq!(
+            wis_verlopen(basis.path(), Termijn::Laatste10, nu + 2 * DAG).aantal,
+            1,
+            "alleen het restant; het goede dictaat blijft"
+        );
+        assert_eq!(lijst(basis.path(), Termijn::Laatste10, nu).len(), 1);
+    }
+
+    #[test]
+    fn het_net_bewaarde_dictaat_blijft_ook_als_de_klok_achteruit_liep() {
+        let basis = tempfile::tempdir().unwrap();
+        let nu = 100 * DAG;
+        bewaar_reeks(basis.path(), 10, nu);
+        // De klok liep terug: het nieuwe dictaat heeft een tijd van voor alle andere.
+        let nieuw = bewaar(basis.path(), "nieuw", nu - 50 * DAG).unwrap();
+        let uitslag = wis_verlopen_behalve(basis.path(), Termijn::Laatste10, nu, &nieuw);
+        assert_eq!(
+            uitslag.aantal, 1,
+            "het oudste van de rest gaat, niet het nieuwe"
+        );
+        assert!(!uitslag.ids.contains(&nieuw));
+        assert!(basis.path().join(&nieuw).exists());
+        assert_eq!(namen(basis.path()).len(), 10);
+        // Ook een tijd ver in de toekomst blijft staan als het net bewaard is.
+        let ver = bewaar(basis.path(), "ver", nu + 5 * DAG).unwrap();
+        let uitslag = wis_verlopen_behalve(basis.path(), Termijn::Laatste10, nu, &ver);
+        assert!(!uitslag.ids.contains(&ver));
+        assert!(basis.path().join(&ver).exists());
+    }
+
+    #[test]
+    fn dertig_dagen_net_ervoor_blijft_en_net_erna_is_weg() {
+        let basis = tempfile::tempdir().unwrap();
+        let nu = 100 * DAG;
+        let id_erna = bewaar(basis.path(), "net erna", nu - 30 * DAG).unwrap();
+        bewaar(basis.path(), "net ervoor", nu - 30 * DAG + 1).unwrap();
+        // Een week houdt er geen van twee vast, 30 dagen houdt er een vast.
+        assert!(lijst(basis.path(), Termijn::Week, nu).is_empty());
+        let zichtbaar = lijst(basis.path(), Termijn::Maand, nu);
+        assert_eq!(zichtbaar.len(), 1);
+        assert_eq!(zichtbaar[0].tekst, "net ervoor");
+        let uitslag = wis_verlopen(basis.path(), Termijn::Maand, nu);
+        assert_eq!(uitslag.ids, [id_erna]);
+        assert_eq!(namen(basis.path()).len(), 1);
+    }
+
+    #[test]
+    fn wat_wegvalt_klopt_voor_alle_overgangen() {
+        let basis = tempfile::tempdir().unwrap();
+        let nu = 100 * DAG;
+        // Twee van 20 dagen terug, drie van 3 dagen terug, vijftien van het laatste kwartier.
+        for i in 0..2 {
+            bewaar(basis.path(), "twintig dagen", nu - 20 * DAG - i).unwrap();
+        }
+        for i in 0..3 {
+            bewaar(basis.path(), "drie dagen", nu - 3 * DAG - i).unwrap();
+        }
+        for i in 0..15 {
+            bewaar(basis.path(), "vers", nu - i * 60_000).unwrap();
+        }
+        let w = |t| wegvallend(basis.path(), t, nu);
+        assert_eq!(w(Termijn::Maand), 0);
+        // 30 dagen naar 7 dagen: de twee van 20 dagen.
+        assert_eq!(w(Termijn::Week), 2);
+        // 7 dagen of 30 dagen naar 24 uur: alles wat ouder is dan een dag.
+        assert_eq!(w(Termijn::Dag), 5);
+        // Naar Laatste 10: alles behalve de tien nieuwste (er zijn er 20).
+        assert_eq!(w(Termijn::Laatste10), 10);
+        assert_eq!(w(Termijn::Niet), 20);
+        // Niets gewist door tellen.
+        assert_eq!(aantal(basis.path()), 20);
+        // En precies dat gaat weg bij 24 uur.
+        assert_eq!(wis_verlopen(basis.path(), Termijn::Dag, nu).aantal, 5);
+        // Nu 15 over: naar Laatste 10 vallen er 5 weg.
+        assert_eq!(w(Termijn::Laatste10), 5);
+        assert_eq!(w(Termijn::Maand), 0);
+    }
+
+    #[test]
+    fn van_laatste_10_naar_een_tijdstand_wist_wat_te_oud_is() {
+        let basis = tempfile::tempdir().unwrap();
+        let nu = 100 * DAG;
+        for i in 0..4 {
+            bewaar(basis.path(), "oud", nu - 40 * DAG - i).unwrap();
+        }
+        for i in 0..4 {
+            bewaar(basis.path(), "vers", nu - i * UUR).unwrap();
+        }
+        assert_eq!(wegvallend(basis.path(), Termijn::Laatste10, nu), 0);
+        assert_eq!(wegvallend(basis.path(), Termijn::Maand, nu), 4);
+        assert_eq!(wegvallend(basis.path(), Termijn::Dag, nu), 4);
+        assert_eq!(wis_verlopen(basis.path(), Termijn::Dag, nu).aantal, 4);
+        assert_eq!(lijst(basis.path(), Termijn::Dag, nu).len(), 4);
+    }
+
+    #[test]
+    fn de_lijst_in_delen_geeft_begin_limiet_en_totaal() {
+        let basis = tempfile::tempdir().unwrap();
+        let nu = 100 * DAG;
+        bewaar_reeks(basis.path(), 7, nu);
+        let eerste = lijst_deel(basis.path(), Termijn::Dag, nu, 0, 3);
+        assert_eq!(eerste.totaal, 7);
+        let teksten: Vec<&str> = eerste.dictaten.iter().map(|d| d.tekst.as_str()).collect();
+        assert_eq!(teksten, ["dictaat 6", "dictaat 5", "dictaat 4"]);
+        let tweede = lijst_deel(basis.path(), Termijn::Dag, nu, 3, 3);
+        assert_eq!(tweede.dictaten[0].tekst, "dictaat 3");
+        assert_eq!(tweede.dictaten.len(), 3);
+        // Het laatste stuk is korter; voorbij het einde is leeg, met hetzelfde totaal.
+        let rest = lijst_deel(basis.path(), Termijn::Dag, nu, 6, 3);
+        assert_eq!(rest.dictaten.len(), 1);
+        assert_eq!(rest.totaal, 7);
+        let leeg = lijst_deel(basis.path(), Termijn::Dag, nu, 50, 3);
+        assert!(leeg.dictaten.is_empty());
+        assert_eq!(leeg.totaal, 7);
+        // Wat verlopen is telt niet mee in het totaal.
+        bewaar(basis.path(), "oud", nu - 2 * DAG).unwrap();
+        assert_eq!(lijst_deel(basis.path(), Termijn::Dag, nu, 0, 1).totaal, 7);
     }
 
     #[test]

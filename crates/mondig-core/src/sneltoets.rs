@@ -8,7 +8,7 @@
 //!   [`HOUD_DREMPEL`] is houden, dus opnemen tot loslaten. Korter is tikken: de opname
 //!   loopt door tot de volgende druk.
 //! - **Terugvallijst**: lukt de gewenste toets niet te registreren (bijvoorbeeld omdat een
-//!   ander programma hem al heeft), dan de volgende uit [`TERUGVAL_SNELTOETSEN`].
+//!   ander programma hem al heeft), dan de volgende uit [`terugval_sneltoetsen`].
 //!
 //! - **Twee toetsen** (ADR 0027 punt 1): naast de gewone toets kan er een tweede zijn voor een
 //!   opgeschoond dictaat. Er loopt hooguit één dictaat tegelijk; zie [`Toets`].
@@ -21,16 +21,70 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
-/// De sneltoets die Mondig standaard probeert (besluit, 1-11-2026).
-pub const STANDAARD_SNELTOETS: &str = "Ctrl+Space";
+/// Het platform waarvoor de sneltoetsregels gelden. De regels staan hier op een plek en krijgen
+/// het platform als parameter, zodat ook de Mac-regels in gewone tests op Windows draaien.
+/// De app geeft [`Platform::huidig`] mee; de interface haalt het platform uit Rust.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Platform {
+    /// Windows.
+    Windows,
+    /// macOS.
+    Mac,
+    /// Linux (en wat daarop lijkt): de regels van Windows, zonder Windows-lijst voor Super.
+    Linux,
+}
+
+impl Platform {
+    /// Het platform waarop Mondig nu draait.
+    #[must_use]
+    pub const fn huidig() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::Mac
+        } else if cfg!(target_os = "windows") {
+            Self::Windows
+        } else {
+            Self::Linux
+        }
+    }
+
+    const fn is_mac(self) -> bool {
+        matches!(self, Self::Mac)
+    }
+}
+
+/// De sneltoets die Mondig standaard probeert (besluit, 1-11-2026). Op de Mac is dat Option+Spatie:
+/// Ctrl+Spatie wisselt daar van invoerbron en Cmd+Spatie is Spotlight (support.apple.com/en-us/102650,
+/// 9-11-2026). Handy kiest op de Mac dezelfde toetsen.
+#[must_use]
+pub const fn standaard_sneltoets(platform: Platform) -> &'static str {
+    match platform {
+        Platform::Mac => "Alt+Space",
+        Platform::Windows | Platform::Linux => "Ctrl+Space",
+    }
+}
 
 /// De standaard voor de tweede sneltoets, die een opgeschoond dictaat geeft (ADR 0027 punt 1).
 /// Daarvoor is er geen terugvallijst: is hij bezet, of dezelfde als de gewone toets, dan staat
 /// hij uit tot de gebruiker een andere kiest. De gewone toets gaat altijd voor.
-pub const STANDAARD_OPSCHOONTOETS: &str = "Ctrl+Shift+Space";
+#[must_use]
+pub const fn standaard_opschoontoets(platform: Platform) -> &'static str {
+    match platform {
+        Platform::Mac => "Alt+Shift+Space",
+        Platform::Windows | Platform::Linux => "Ctrl+Shift+Space",
+    }
+}
 
-/// Wat Mondig probeert als de gewenste toets niet te registreren is, in volgorde.
-pub const TERUGVAL_SNELTOETSEN: [&str; 2] = ["Ctrl+Alt+Space", "Ctrl+Shift+Space"];
+/// Wat Mondig probeert als de gewenste toets niet te registreren is, in volgorde. Op de Mac is
+/// Ctrl+Option+Spatie gereserveerd en Option+Shift+Spatie de standaard van de tweede toets, dus
+/// is de terugval daar Ctrl+Option+Shift+Spatie.
+#[must_use]
+pub const fn terugval_sneltoetsen(platform: Platform) -> &'static [&'static str] {
+    match platform {
+        Platform::Mac => &["Ctrl+Alt+Shift+Space"],
+        Platform::Windows | Platform::Linux => &["Ctrl+Alt+Space", "Ctrl+Shift+Space"],
+    }
+}
 
 /// Een druk van minstens zoveel is houden (opnemen tot loslaten); korter is tikken.
 pub const HOUD_DREMPEL: Duration = Duration::from_millis(300);
@@ -46,9 +100,13 @@ pub struct Registratie {
     pub toets: String,
     /// Is dit een terugvaloptie in plaats van de gewenste toets?
     pub is_terugval: bool,
+    /// Mocht de opgeslagen toets op dit platform niet (meer), zodat Mondig naar de standaard is
+    /// overgegaan? Dan hoort de gebruiker te horen dat de toets niet kan, in plaats van dat
+    /// een ander programma hem bezet houdt. Alleen bij [`registreer_opgeslagen`].
+    pub is_overgezet: bool,
 }
 
-/// Probeert de gewenste toets en daarna de terugvallijst te registreren. `probeer`
+/// Probeert de gewenste toets en daarna de terugvallijst van het platform te registreren. `probeer`
 /// registreert één toets en geeft een foutmelding bij mislukken. Een toets die al
 /// geprobeerd is wordt niet nog eens geprobeerd.
 ///
@@ -57,12 +115,13 @@ pub struct Registratie {
 /// Geeft per geprobeerde toets de foutmelding als geen enkele lukte.
 pub fn registreer_met_terugval(
     gewenst: &str,
+    platform: Platform,
     mut probeer: impl FnMut(&str) -> Result<(), String>,
 ) -> Result<Registratie, Vec<(String, String)>> {
     let mut geprobeerd: Vec<&str> = Vec::new();
     let mut fouten = Vec::new();
     for (volgorde, kandidaat) in std::iter::once(gewenst)
-        .chain(TERUGVAL_SNELTOETSEN)
+        .chain(terugval_sneltoetsen(platform).iter().copied())
         .enumerate()
     {
         if geprobeerd.contains(&kandidaat) {
@@ -74,6 +133,7 @@ pub fn registreer_met_terugval(
                 return Ok(Registratie {
                     toets: kandidaat.to_string(),
                     is_terugval: volgorde > 0,
+                    is_overgezet: false,
                 });
             }
             Err(melding) => fouten.push((kandidaat.to_string(), melding)),
@@ -84,9 +144,10 @@ pub fn registreer_met_terugval(
 
 /// Registreert de opgeslagen sneltoets bij de start. De toets gaat eerst door
 /// [`normaliseer_sneltoets`] en [`controleer_sneltoets`]. Mag hij niet (bijvoorbeeld Pause uit
-/// een oudere versie, of een gereserveerde combinatie), dan wordt hij niet geregistreerd en
-/// begint de keten bij [`STANDAARD_SNELTOETS`], met `is_terugval` aan zodat het startscherm
-/// meldt dat de gewenste toets niet gebruikt kon worden. Een waarschuwing (F1 tot en met F12)
+/// een oudere versie, een gereserveerde combinatie, of Ctrl+Spatie van een Windows-instelling op
+/// de Mac), dan wordt hij niet geregistreerd en begint de keten bij [`standaard_sneltoets`], met
+/// `is_terugval` en `is_overgezet` aan zodat het startscherm meldt dat de gewenste toets niet
+/// gebruikt kon worden. Een waarschuwing (F1 tot en met F12)
 /// is goed: de gebruiker heeft die toets eerder bevestigd.
 ///
 /// # Errors
@@ -94,30 +155,132 @@ pub fn registreer_met_terugval(
 /// Geeft per geprobeerde toets de foutmelding als geen enkele lukte.
 pub fn registreer_opgeslagen(
     opgeslagen: &str,
+    platform: Platform,
     probeer: impl FnMut(&str) -> Result<(), String>,
 ) -> Result<Registratie, Vec<(String, String)>> {
-    let genormaliseerd = normaliseer_sneltoets(opgeslagen);
-    let ongeldig = matches!(controleer_sneltoets(&genormaliseerd), Oordeel::Fout { .. });
+    let genormaliseerd = normaliseer_sneltoets(opgeslagen, platform);
+    let ongeldig = matches!(
+        controleer_sneltoets(&genormaliseerd, platform),
+        Oordeel::Fout { .. }
+    );
     let basis = if ongeldig {
-        STANDAARD_SNELTOETS
+        standaard_sneltoets(platform)
     } else {
         genormaliseerd.as_str()
     };
-    registreer_met_terugval(basis, probeer).map(|registratie| Registratie {
+    registreer_met_terugval(basis, platform, probeer).map(|registratie| Registratie {
         is_terugval: registratie.is_terugval || ongeldig,
+        is_overgezet: ongeldig,
         ..registratie
     })
 }
 
-/// De toets in gewone taal voor de gebruiker: `Ctrl+Space` wordt `Ctrl+Spatie`, `Ctrl+KeyA`
-/// wordt `Ctrl+A`.
+/// De modifiers van een sneltoets, in de vaste volgorde van de weergave.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "vier losse modifiers; een enum of bitveld maakt de aanroepen alleen onleesbaarder"
+)]
+#[derive(Debug, Default, Clone, Copy)]
+struct Modifiers {
+    ctrl: bool,
+    alt: bool,
+    shift: bool,
+    /// Windows-toets of Cmd.
+    super_: bool,
+}
+
+/// Is dit een modifier? Zet hem dan aan in `mods`.
+fn is_modifier(klein: &str, mods: &mut Modifiers) -> bool {
+    match klein {
+        "super" | "cmd" | "command" | "meta" | "win" | "windows" => mods.super_ = true,
+        "ctrl" | "control" | "cmdorctrl" | "cmdorcontrol" | "commandorcontrol"
+        | "commandorctrl" => mods.ctrl = true,
+        "alt" | "option" => mods.alt = true,
+        "shift" => mods.shift = true,
+        _ => return false,
+    }
+    true
+}
+
+/// Splitst een sneltoets in zijn modifiers en de overige delen (de gewone toets).
+fn splits_toets(toets: &str, platform: Platform) -> (Modifiers, Vec<&str>) {
+    let mut mods = Modifiers::default();
+    let mut rest = Vec::new();
+    for deel in toets.split('+') {
+        let schoon = deel.trim();
+        let klein = schoon.to_lowercase();
+        // CmdOrCtrl is Cmd op de Mac en Ctrl elders (zo leest de plugin het ook).
+        if platform.is_mac()
+            && matches!(
+                klein.as_str(),
+                "cmdorctrl" | "cmdorcontrol" | "commandorcontrol" | "commandorctrl"
+            )
+        {
+            mods.super_ = true;
+        } else if !is_modifier(&klein, &mut mods) {
+            rest.push(schoon);
+        }
+    }
+    (mods, rest)
+}
+
+/// De toets in gewone taal voor de gebruiker. Op Windows en Linux wordt `Ctrl+Space` dan
+/// `Ctrl+Spatie` en `Ctrl+KeyA` wordt `Ctrl+A`. Op de Mac staan de modifiers als symbolen in de
+/// volgorde van Apple (⌃ Control, ⌥ Option, ⇧ Shift, ⌘ Command) direct voor de toets:
+/// `Alt+Space` wordt `⌥Spatie`, `Ctrl+Super+KeyD` wordt `⌃⌘D`.
 #[must_use]
-pub fn toets_label(toets: &str) -> String {
-    toets
-        .split('+')
-        .map(|deel| deel_label(deel.trim()))
-        .collect::<Vec<_>>()
-        .join("+")
+pub fn toets_label(toets: &str, platform: Platform) -> String {
+    if !platform.is_mac() {
+        return toets
+            .split('+')
+            .map(|deel| deel_label(deel.trim()))
+            .collect::<Vec<_>>()
+            .join("+");
+    }
+    let (mods, rest) = splits_toets(toets, platform);
+    let mut label = String::new();
+    for (aan, symbool) in [
+        (mods.ctrl, '\u{2303}'),
+        (mods.alt, '\u{2325}'),
+        (mods.shift, '\u{21E7}'),
+        (mods.super_, '\u{2318}'),
+    ] {
+        if aan {
+            label.push(symbool);
+        }
+    }
+    label.push_str(
+        &rest
+            .iter()
+            .map(|deel| deel_label(deel))
+            .collect::<Vec<_>>()
+            .join("+"),
+    );
+    label
+}
+
+/// De toets voluit voor een schermlezer, want symbolen als ⌥ worden verschillend voorgelezen.
+/// Op de Mac `Alt+Space` als `Option Spatie` en `Ctrl+Super+KeyD` als `Control Command D`.
+/// Op Windows en Linux is het hetzelfde als [`toets_label`].
+#[must_use]
+pub fn toets_label_voorlezen(toets: &str, platform: Platform) -> String {
+    if !platform.is_mac() {
+        return toets_label(toets, platform);
+    }
+    let (mods, rest) = splits_toets(toets, platform);
+    let mut delen: Vec<String> = Vec::new();
+    for (aan, naam) in [
+        (mods.ctrl, "Control"),
+        (mods.alt, "Option"),
+        (mods.shift, "Shift"),
+        (mods.super_, "Command"),
+    ] {
+        if aan {
+            delen.push(naam.to_string());
+        }
+    }
+    delen.extend(rest.iter().map(|deel| deel_label(deel)));
+    delen.join(" ")
 }
 
 fn deel_label(deel: &str) -> String {
@@ -155,13 +318,14 @@ fn deel_label(deel: &str) -> String {
     deel.to_string()
 }
 
-/// Waarom een sneltoets niet kan.
+/// Waarom een sneltoets niet kan. De interface kiest de tekst op het platform (Rust geeft het
+/// platform via `sneltoets_info`), zodat de Mac geen Windows-toets noemt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SneltoetsFout {
     /// Er is niets opgegeven, of er staat een leeg stuk in.
     Leeg,
-    /// De Windows-toets (of Cmd) is gereserveerd door het besturingssysteem.
+    /// De Windows-toets is gereserveerd door het besturingssysteem (op de Mac mag Cmd wel).
     WindowsToets,
     /// Een toets zonder Ctrl of Alt die ook voor typen of navigeren dient (letters, cijfers,
     /// Spatie, pijltjes, Delete, Home, End, Page Up/Down, Num-cijfers). Globaal weggekaapt
@@ -214,9 +378,9 @@ pub enum Oordeel {
     },
 }
 
-/// Combinaties die andere programma's of Windows zelf nodig hebben, in kleine letters en de
-/// volgorde Ctrl, Alt, Shift, gewone toets.
-const GERESERVEERD: [&str; 18] = [
+/// Combinaties die andere programma's of Windows zelf nodig hebben (ook voor Linux), in kleine
+/// letters en de volgorde Ctrl, Alt, Shift, gewone toets. De Mac heeft een eigen lijst.
+const GERESERVEERD_WINDOWS: [&str; 18] = [
     "ctrl+keyc",
     "ctrl+keyv",
     "ctrl+keyx",
@@ -237,6 +401,45 @@ const GERESERVEERD: [&str; 18] = [
     "shift+insert",
     "ctrl+insert",
 ];
+
+/// Combinaties die macOS of andere programma's nodig hebben, in kleine letters en de volgorde
+/// Ctrl, Alt, Shift, Super (Cmd), gewone toets. Bron voor de Spatie-combinaties:
+/// support.apple.com/en-us/102650 (9-11-2026): Ctrl+Spatie en Ctrl+Option+Spatie wisselen van
+/// invoerbron, Cmd+Spatie is Spotlight, Ctrl+Cmd+Spatie de tekenweergave en Option+Cmd+Spatie
+/// Spotlight in Finder. Option+Spatie gebruikt macOS niet.
+const GERESERVEERD_MAC: [&str; 18] = [
+    "super+space",
+    "ctrl+space",
+    "ctrl+alt+space",
+    "ctrl+super+space",
+    "alt+super+space",
+    "super+tab",
+    "super+keyc",
+    "super+keyv",
+    "super+keyx",
+    "super+keyz",
+    "super+keya",
+    "super+keyq",
+    "super+keyw",
+    "super+keyh",
+    "super+keym",
+    // Schermafbeeldingen: Shift+Cmd+3, 4 en 5.
+    "shift+super+digit3",
+    "shift+super+digit4",
+    "shift+super+digit5",
+];
+
+/// Daarnaast op de Mac: Option+Cmd+Esc (programma's geforceerd stoppen).
+const GERESERVEERD_MAC_ESC: &str = "alt+super+escape";
+
+/// Is deze combinatie (sleutel in de volgorde Ctrl, Alt, Shift, Super) gereserveerd?
+fn is_gereserveerd(sleutel: &str, platform: Platform) -> bool {
+    if platform.is_mac() {
+        GERESERVEERD_MAC.contains(&sleutel) || sleutel == GERESERVEERD_MAC_ESC
+    } else {
+        GERESERVEERD_WINDOWS.contains(&sleutel)
+    }
+}
 
 /// Het nummer van een functietoets (`f5` is 5), of `None` als het er geen is.
 fn functienummer(hoofd: &str) -> Option<u8> {
@@ -374,30 +577,22 @@ fn canonieke_hoofdtoets(klein: &str) -> Option<String> {
 
 /// Zet een sneltoets in de vaste schrijfwijze: modifiers als `Ctrl`, `Alt`, `Shift` (met
 /// `Super` voorop), de gewone toets als `KeyboardEvent.code` (`Ctrl+Up` wordt
-/// `Ctrl+ArrowUp`, `ctrl+a` wordt `Ctrl+KeyA`). Wat niet te herkennen is blijft zoals het
-/// was, zodat [`controleer_sneltoets`] het afkeurt. Elke opgeslagen of nieuwe toets gaat hier
-/// eerst langs, zodat een geldige alias niet verloren gaat.
+/// `Ctrl+ArrowUp`, `ctrl+a` wordt `Ctrl+KeyA`). `Cmd` en `Command` worden `Super`, `Option`
+/// wordt `Alt`. Op de Mac is `CmdOrCtrl` de Cmd-toets, elders Ctrl. Wat niet te herkennen is
+/// blijft zoals het was, zodat [`controleer_sneltoets`] het afkeurt. Elke opgeslagen of nieuwe
+/// toets gaat hier eerst langs, zodat een geldige alias niet verloren gaat.
 #[must_use]
-pub fn normaliseer_sneltoets(toets: &str) -> String {
-    let (mut windows, mut ctrl, mut alt, mut shift) = (false, false, false, false);
-    let mut rest: Vec<String> = Vec::new();
-    for deel in toets.split('+') {
-        let schoon = deel.trim();
-        match schoon.to_lowercase().as_str() {
-            "super" | "cmd" | "command" | "meta" | "win" | "windows" => windows = true,
-            "ctrl" | "control" | "cmdorctrl" | "cmdorcontrol" | "commandorcontrol"
-            | "commandorctrl" => ctrl = true,
-            "alt" | "option" => alt = true,
-            "shift" => shift = true,
-            klein => rest.push(canonieke_hoofdtoets(klein).unwrap_or_else(|| schoon.to_string())),
-        }
-    }
+pub fn normaliseer_sneltoets(toets: &str, platform: Platform) -> String {
+    let (mods, ruwe_rest) = splits_toets(toets, platform);
+    let rest = ruwe_rest.into_iter().map(|schoon| {
+        canonieke_hoofdtoets(&schoon.to_lowercase()).unwrap_or_else(|| schoon.to_string())
+    });
     let mut delen: Vec<String> = Vec::new();
     for (aan, naam) in [
-        (windows, "Super"),
-        (ctrl, "Ctrl"),
-        (alt, "Alt"),
-        (shift, "Shift"),
+        (mods.super_, "Super"),
+        (mods.ctrl, "Ctrl"),
+        (mods.alt, "Alt"),
+        (mods.shift, "Shift"),
     ] {
         if aan {
             delen.push(naam.to_string());
@@ -408,28 +603,33 @@ pub fn normaliseer_sneltoets(toets: &str) -> String {
 }
 
 /// Controleert een sneltoets in de schrijfwijze van de plugin (`Ctrl+Alt+Space`) tegen de
-/// regels van Mondig. Dit is de enige plek met die regels: de interface vraagt het oordeel
+/// regels van Mondig op dit platform. Dit is de enige plek met die regels: de interface vraagt het oordeel
 /// via een Tauri-commando, en het laden uit de instellingen gaat er ook langs.
 ///
-/// Met Ctrl of Alt mag elke toets die de plugin kent, behalve gereserveerde combinaties en
-/// Pause. Zonder: Insert, Scroll Lock en F13 tot en met F24 zonder meer, F1 tot en met F12
+/// Met Ctrl of Alt (op de Mac ook Cmd) mag elke toets die de plugin kent, behalve gereserveerde
+/// combinaties en Pause. De Windows-toets mag niet (op Windows en Linux); op de Mac is Cmd
+/// gewoon een modifier. Zonder: Insert, Scroll Lock en F13 tot en met F24 zonder meer, F1 tot en met F12
 /// met een waarschuwing, ook met Shift erbij. Al het andere mag niet (met Shift is dat
 /// [`SneltoetsFout::ShiftAlleen`]). Aliassen van de plugin (`Ctrl+Up`) tellen als de echte
 /// naam, zie [`normaliseer_sneltoets`].
 #[must_use]
-pub fn controleer_sneltoets(toets: &str) -> Oordeel {
-    let toets = normaliseer_sneltoets(toets);
+pub fn controleer_sneltoets(toets: &str, platform: Platform) -> Oordeel {
+    let toets = normaliseer_sneltoets(toets, platform);
     let fout = |fout| Oordeel::Fout { fout };
     let mut ctrl = false;
     let mut alt = false;
     let mut shift = false;
+    let mut cmd = false;
     let mut hoofden: Vec<String> = Vec::new();
     for deel in toets.split('+') {
         let klein = deel.trim().to_lowercase();
         match klein.as_str() {
             "" => return fout(SneltoetsFout::Leeg),
             "super" | "cmd" | "command" | "meta" | "win" | "windows" => {
-                return fout(SneltoetsFout::WindowsToets);
+                if !platform.is_mac() {
+                    return fout(SneltoetsFout::WindowsToets);
+                }
+                cmd = true;
             }
             "ctrl" | "control" | "cmdorctrl" | "cmdorcontrol" | "commandorcontrol"
             | "commandorctrl" => ctrl = true,
@@ -448,12 +648,13 @@ pub fn controleer_sneltoets(toets: &str) -> Oordeel {
     // Gereserveerd gaat voor Esc en onbekend, zodat Alt+Tab en Ctrl+Shift+Esc de duidelijke
     // melding krijgen.
     let sleutel = format!(
-        "{}{}{}{hoofd}",
+        "{}{}{}{}{hoofd}",
         if ctrl { "ctrl+" } else { "" },
         if alt { "alt+" } else { "" },
         if shift { "shift+" } else { "" },
+        if cmd { "super+" } else { "" },
     );
-    if GERESERVEERD.contains(&sleutel.as_str()) {
+    if is_gereserveerd(&sleutel, platform) {
         return fout(SneltoetsFout::Gereserveerd);
     }
     if hoofd == "escape" {
@@ -465,7 +666,7 @@ pub fn controleer_sneltoets(toets: &str) -> Oordeel {
     if !is_bekende_hoofdtoets(hoofd) {
         return fout(SneltoetsFout::Onbekend);
     }
-    if ctrl || alt {
+    if ctrl || alt || cmd {
         return Oordeel::Goed;
     }
     // Shift erbij verandert niets aan een toets die los mag; alleen wat gereserveerd is
@@ -662,6 +863,9 @@ impl Toetsbesturing {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const W: Platform = Platform::Windows;
+    const M: Platform = Platform::Mac;
 
     fn na(begin: Instant, ms: u64) -> Instant {
         begin + Duration::from_millis(ms)
@@ -878,7 +1082,8 @@ mod tests {
     #[test]
     fn gewenste_toets_die_lukt_is_geen_terugval() {
         let uitkomst =
-            registreer_met_terugval(STANDAARD_SNELTOETS, probeer_met(&["Ctrl+Space"])).unwrap();
+            registreer_met_terugval(standaard_sneltoets(W), W, probeer_met(&["Ctrl+Space"]))
+                .unwrap();
         assert_eq!(uitkomst.toets, "Ctrl+Space");
         assert!(!uitkomst.is_terugval);
     }
@@ -886,16 +1091,20 @@ mod tests {
     #[test]
     fn terugvallijst_gaat_in_volgorde() {
         let eerste = registreer_met_terugval(
-            STANDAARD_SNELTOETS,
+            standaard_sneltoets(W),
+            W,
             probeer_met(&["Ctrl+Alt+Space", "Ctrl+Shift+Space"]),
         )
         .unwrap();
         assert_eq!(eerste.toets, "Ctrl+Alt+Space");
         assert!(eerste.is_terugval);
 
-        let tweede =
-            registreer_met_terugval(STANDAARD_SNELTOETS, probeer_met(&["Ctrl+Shift+Space"]))
-                .unwrap();
+        let tweede = registreer_met_terugval(
+            standaard_sneltoets(W),
+            W,
+            probeer_met(&["Ctrl+Shift+Space"]),
+        )
+        .unwrap();
         assert_eq!(tweede.toets, "Ctrl+Shift+Space");
         assert!(tweede.is_terugval);
     }
@@ -903,7 +1112,8 @@ mod tests {
     #[test]
     fn als_niets_lukt_komen_alle_fouten_terug() {
         let fouten =
-            registreer_met_terugval(STANDAARD_SNELTOETS, |_| Err("bezet".to_string())).unwrap_err();
+            registreer_met_terugval(standaard_sneltoets(W), W, |_| Err("bezet".to_string()))
+                .unwrap_err();
         let toetsen: Vec<&str> = fouten.iter().map(|(t, _)| t.as_str()).collect();
         assert_eq!(
             toetsen,
@@ -914,7 +1124,7 @@ mod tests {
     #[test]
     fn een_eigen_toets_valt_terug_op_dezelfde_lijst_zonder_dubbelen() {
         let mut geprobeerd = Vec::new();
-        let uitkomst = registreer_met_terugval("Ctrl+Alt+Space", |toets| {
+        let uitkomst = registreer_met_terugval("Ctrl+Alt+Space", W, |toets| {
             geprobeerd.push(toets.to_string());
             if toets == "Ctrl+Shift+Space" {
                 Ok(())
@@ -930,22 +1140,26 @@ mod tests {
 
     #[test]
     fn label_is_gewone_taal() {
-        assert_eq!(toets_label("Ctrl+Space"), "Ctrl+Spatie");
-        assert_eq!(toets_label("Ctrl+Alt+Space"), "Ctrl+Alt+Spatie");
-        assert_eq!(toets_label("Escape"), "Esc");
-        assert_eq!(toets_label("Control+KeyD"), "Ctrl+D");
-        assert_eq!(toets_label("Ctrl+Shift+Digit5"), "Ctrl+Shift+5");
-        assert_eq!(toets_label("Alt+ArrowUp"), "Alt+Pijl omhoog");
-        assert_eq!(toets_label("Ctrl+Numpad7"), "Ctrl+Num 7");
-        assert_eq!(toets_label("Ctrl+F9"), "Ctrl+F9");
-        assert_eq!(toets_label("ScrollLock"), "Scroll Lock");
+        assert_eq!(toets_label("Ctrl+Space", W), "Ctrl+Spatie");
+        assert_eq!(toets_label("Ctrl+Alt+Space", W), "Ctrl+Alt+Spatie");
+        assert_eq!(toets_label("Escape", W), "Esc");
+        assert_eq!(toets_label("Control+KeyD", W), "Ctrl+D");
+        assert_eq!(toets_label("Ctrl+Shift+Digit5", W), "Ctrl+Shift+5");
+        assert_eq!(toets_label("Alt+ArrowUp", W), "Alt+Pijl omhoog");
+        assert_eq!(toets_label("Ctrl+Numpad7", W), "Ctrl+Num 7");
+        assert_eq!(toets_label("Ctrl+F9", W), "Ctrl+F9");
+        assert_eq!(toets_label("ScrollLock", W), "Scroll Lock");
     }
 
     fn is_fout(toets: &str, verwacht: SneltoetsFout) {
+        is_fout_op(toets, W, verwacht);
+    }
+
+    fn is_fout_op(toets: &str, platform: Platform, verwacht: SneltoetsFout) {
         assert_eq!(
-            controleer_sneltoets(toets),
+            controleer_sneltoets(toets, platform),
             Oordeel::Fout { fout: verwacht },
-            "{toets}"
+            "{toets} op {platform:?}"
         );
     }
 
@@ -968,7 +1182,7 @@ mod tests {
             "F13",
             "F24",
         ] {
-            assert_eq!(controleer_sneltoets(toets), Oordeel::Goed, "{toets}");
+            assert_eq!(controleer_sneltoets(toets, W), Oordeel::Goed, "{toets}");
         }
     }
 
@@ -976,7 +1190,7 @@ mod tests {
     fn functietoetsen_f1_tot_f12_vragen_bevestiging() {
         for (toets, naam) in [("F5", "F5"), ("f9", "F9"), ("F1", "F1"), ("F12", "F12")] {
             assert_eq!(
-                controleer_sneltoets(toets),
+                controleer_sneltoets(toets, W),
                 Oordeel::Waarschuwing {
                     soort: WaarschuwingSoort::Functietoets,
                     toets: naam.to_string()
@@ -1005,10 +1219,10 @@ mod tests {
 
     #[test]
     fn shift_verandert_het_oordeel_van_een_losse_toets_niet() {
-        assert_eq!(controleer_sneltoets("Shift+F13"), Oordeel::Goed);
-        assert_eq!(controleer_sneltoets("Shift+ScrollLock"), Oordeel::Goed);
+        assert_eq!(controleer_sneltoets("Shift+F13", W), Oordeel::Goed);
+        assert_eq!(controleer_sneltoets("Shift+ScrollLock", W), Oordeel::Goed);
         assert_eq!(
-            controleer_sneltoets("Shift+F5"),
+            controleer_sneltoets("Shift+F5", W),
             Oordeel::Waarschuwing {
                 soort: WaarschuwingSoort::Functietoets,
                 toets: "F5".to_string()
@@ -1034,15 +1248,15 @@ mod tests {
             ("Super+Ctrl+Space", "Super+Ctrl+Space"),
             ("insert", "Insert"),
         ] {
-            assert_eq!(normaliseer_sneltoets(alias), canoniek, "{alias}");
+            assert_eq!(normaliseer_sneltoets(alias, W), canoniek, "{alias}");
         }
         // Onbekend blijft staan, zodat de controle het afkeurt.
-        assert_eq!(normaliseer_sneltoets("Ctrl+Nonsens"), "Ctrl+Nonsens");
-        assert_eq!(normaliseer_sneltoets("Ctrl+"), "Ctrl+");
+        assert_eq!(normaliseer_sneltoets("Ctrl+Nonsens", W), "Ctrl+Nonsens");
+        assert_eq!(normaliseer_sneltoets("Ctrl+", W), "Ctrl+");
         // Geldige aliassen worden goed gekeurd in plaats van onbekend.
-        assert_eq!(controleer_sneltoets("Ctrl+Up"), Oordeel::Goed);
+        assert_eq!(controleer_sneltoets("Ctrl+Up", W), Oordeel::Goed);
         assert_eq!(
-            controleer_sneltoets("Ctrl+a+b"),
+            controleer_sneltoets("Ctrl+a+b", W),
             Oordeel::Fout {
                 fout: SneltoetsFout::MeerdereHoofdtoetsen
             }
@@ -1055,7 +1269,7 @@ mod tests {
     /// Registreert alles wat vrij is en onthoudt wat er geprobeerd is.
     fn registreer_opgeslagen_met(opgeslagen: &str) -> (Registratie, Vec<String>) {
         let mut geprobeerd = Vec::new();
-        let uitkomst = registreer_opgeslagen(opgeslagen, |toets| {
+        let uitkomst = registreer_opgeslagen(opgeslagen, W, |toets| {
             geprobeerd.push(toets.to_string());
             Ok(())
         })
@@ -1074,16 +1288,16 @@ mod tests {
             "KeyA",
         ] {
             let (uitkomst, geprobeerd) = registreer_opgeslagen_met(verboden);
-            assert_eq!(uitkomst.toets, STANDAARD_SNELTOETS, "{verboden}");
+            assert_eq!(uitkomst.toets, standaard_sneltoets(W), "{verboden}");
             assert!(uitkomst.is_terugval, "{verboden}");
             // De verboden toets is nooit aan de plugin aangeboden.
-            assert_eq!(geprobeerd, [STANDAARD_SNELTOETS], "{verboden}");
+            assert_eq!(geprobeerd, [standaard_sneltoets(W)], "{verboden}");
         }
     }
 
     #[test]
     fn opgeslagen_verboden_toets_gaat_door_de_terugvallijst_als_de_standaard_bezet_is() {
-        let uitkomst = registreer_opgeslagen("Pause", |toets| {
+        let uitkomst = registreer_opgeslagen("Pause", W, |toets| {
             if toets == "Ctrl+Alt+Space" {
                 Ok(())
             } else {
@@ -1140,9 +1354,9 @@ mod tests {
             is_fout(toets, SneltoetsFout::Gereserveerd);
         }
         // Vergelijkbare combinaties mogen wel.
-        assert_eq!(controleer_sneltoets("Ctrl+Alt+KeyC"), Oordeel::Goed);
-        assert_eq!(controleer_sneltoets("Ctrl+Shift+KeyD"), Oordeel::Goed);
-        assert_eq!(controleer_sneltoets("Alt+F9"), Oordeel::Goed);
+        assert_eq!(controleer_sneltoets("Ctrl+Alt+KeyC", W), Oordeel::Goed);
+        assert_eq!(controleer_sneltoets("Ctrl+Shift+KeyD", W), Oordeel::Goed);
+        assert_eq!(controleer_sneltoets("Alt+F9", W), Oordeel::Goed);
     }
 
     #[test]
@@ -1159,14 +1373,14 @@ mod tests {
 
     #[test]
     fn oordeel_serialiseert_voor_de_interface() {
-        let goed = serde_json::to_value(controleer_sneltoets("Insert")).unwrap();
+        let goed = serde_json::to_value(controleer_sneltoets("Insert", W)).unwrap();
         assert_eq!(goed, serde_json::json!({ "uitkomst": "goed" }));
-        let waarschuwing = serde_json::to_value(controleer_sneltoets("F5")).unwrap();
+        let waarschuwing = serde_json::to_value(controleer_sneltoets("F5", W)).unwrap();
         assert_eq!(
             waarschuwing,
             serde_json::json!({ "uitkomst": "waarschuwing", "soort": "functietoets", "toets": "F5" })
         );
-        let slecht = serde_json::to_value(controleer_sneltoets("Pause")).unwrap();
+        let slecht = serde_json::to_value(controleer_sneltoets("Pause", W)).unwrap();
         assert_eq!(
             slecht,
             serde_json::json!({ "uitkomst": "fout", "fout": "werktNiet" })
@@ -1184,5 +1398,252 @@ mod tests {
         }
         assert_eq!(b.fase(), Fase::Opnemen { wisselen: false });
         assert_eq!(b.losgelaten(na(t0, 1500)), Actie::Stop);
+    }
+
+    // De Mac-regels draaien hier op Windows, omdat alles het platform als parameter krijgt.
+
+    #[test]
+    fn standaarden_per_platform() {
+        assert_eq!(standaard_sneltoets(M), "Alt+Space");
+        assert_eq!(standaard_opschoontoets(M), "Alt+Shift+Space");
+        assert_eq!(standaard_sneltoets(W), "Ctrl+Space");
+        assert_eq!(standaard_opschoontoets(W), "Ctrl+Shift+Space");
+        assert_eq!(standaard_sneltoets(Platform::Linux), "Ctrl+Space");
+        assert_eq!(
+            terugval_sneltoetsen(W),
+            ["Ctrl+Alt+Space", "Ctrl+Shift+Space"]
+        );
+        // De standaarden zelf en de terugval moeten op hun eigen platform mogen.
+        for platform in [W, M, Platform::Linux] {
+            for toets in [
+                standaard_sneltoets(platform),
+                standaard_opschoontoets(platform),
+            ]
+            .into_iter()
+            .chain(terugval_sneltoetsen(platform).iter().copied())
+            {
+                assert_eq!(
+                    controleer_sneltoets(toets, platform),
+                    Oordeel::Goed,
+                    "{toets}"
+                );
+            }
+            assert_ne!(
+                standaard_sneltoets(platform),
+                standaard_opschoontoets(platform)
+            );
+        }
+        // Op de Mac mag de terugval de standaard van de tweede toets niet innemen.
+        assert!(!terugval_sneltoetsen(M).contains(&standaard_opschoontoets(M)));
+    }
+
+    #[test]
+    fn huidig_platform_komt_uit_cfg() {
+        let verwacht = if cfg!(target_os = "windows") {
+            Platform::Windows
+        } else if cfg!(target_os = "macos") {
+            Platform::Mac
+        } else {
+            Platform::Linux
+        };
+        assert_eq!(Platform::huidig(), verwacht);
+    }
+
+    #[test]
+    fn op_de_mac_mag_cmd_in_een_sneltoets() {
+        for toets in [
+            "Super+KeyD",
+            "Cmd+Shift+KeyD",
+            "Command+Alt+KeyK",
+            "Super+Ctrl+KeyD",
+            "Super+F9",
+            // Cmd telt als modifier: een losse typtoets met Cmd is een combinatie.
+            "Super+Digit1",
+            // Shift+Cmd+2 is niet gereserveerd (3, 4 en 5 wel).
+            "Super+Shift+Digit2",
+        ] {
+            assert_eq!(controleer_sneltoets(toets, M), Oordeel::Goed, "{toets}");
+        }
+        // Op Windows en Linux blijft de Windows-toets geweigerd.
+        for platform in [W, Platform::Linux] {
+            is_fout_op("Super+KeyD", platform, SneltoetsFout::WindowsToets);
+            is_fout_op("Cmd+Space", platform, SneltoetsFout::WindowsToets);
+        }
+    }
+
+    #[test]
+    fn mac_reserveert_de_combinaties_van_macos() {
+        for toets in [
+            "Super+Space",
+            "Ctrl+Space",
+            "Ctrl+Alt+Space",
+            "Ctrl+Super+Space",
+            "Alt+Super+Space",
+            "Super+Tab",
+            "Super+KeyC",
+            "Super+KeyV",
+            "Super+KeyX",
+            "Super+KeyZ",
+            "Super+KeyA",
+            "Super+KeyQ",
+            "Super+KeyW",
+            "Super+KeyH",
+            "Super+KeyM",
+            "Super+Shift+Digit3",
+            "Super+Shift+Digit4",
+            "Super+Shift+Digit5",
+            "Alt+Super+Escape",
+            // Aliassen en een andere volgorde zijn dezelfde toets.
+            "Cmd+Space",
+            "command+c",
+            "Shift+Cmd+3",
+            "Option+Cmd+Esc",
+            "Control+Space",
+        ] {
+            is_fout_op(toets, M, SneltoetsFout::Gereserveerd);
+        }
+        // Option+Spatie en Option+Shift+Spatie gebruikt macOS niet.
+        assert_eq!(controleer_sneltoets("Alt+Space", M), Oordeel::Goed);
+        assert_eq!(controleer_sneltoets("Alt+Shift+Space", M), Oordeel::Goed);
+    }
+
+    #[test]
+    fn de_lijsten_van_windows_en_mac_gelden_niet_voor_elkaar() {
+        // Windows-combinaties zijn op de Mac vrij, tenzij de Mac ze ook gebruikt.
+        for toets in [
+            "Ctrl+KeyC",
+            "Ctrl+KeyV",
+            "Alt+F4",
+            "Ctrl+Insert",
+            "Shift+Insert",
+        ] {
+            assert_eq!(controleer_sneltoets(toets, M), Oordeel::Goed, "{toets}");
+            is_fout_op(toets, W, SneltoetsFout::Gereserveerd);
+        }
+        // En andersom: Ctrl+Spatie is alleen op de Mac gereserveerd.
+        assert_eq!(controleer_sneltoets("Ctrl+Space", W), Oordeel::Goed);
+        assert_eq!(controleer_sneltoets("Ctrl+Alt+Space", W), Oordeel::Goed);
+    }
+
+    #[test]
+    fn op_de_mac_is_cmdorctrl_de_cmd_toets() {
+        assert_eq!(normaliseer_sneltoets("CmdOrCtrl+KeyD", M), "Super+KeyD");
+        assert_eq!(normaliseer_sneltoets("CmdOrCtrl+Comma", M), "Super+Comma");
+        assert_eq!(normaliseer_sneltoets("CmdOrCtrl+,", W), "Ctrl+Comma");
+        assert_eq!(normaliseer_sneltoets("Option+Cmd+d", M), "Super+Alt+KeyD");
+        // Een alias blijft ook op de Mac werken.
+        assert_eq!(controleer_sneltoets("Alt+Up", M), Oordeel::Goed);
+    }
+
+    #[test]
+    fn mac_labels_zijn_symbolen_in_de_volgorde_van_apple() {
+        assert_eq!(toets_label("Alt+Space", M), "\u{2325}Spatie");
+        assert_eq!(toets_label("Alt+Shift+Space", M), "\u{2325}\u{21E7}Spatie");
+        assert_eq!(toets_label("Ctrl+Super+KeyD", M), "\u{2303}\u{2318}D");
+        // De volgorde van de invoer maakt niet uit.
+        assert_eq!(
+            toets_label("Super+Shift+Alt+Ctrl+KeyD", M),
+            "\u{2303}\u{2325}\u{21E7}\u{2318}D"
+        );
+        assert_eq!(
+            toets_label("Ctrl+Alt+Shift+Space", M),
+            "\u{2303}\u{2325}\u{21E7}Spatie"
+        );
+        assert_eq!(toets_label("Cmd+Digit5", M), "\u{2318}5");
+        assert_eq!(toets_label("Option+ArrowUp", M), "\u{2325}Pijl omhoog");
+        assert_eq!(toets_label("Alt+F9", M), "\u{2325}F9");
+        assert_eq!(toets_label("F13", M), "F13");
+        // Windows en Linux blijven zoals ze waren.
+        assert_eq!(toets_label("Alt+Space", W), "Alt+Spatie");
+        assert_eq!(toets_label("Ctrl+Space", Platform::Linux), "Ctrl+Spatie");
+    }
+
+    #[test]
+    fn mac_labels_voor_schermlezers_zijn_voluit() {
+        assert_eq!(toets_label_voorlezen("Alt+Space", M), "Option Spatie");
+        assert_eq!(
+            toets_label_voorlezen("Alt+Shift+Space", M),
+            "Option Shift Spatie"
+        );
+        assert_eq!(
+            toets_label_voorlezen("Ctrl+Super+KeyD", M),
+            "Control Command D"
+        );
+        assert_eq!(
+            toets_label_voorlezen("Command+Option+Shift+Control+F9", M),
+            "Control Option Shift Command F9"
+        );
+        assert_eq!(toets_label_voorlezen("Ctrl+Space", W), "Ctrl+Spatie");
+    }
+
+    #[test]
+    fn mac_met_de_oude_standaard_gaat_over_naar_de_nieuwe() {
+        // Ctrl+Spatie is op de Mac gereserveerd, dus de opgeslagen oude standaard valt weg.
+        let mut geprobeerd = Vec::new();
+        let uitkomst = registreer_opgeslagen("Ctrl+Space", M, |toets| {
+            geprobeerd.push(toets.to_string());
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(uitkomst.toets, "Alt+Space");
+        assert!(uitkomst.is_overgezet);
+        assert!(uitkomst.is_terugval);
+        // De gereserveerde toets is nooit aan de plugin aangeboden.
+        assert_eq!(geprobeerd, ["Alt+Space"]);
+    }
+
+    #[test]
+    fn overgang_naar_de_standaard_valt_op_de_mac_terug_als_die_bezet_is() {
+        let uitkomst = registreer_opgeslagen("Ctrl+Space", M, |toets| {
+            if toets == "Ctrl+Alt+Shift+Space" {
+                Ok(())
+            } else {
+                Err("bezet".to_string())
+            }
+        })
+        .unwrap();
+        assert_eq!(uitkomst.toets, "Ctrl+Alt+Shift+Space");
+        assert!(uitkomst.is_overgezet);
+    }
+
+    #[test]
+    fn een_goede_opgeslagen_mac_toets_is_geen_overgang() {
+        let uitkomst = registreer_opgeslagen("Alt+Space", M, |_| Ok(())).unwrap();
+        assert_eq!(uitkomst.toets, "Alt+Space");
+        assert!(!uitkomst.is_overgezet);
+        assert!(!uitkomst.is_terugval);
+        let cmd = registreer_opgeslagen("Cmd+Alt+KeyD", M, |_| Ok(())).unwrap();
+        assert_eq!(cmd.toets, "Super+Alt+KeyD");
+        assert!(!cmd.is_overgezet);
+        // Een bezette toets is wel een terugval maar geen overgang.
+        let bezet = registreer_opgeslagen("Alt+Space", M, |toets| {
+            if toets == "Alt+Space" {
+                Err("bezet".to_string())
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap();
+        assert!(bezet.is_terugval);
+        assert!(!bezet.is_overgezet);
+    }
+
+    #[test]
+    fn op_windows_blijft_ctrl_spatie_en_pause_gaat_naar_de_standaard() {
+        let (uitkomst, _) = registreer_opgeslagen_met("Ctrl+Space");
+        assert_eq!(uitkomst.toets, "Ctrl+Space");
+        assert!(!uitkomst.is_overgezet);
+        let (pause, _) = registreer_opgeslagen_met("Pause");
+        assert!(pause.is_overgezet);
+        assert_eq!(pause.toets, "Ctrl+Space");
+    }
+
+    #[test]
+    fn platform_serialiseert_voor_de_interface() {
+        assert_eq!(serde_json::to_value(M).unwrap(), serde_json::json!("mac"));
+        assert_eq!(
+            serde_json::to_value(W).unwrap(),
+            serde_json::json!("windows")
+        );
     }
 }

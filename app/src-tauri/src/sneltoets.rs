@@ -23,8 +23,9 @@ use std::time::Instant;
 
 use mondig_core::opschonen::Stand;
 use mondig_core::sneltoets::{
-    Oordeel, Registratie, STANDAARD_OPSCHOONTOETS, STANDAARD_SNELTOETS, SneltoetsFout, Toets,
-    controleer_sneltoets, normaliseer_sneltoets, registreer_opgeslagen, toets_label,
+    Oordeel, Platform, Registratie, SneltoetsFout, Toets, controleer_sneltoets,
+    normaliseer_sneltoets, registreer_opgeslagen, standaard_opschoontoets, standaard_sneltoets,
+    toets_label, toets_label_voorlezen,
 };
 use mondig_core::taak::{Foutmelding, Vervolg};
 use serde::{Deserialize, Serialize};
@@ -43,8 +44,22 @@ pub(crate) const SLEUTEL_SNELTOETS: &str = "sneltoets";
 pub(crate) const SLEUTEL_OPSCHOONTOETS: &str = "opschonen_sneltoets";
 /// Sleutel: de id van de gekozen microfoon.
 pub(crate) const SLEUTEL_MICROFOON: &str = "microfoon";
+/// Sleutel: is de overgang van de oude Windows-standaard van de tweede toets op de Mac al
+/// gedaan? Zonder dit zou een tweede toets die de gebruiker zelf op Ctrl+Shift+Spatie zet, bij
+/// elke start weer vervangen worden.
+const SLEUTEL_MAC_OVERGANG: &str = "sneltoets_mac_overgang";
 /// De Esc-toets in de schrijfwijze van de plugin.
 const ESC: &str = "Escape";
+
+/// De toets in gewone taal voor dit platform (`Ctrl+Spatie`, op de Mac `\⌥Spatie`).
+fn weergave(toets: &str) -> String {
+    toets_label(toets, Platform::huidig())
+}
+
+/// De toets voluit voor een schermlezer (op de Mac `Option Spatie`).
+fn weergave_voorlezen(toets: &str) -> String {
+    toets_label_voorlezen(toets, Platform::huidig())
+}
 
 /// Welke sneltoets een commando bedoelt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
@@ -83,14 +98,24 @@ impl Soort {
 }
 
 /// Wat de interface van een sneltoets weet. Serialiseert met camelCase-sleutels.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "de vlaggen worden als losse velden naar de interface geserialiseerd"
+)]
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SneltoetsStatus {
-    /// De actieve toets in gewone taal (`Ctrl+Spatie`), of `None` als geen enkele lukte (of,
-    /// bij de tweede toets, als die niet aan hoort te staan).
+    /// De actieve toets in gewone taal (`Ctrl+Spatie`, op de Mac `\⌥Spatie`), of `None` als
+    /// geen enkele lukte (of, bij de tweede toets, als die niet aan hoort te staan).
     actief: Option<String>,
+    /// Dezelfde toets voluit voor een schermlezer (`Ctrl+Spatie`, op de Mac `Option Spatie`).
+    actief_voorlezen: Option<String>,
     /// Is de actieve toets een terugvaloptie omdat de gewenste niet vrij was?
     is_terugval: bool,
+    /// Mocht de opgeslagen toets niet op deze computer, zodat Mondig naar de standaard ging
+    /// (bijvoorbeeld Ctrl+Spatie van een Windows-instelling op de Mac)? Dan is `is_terugval`
+    /// ook waar, maar de melding is een andere: niet "bezet" maar "kan hier niet".
+    overgezet: bool,
     /// De gewenste toets in gewone taal.
     gewenst: String,
     /// Alle toetsen die geprobeerd zijn, in gewone taal.
@@ -180,7 +205,38 @@ pub(crate) fn is_actief(app: &AppHandle) -> bool {
 /// staan op een plek: `mondig_core::sneltoets::controleer_sneltoets`.
 #[tauri::command]
 pub(crate) fn sneltoets_controleer(toets: &str) -> Oordeel {
-    controleer_sneltoets(toets)
+    controleer_sneltoets(toets, Platform::huidig())
+}
+
+/// Wat de interface van het platform moet weten voor de sneltoetsen: welk platform (voor de
+/// weergave van de toetsen en de teksten) en de standaarden. De regels en de standaarden blijven
+/// in Rust; de interface bouwt hier geen tweede lijst naast.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SneltoetsInfo {
+    /// `windows`, `mac` of `linux`.
+    platform: Platform,
+    /// De standaard van de gewone toets in de schrijfwijze van de plugin.
+    standaard: &'static str,
+    /// Dezelfde in gewone taal.
+    standaard_label: String,
+    /// De standaard van de tweede toets (opschonen) in de schrijfwijze van de plugin.
+    standaard_opschonen: &'static str,
+    /// Dezelfde in gewone taal.
+    standaard_opschonen_label: String,
+}
+
+/// Het platform en de standaardtoetsen voor de interface.
+#[tauri::command]
+pub(crate) fn sneltoets_info() -> SneltoetsInfo {
+    let platform = Platform::huidig();
+    SneltoetsInfo {
+        platform,
+        standaard: standaard_sneltoets(platform),
+        standaard_label: weergave(standaard_sneltoets(platform)),
+        standaard_opschonen: standaard_opschoontoets(platform),
+        standaard_opschonen_label: weergave(standaard_opschoontoets(platform)),
+    }
 }
 
 /// Leest een tekstinstelling. `None` als de instelling ontbreekt of de store niet te lezen is.
@@ -215,32 +271,48 @@ fn registreer_toets(app: &AppHandle, toets: &str, soort: Soort) -> Result<(), St
 /// in de [`SneltoetsStand`] voor het startscherm. Daarna, als die aan hoort te staan, de tweede
 /// toets (zie [`werk_opschoontoets_bij`]).
 pub(crate) fn registreer_bij_start(app: &AppHandle) {
+    let platform = Platform::huidig();
     let gewenst = lees_instelling(app, SLEUTEL_SNELTOETS).unwrap_or_else(|| {
         // Eerste start: leg de standaard vast, zodat de instellingen (sprint 3d) hem kunnen wijzigen.
-        schrijf_instelling(app, SLEUTEL_SNELTOETS, STANDAARD_SNELTOETS);
-        STANDAARD_SNELTOETS.to_string()
+        schrijf_instelling(app, SLEUTEL_SNELTOETS, standaard_sneltoets(platform));
+        standaard_sneltoets(platform).to_string()
     });
     // Een opgeslagen toets gaat door dezelfde controle als een nieuwe (zie
     // `registreer_opgeslagen`): een verboden of gereserveerde toets wordt niet geregistreerd.
-    let uitkomst = registreer_opgeslagen(&gewenst, |toets| {
+    // Zo gaat een Mac met Ctrl+Spatie (de oude standaard) vanzelf naar de nieuwe.
+    let uitkomst = registreer_opgeslagen(&gewenst, platform, |toets| {
         registreer_toets(app, toets, Soort::Dicteren)
     });
+    migreer_opschoontoets_mac(app);
 
     let status = match uitkomst {
-        Ok(Registratie { toets, is_terugval }) => {
+        Ok(Registratie {
+            toets,
+            is_terugval,
+            is_overgezet,
+        }) => {
             eprintln!(
                 "sneltoets: {toets} geregistreerd{}",
-                if is_terugval {
+                if is_overgezet {
+                    format!(" (overgezet, {gewenst} kan hier niet)")
+                } else if is_terugval {
                     format!(" (terugval, gewenst was {gewenst})")
                 } else {
                     String::new()
                 }
             );
+            // Alleen de standaard zelf leggen we vast: een terugval omdat een ander programma
+            // de toets bezet houdt, blijft tijdelijk (de volgende start probeert de gewenste weer).
+            if is_overgezet && toets == standaard_sneltoets(platform) {
+                schrijf_instelling(app, SLEUTEL_SNELTOETS, &toets);
+            }
             SneltoetsStatus {
-                actief: Some(toets_label(&toets)),
+                actief: Some(weergave(&toets)),
+                actief_voorlezen: Some(weergave_voorlezen(&toets)),
                 is_terugval,
-                gewenst: toets_label(&gewenst),
-                geprobeerd: vec![toets_label(&toets)],
+                overgezet: is_overgezet,
+                gewenst: weergave(&gewenst),
+                geprobeerd: vec![weergave(&toets)],
                 dubbel: false,
                 ruw: Some(toets),
                 opgeschort: false,
@@ -252,9 +324,11 @@ pub(crate) fn registreer_bij_start(app: &AppHandle) {
             }
             SneltoetsStatus {
                 actief: None,
+                actief_voorlezen: None,
                 is_terugval: false,
-                gewenst: toets_label(&gewenst),
-                geprobeerd: fouten.iter().map(|(toets, _)| toets_label(toets)).collect(),
+                overgezet: false,
+                gewenst: weergave(&gewenst),
+                geprobeerd: fouten.iter().map(|(toets, _)| weergave(toets)).collect(),
                 dubbel: false,
                 ruw: None,
                 opgeschort: false,
@@ -277,10 +351,31 @@ pub(crate) fn registreer_bij_start(app: &AppHandle) {
 /// De tweede toets die de gebruiker wil, in de schrijfwijze van de plugin. Een opgeslagen toets
 /// die niet (meer) mag, wordt de standaard.
 fn gewenste_opschoontoets(app: &AppHandle) -> String {
+    let platform = Platform::huidig();
     lees_instelling(app, SLEUTEL_OPSCHOONTOETS)
-        .map(|toets| normaliseer_sneltoets(&toets))
-        .filter(|toets| !matches!(controleer_sneltoets(toets), Oordeel::Fout { .. }))
-        .unwrap_or_else(|| STANDAARD_OPSCHOONTOETS.to_string())
+        .map(|toets| normaliseer_sneltoets(&toets, platform))
+        .filter(|toets| !matches!(controleer_sneltoets(toets, platform), Oordeel::Fout { .. }))
+        .unwrap_or_else(|| standaard_opschoontoets(platform).to_string())
+}
+
+/// Op de Mac is de standaard van de tweede toets Option+Shift+Spatie in plaats van
+/// Ctrl+Shift+Spatie. Ctrl+Shift+Spatie is daar niet gereserveerd, dus een opgeslagen oude
+/// standaard zou blijven staan; deze overgang wist hem eenmalig, zodat de nieuwe standaard
+/// geldt. Daarna (de sleutel [`SLEUTEL_MAC_OVERGANG`] staat er) blijft een keuze van de
+/// gebruiker staan, ook als die Ctrl+Shift+Spatie is. De gewone toets heeft dit niet nodig:
+/// Ctrl+Spatie is op de Mac gereserveerd en valt in [`registreer_bij_start`] vanzelf weg.
+fn migreer_opschoontoets_mac(app: &AppHandle) {
+    let platform = Platform::huidig();
+    if platform != Platform::Mac || lees_instelling(app, SLEUTEL_MAC_OVERGANG).is_some() {
+        return;
+    }
+    if let Some(opgeslagen) = lees_instelling(app, SLEUTEL_OPSCHOONTOETS)
+        && normaliseer_sneltoets(&opgeslagen, platform) == "Ctrl+Shift+Space"
+    {
+        eprintln!("sneltoets: oude standaard van opschonen omgezet voor de Mac");
+        wis_instelling(app, SLEUTEL_OPSCHOONTOETS);
+    }
+    schrijf_instelling(app, SLEUTEL_MAC_OVERGANG, "1");
 }
 
 /// Het event waarmee de interface hoort dat een sneltoets veranderde (de gewone of de tweede).
@@ -304,7 +399,7 @@ pub(crate) fn werk_opschoontoets_bij(app: &AppHandle, opschonen: Stand) {
 /// de hoofddraad, en die kan intussen (in een commando) op dit slot wachten.
 fn zet_opschoontoets(app: &AppHandle, wil: bool) {
     let gewenst = gewenste_opschoontoets(app);
-    let label = toets_label(&gewenst);
+    let label = weergave(&gewenst);
     let Some(stand) = app.try_state::<SneltoetsStand>() else {
         return;
     };
@@ -341,6 +436,7 @@ fn zet_opschoontoets(app: &AppHandle, wil: bool) {
             // De interface vangt nu een toets; het herstellen na het vangen registreert hem.
             status.ruw = Some(gewenst.clone());
             status.actief = Some(label.clone());
+            status.actief_voorlezen = Some(weergave_voorlezen(&gewenst));
             None
         } else {
             status.geprobeerd = vec![label.clone()];
@@ -364,6 +460,7 @@ fn zet_opschoontoets(app: &AppHandle, wil: bool) {
         Ok(()) => {
             eprintln!("sneltoets: tweede toets {nieuw} geregistreerd");
             status.actief = Some(label);
+            status.actief_voorlezen = Some(weergave_voorlezen(&nieuw));
             status.ruw = Some(nieuw);
         }
         Err(fout) => eprintln!("sneltoets: tweede toets {nieuw} niet geregistreerd: {fout}"),
@@ -468,10 +565,12 @@ pub(crate) fn herstel_na_vangen(app: &AppHandle) {
             Ok(()) => eprintln!("sneltoets: {ruw} hersteld na het vangen"),
             Err(fout) => {
                 eprintln!("sneltoets: {ruw} niet te herstellen: {fout}");
-                status.geprobeerd = vec![toets_label(&ruw)];
-                status.gewenst = toets_label(&ruw);
+                status.geprobeerd = vec![weergave(&ruw)];
+                status.gewenst = weergave(&ruw);
                 status.actief = None;
+                status.actief_voorlezen = None;
                 status.is_terugval = false;
+                status.overgezet = false;
                 status.ruw = None;
             }
         }
@@ -522,10 +621,11 @@ pub(crate) fn wijzig(
 ) -> Result<SneltoetsStatus, WijzigFout> {
     // Een waarschuwing is goed: de interface vroeg de gebruiker al om bevestiging. Bewaar en
     // registreer de genormaliseerde vorm, zodat een alias als `Ctrl+Up` niet blijft staan.
-    if let Oordeel::Fout { fout } = controleer_sneltoets(toets) {
+    let platform = Platform::huidig();
+    if let Oordeel::Fout { fout } = controleer_sneltoets(toets, platform) {
         return Err(WijzigFout::Geweigerd { fout });
     }
-    let toets = normaliseer_sneltoets(toets);
+    let toets = normaliseer_sneltoets(toets, platform);
     {
         let standen = crate::dicteerketen::slot(&stand.0);
         let is_ander = standen.lees(soort.ander()).ruw.as_deref() == Some(toets.as_str());
@@ -562,10 +662,12 @@ pub(crate) fn wijzig(
             {
                 eprintln!("sneltoets: {oud} niet af te melden: {fout}");
             }
-            let label = toets_label(&toets);
+            let label = weergave(&toets);
             eprintln!("sneltoets: gewijzigd naar {toets}");
             status.actief = Some(label.clone());
+            status.actief_voorlezen = Some(weergave_voorlezen(&toets));
             status.is_terugval = false;
+            status.overgezet = false;
             status.gewenst.clone_from(&label);
             status.geprobeerd = vec![label];
             status.dubbel = false;
@@ -641,7 +743,10 @@ mod tests {
     fn losse_toetsen_zijn_voor_de_plugin_een_sneltoets_zonder_modifier() {
         for (tekst, code) in LOSSE_TOETSEN {
             assert!(
-                !matches!(controleer_sneltoets(tekst), Oordeel::Fout { .. }),
+                !matches!(
+                    controleer_sneltoets(tekst, Platform::Windows),
+                    Oordeel::Fout { .. }
+                ),
                 "{tekst}"
             );
             let uitkomst = tekst.parse::<Shortcut>();
@@ -658,7 +763,7 @@ mod tests {
         // wel, maar ze werken niet als houd-sneltoets.
         assert!("Pause".parse::<Shortcut>().is_ok());
         assert!(matches!(
-            controleer_sneltoets("Pause"),
+            controleer_sneltoets("Pause", Platform::Windows),
             Oordeel::Fout { .. }
         ));
     }
@@ -666,7 +771,9 @@ mod tests {
     #[test]
     fn genormaliseerde_toets_is_voor_de_plugin_dezelfde_toets() {
         let alias: Shortcut = "Ctrl+Up".parse().unwrap();
-        let canoniek: Shortcut = normaliseer_sneltoets("Ctrl+Up").parse().unwrap();
+        let canoniek: Shortcut = normaliseer_sneltoets("Ctrl+Up", Platform::Windows)
+            .parse()
+            .unwrap();
         assert_eq!(alias.key, canoniek.key);
         assert_eq!(alias.mods, canoniek.mods);
     }
@@ -680,11 +787,41 @@ mod tests {
 
     #[test]
     fn de_standaard_tweede_toets_mag_en_is_voor_de_plugin_te_lezen() {
-        assert_eq!(controleer_sneltoets(STANDAARD_OPSCHOONTOETS), Oordeel::Goed);
-        assert_ne!(STANDAARD_OPSCHOONTOETS, STANDAARD_SNELTOETS);
-        let sneltoets: Shortcut = STANDAARD_OPSCHOONTOETS.parse().unwrap();
+        let windows = Platform::Windows;
+        let opschonen = standaard_opschoontoets(windows);
+        assert_eq!(controleer_sneltoets(opschonen, windows), Oordeel::Goed);
+        assert_ne!(opschonen, standaard_sneltoets(windows));
+        let sneltoets: Shortcut = opschonen.parse().unwrap();
         assert_eq!(sneltoets.mods, Modifiers::CONTROL | Modifiers::SHIFT);
-        assert_eq!(toets_label(STANDAARD_OPSCHOONTOETS), "Ctrl+Shift+Spatie");
+        assert_eq!(toets_label(opschonen, windows), "Ctrl+Shift+Spatie");
+    }
+
+    #[test]
+    fn de_mac_standaarden_zijn_voor_de_plugin_te_lezen() {
+        // De plugin (global-hotkey 0.8.0) leest `Alt` als Option en `Super` als Cmd.
+        let mac = Platform::Mac;
+        let gewoon: Shortcut = standaard_sneltoets(mac).parse().unwrap();
+        assert_eq!(gewoon.mods, Modifiers::ALT);
+        assert_eq!(gewoon.key, Code::Space);
+        let opschonen: Shortcut = standaard_opschoontoets(mac).parse().unwrap();
+        assert_eq!(opschonen.mods, Modifiers::ALT | Modifiers::SHIFT);
+        assert_eq!(opschonen.key, Code::Space);
+        let cmd: Shortcut = normaliseer_sneltoets("Cmd+Alt+KeyD", mac).parse().unwrap();
+        assert_eq!(cmd.mods, Modifiers::SUPER | Modifiers::ALT);
+        assert_eq!(cmd.key, Code::KeyD);
+        assert_eq!(toets_label(standaard_sneltoets(mac), mac), "\u{2325}Spatie");
+    }
+
+    #[test]
+    fn info_voor_de_interface_komt_uit_de_regels_van_het_huidige_platform() {
+        let info = sneltoets_info();
+        let platform = Platform::huidig();
+        assert_eq!(info.standaard, standaard_sneltoets(platform));
+        assert_eq!(info.standaard_opschonen, standaard_opschoontoets(platform));
+        assert_eq!(info.standaard_label, toets_label(info.standaard, platform));
+        let json = serde_json::to_value(&info).unwrap();
+        assert!(json["platform"].is_string());
+        assert!(json["standaardOpschonenLabel"].is_string());
     }
 
     #[test]

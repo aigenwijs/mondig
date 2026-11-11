@@ -6,22 +6,25 @@
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
   import Copy from '@lucide/svelte/icons/copy';
   import Ellipsis from '@lucide/svelte/icons/ellipsis';
+  import AudioLines from '@lucide/svelte/icons/audio-lines';
   import FolderOpen from '@lucide/svelte/icons/folder-open';
   import Headphones from '@lucide/svelte/icons/headphones';
   import Info from '@lucide/svelte/icons/info';
-  import Pencil from '@lucide/svelte/icons/pencil';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import Monitor from '@lucide/svelte/icons/monitor';
   import NotulenPaneel from '#lib/components/NotulenPaneel.svelte';
-  import ShieldCheck from '@lucide/svelte/icons/shield-check';
   import Square from '@lucide/svelte/icons/square';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import User from '@lucide/svelte/icons/user';
   import Users from '@lucide/svelte/icons/users';
   import X from '@lucide/svelte/icons/x';
+  import BewaartermijnRegel from '#lib/components/BewaartermijnRegel.svelte';
   import EerderOpgenomen from '#lib/components/EerderOpgenomen.svelte';
   import Keuze from '#lib/components/Keuze.svelte';
+  import LijstMeer from '#lib/components/LijstMeer.svelte';
   import KlaarMoment from '#lib/components/KlaarMoment.svelte';
+  import MetaRegel from '#lib/components/MetaRegel.svelte';
+  import NaamVelden from '#lib/components/NaamVelden.svelte';
   import Niveaumeter from '#lib/components/Niveaumeter.svelte';
   import OpnieuwDialoog from '#lib/components/OpnieuwDialoog.svelte';
   import OpnieuwMelding from '#lib/components/OpnieuwMelding.svelte';
@@ -32,13 +35,13 @@
   import StartBalk from '#lib/components/StartBalk.svelte';
   import Streepjes from '#lib/components/Streepjes.svelte';
   import VerslagLijst from '#lib/components/VerslagLijst.svelte';
-  import VerslagTitel from '#lib/components/VerslagTitel.svelte';
+  import ToonInMap from '#lib/components/ToonInMap.svelte';
+  import VerwijderVraag from '#lib/components/VerwijderVraag.svelte';
   import { Button } from '#lib/components/ui/button/index.js';
   import { huidigeTaal, t } from '#lib';
   import {
     bestandBewaarBeslis,
     bestandOpenOpgeslagen,
-    bestandToonOpgeslagen,
     bewarenInstellingen,
     bewarenOpenMap,
     mapTekst,
@@ -72,8 +75,8 @@
     type KlaarMoment as KlaarGegevens
   } from '#lib/verslagkop.js';
   import type { VerslagRegel } from '#lib/verslag.js';
-  import { bewaarTotTekst, standaardTitel, verslagTitel } from '#lib/verslagtitel.js';
-  import { eersteKeuze } from '#lib/opnieuw.js';
+  import { bewaarTotTekst, soortwoord, verslagTitel } from '#lib/verslagtitel.js';
+  import { eersteKeuze, opnieuwGeslaagd } from '#lib/opnieuw.js';
   import { luisterNaarTaken } from '#lib/gebeurtenissen.js';
   import { METER_STREEPJES_LANG, streepjesAan, testgeluidSpeel } from '#lib/meter.js';
   import {
@@ -87,8 +90,9 @@
     schatResterendeSeconden,
     type Meting
   } from '#lib/resterendetijd.js';
-  import { bereikteDrempel } from '#lib/schermlezer.js';
-  import { foutVak, paginaTitel, rij, rijBediening, rijNaam, vlak } from '#lib/stijl.js';
+  import { bereikteDrempel, maakMelder } from '#lib/schermlezer.js';
+  import { foutVak, paginaTitel, rij, rijBediening, rijNaam, sectieKop, vlak } from '#lib/stijl.js';
+  import type { Naamvelden } from '#lib/naamvelden.js';
   import { foutUitCommando, meldingTekst, type Foutmelding, type Gebeurtenis } from '#lib/taak.js';
   import {
     SOORTEN,
@@ -98,16 +102,19 @@
     dagVan,
     duurMinuten,
     isNieuwer,
+    beurtNaamGetoond,
     kanAanSpreker,
-    kantNaam,
     klokTijd,
     luisterNaarNiveau,
     luisterNaarStand,
     luisterNaarStartGevraagd,
     metSysteemgeluid,
+    naamMelding,
+    nieuweStap,
     opnamesVanSoort,
     schermVan,
     sprekersVan,
+    zonderSpreker,
     toontLabels,
     vergaderingAfspeelapparaten,
     vergaderingAudioBewaren,
@@ -128,26 +135,28 @@
     vergaderingStand,
     vergaderingStart,
     vergaderingStartGevraagd,
+    vergaderingStapTerug,
     vergaderingStop,
     vergaderingUitschrijven,
     vergaderingVoegSprekersSamen,
     vergaderingWeggooien,
-    vergaderingVerslagNaam,
+    vergaderingNaamvoorbeeld,
+    vergaderingVerslagNaamvelden,
     vergaderingVerslagOpenen,
+    vergaderingVerslagToonOpgeslagen,
     vergaderingVerslagWissen,
     vergaderingVorigeTerugzetten,
     vergaderingZetTekst,
     vraagtHerinnering,
-    WACHTEND_ZICHTBAAR,
     wistBinnenkort,
     zichtbareOpnames,
     type AfspeelInfo,
-    type Kant,
+    type BeurtInfo,
     type OpnieuwKeuzes,
-    type Naambereik,
     type Niveaus,
     type OpnameInfo,
     type SprekerInfo,
+    type Sprekerstap,
     type VergaderingStand,
     type VerslagInfo,
     type Vergadersoort
@@ -210,8 +219,11 @@
   let testBezig = $state(false);
   let testFout = $state<string | null>(null);
 
-  // De lijst "Nog uit te schrijven": hooguit drie regels, de rest na "Alle N tonen".
-  let alleTonen = $state(false);
+  // De lijst "Nog uit te schrijven": eerst WACHTEND_ZICHTBAAR (drie) regels, daaronder de knop
+  // "Alle N tonen" die de rest in één keer laat zien. Er is geen "Minder tonen". Geldt voor één
+  // soort: een andere soort toont weer drie (zonder eerst alles te tekenen, zoals een effect zou
+  // doen), terug naar deze soort toont weer alles.
+  let alleTonenVoor = $state<Vergadersoort | null>(null);
 
   // De opname: de klok loopt lokaal door tussen twee standen, het niveau komt uit events.
   let klokBasis = $state<{ duurMs: number; ontvangen: number } | null>(null);
@@ -249,14 +261,30 @@
   let opnieuwGekozen = $state<string | null>(null);
   let verslagFout = $state<string | null>(null);
   let opgeslagen = $state<{ naam: string; map: MapInfo; audio: string | null } | null>(null);
+  // Een verslag dat uit de lijst is geopend en waarvan Mondig het opgeslagen bestand kent
+  // (`verslag.json`): het id voor "Tonen in Verkenner". `opening...` is het verzoek tot het
+  // verslag er is; de rest van de tijd is het `null`.
+  let heropendId = $state<string | null>(null);
+  let openingMetBestand: string | null = null;
+  /**
+   * De tekst van het verslag is veranderd (opnieuw uitgeschreven, nieuwe notulen, een wijziging):
+   * het bestand dat eerder is opgeslagen heeft dan de oude tekst, dus wijst ook
+   * "Tonen in Verkenner" van een heropend verslag er niet meer naar.
+   */
+  function vergeetOpgeslagen(): void {
+    opgeslagen = null;
+    heropendId = null;
+  }
   let bestaatAl = $state<{ vraag: number; naam: string; voorstel: string } | null>(null);
   let audioBezig = $state(false);
   let echoToon = $state(true);
   let opslaanKnop = $state<HTMLElement | null>(null);
-  // De naam van het verslag terwijl hij wordt bewerkt; `null` als dat niet zo is.
-  let bewerkNaam = $state<string | null>(null);
+  // De kaart "Naam van het bestand" van het open verslag; bewaart wat er staat vlak voor Opslaan.
+  let naamkaart = $state<{ bewaarNu: () => Promise<boolean> } | undefined>();
   // Staat de vraag "Verslag wissen?" open voor het verslag dat nu open is?
   let verslagWisVraag = $state(false);
+  // De vraag voor "Vorige versie terugzetten": terugzetten zet ook je latere wijzigingen terug.
+  let vorigeVraag = $state(false);
   // De bewaartermijn in dagen, voor de regel onder "Eerder opgenomen".
   let bewaarDagen = $state<number | null>(null);
   // Het klaar-moment direct na het uitschrijven (N-C1) en wanneer het scherm het uitschrijven zag
@@ -264,13 +292,18 @@
   let klaarMoment = $state<KlaarGegevens | null>(null);
   let uitschrijfStart: number | null = null;
   let verslagTaak = -1;
+  // De melding na een wijziging aan de sprekers, met "Ongedaan maken" zolang Rust die stap nog
+  // heeft (`sprekerstap`); een andere wijziging laat hem daar vervallen, en dan ook hier.
+  let stapZin = $state<string | null>(null);
   let verslagLijst = $state<{ wachtOpBewaren: () => Promise<void> } | undefined>();
 
   // Voor de schermlezer.
   let schermlezerZin = $state('');
-  const meld = (zin: string): void => {
+  // Eerst leegmaken: dezelfde zin twee keer achter elkaar ("10 verslagen erbij getoond")
+  // verandert de regio anders niet, en dan zegt de schermlezer niets.
+  const meld = maakMelder((zin: string) => {
     schermlezerZin = zin;
-  };
+  });
 
   // De tijd van nu voor de melding bij opnames die bijna worden gewist.
   let nuMs = $state(Date.now());
@@ -279,7 +312,7 @@
   // Alleen de opnames van de soort in de schakelaar; de andere soorten staan eronder als een
   // regel per soort, zodat geen opname onopgemerkt vanzelf gewist wordt.
   const vanSoort = $derived(opnamesVanSoort(wachtend, soort));
-  const zichtbaar = $derived(zichtbareOpnames(vanSoort, alleTonen));
+  const zichtbaar = $derived(zichtbareOpnames(vanSoort, alleTonenVoor === soort));
   const anderen = $derived(andereSoorten(wachtend, soort, nuMs));
   const microfoonWaarde = $derived(
     gekozenMic ?? (micLijst === null ? '' : gekozenWaarde(micLijst))
@@ -325,7 +358,7 @@
     if (wissel) {
       weggooi = null;
       verslagWisVraag = false;
-      bewerkNaam = null;
+      vorigeVraag = false;
       schermFout = null;
     }
     // Het uitschrijven telt alleen als dit scherm het zag beginnen; anders geen tijd tonen.
@@ -338,14 +371,20 @@
       verslagMelding = null;
       verslagFout = null;
       opgeslagen = null;
+      heropendId = openingMetBestand;
+      openingMetBestand = null;
       bestaatAl = null;
       echoToon = true;
       verslagWisVraag = false;
-      bewerkNaam = null;
+      vorigeVraag = false;
       audioBezig = false;
       tab = 'verslag';
       oplicht = null;
+      stapZin = null;
     }
+    // Na een geslaagd opnieuw uitschrijven staat er andere tekst: het bestand dat eerder is
+    // opgeslagen heeft de oude, dus "Openen" mag er niet meer naar wijzen.
+    if (opnieuwGeslaagd(vorig?.toestand, nu)) vergeetOpgeslagen();
     // Nieuwe notulen horen niet bij een bestand dat al is opgeslagen: dan is "Opgeslagen als..."
     // niet meer waar.
     if (
@@ -353,7 +392,7 @@
       vorig?.toestand.type === 'verslag' &&
       vorig.toestand.notulen.info?.momentMs !== nu.notulen.info?.momentMs
     ) {
-      opgeslagen = null;
+      vergeetOpgeslagen();
     }
     if (nu.type === 'uitschrijven' && vorig?.toestand.type !== 'uitschrijven') {
       resterend = null;
@@ -530,28 +569,17 @@
     if (await voerUit(vergaderingLater)) meld(t().vergaderLaterSchermlezer);
   }
 
-  async function vraagWeggooien(id: string | null): Promise<void> {
-    weggooi = { id };
-    await tick();
-    document.getElementById('weggooi-annuleer')?.focus();
-  }
+  // Waar de vraag "Opname verwijderen?" vandaan kwam: een opname uit de lijst, of die van nu.
+  let weggooiHerkomst: string | null = null;
 
-  async function annuleerWeggooien(): Promise<void> {
-    const was = weggooi;
-    weggooi = null;
-    await tick();
-    // Terug naar de knop van het menu waar de vraag vandaan kwam.
-    const doel =
-      was?.id != null
-        ? document.getElementById(`weg-${was.id}`)
-        : document.getElementById('meer-nu');
-    doel?.focus();
+  function vraagWeggooien(id: string | null): void {
+    weggooiHerkomst = id;
+    weggooi = { id };
   }
 
   async function bevestigWeggooien(): Promise<void> {
     const doel = weggooi;
     if (doel === null) return;
-    weggooi = null;
     const ok = await voerUit(() => vergaderingWeggooien(doel.id));
     if (ok) meld(t().vergaderWeggegooidSchermlezer);
     await focusNaWissel('klaar');
@@ -612,11 +640,16 @@
 
   async function opslaan(formaat: Formaat | null, anderePlek: boolean): Promise<void> {
     if (bezig) return;
-    await verslagLijst?.wachtOpBewaren();
-    wisMeldingen();
+    // Meteen bezig, voor het wachten: blur en dan Opslaan, of twee keer Opslaan, geeft één keer
+    // opslaan.
     bezig = true;
     opslaanActief = true;
     try {
+      await verslagLijst?.wachtOpBewaren();
+      // Wat er in de velden van de naam staat, komt in het bestand: eerst bewaren. Mislukt dat,
+      // dan staat de melding bij de kaart en slaat Mondig niets op.
+      if (naamkaart && !(await naamkaart.bewaarNu())) return;
+      wisMeldingen();
       await verwerk(await vergaderingOpslaan(formaat, anderePlek));
     } catch (e) {
       verslagFout = foutUitCommando(e, t().somsGingErIetsMis).melding;
@@ -650,15 +683,6 @@
     if (toestand.type !== 'verslag') return;
     try {
       await bestandOpenOpgeslagen(toestand.taak);
-    } catch (e) {
-      verslagFout = foutUitCommando(e, t().somsGingErIetsMis).melding;
-    }
-  }
-
-  async function toonMap(): Promise<void> {
-    if (toestand.type !== 'verslag') return;
-    try {
-      await bestandToonOpgeslagen(toestand.taak);
     } catch (e) {
       verslagFout = foutUitCommando(e, t().somsGingErIetsMis).melding;
     }
@@ -698,7 +722,7 @@
     }
     // Veranderde er niets (dezelfde tekst, een markering die al weg was), dan klopt wat er opgeslagen
     // is nog. Anders klopt de melding "Opgeslagen als..." niet meer met wat er nu staat.
-    if (verslagInhoud() !== voor) opgeslagen = null;
+    if (verslagInhoud() !== voor) vergeetOpgeslagen();
     return null;
   }
 
@@ -709,25 +733,48 @@
       toestand.beurten,
       toestand.persoon.vervangen,
       toestand.persoon.eigen,
-      toestand.naam,
+      toestand.klant,
+      toestand.onderwerp,
+      toestand.datum,
       toestand.notulen.info
     ]);
   }
 
-  /** Geeft een beurt (of alle beurten met die naam) een naam. Geeft de melding bij een fout. */
-  async function geefNaam(
-    index: number,
-    kant: Kant,
-    naam: string,
-    bereik: Naambereik
-  ): Promise<string | null> {
-    const fout = await wijzigVerslag(() => vergaderingNaam(index, naam, bereik));
-    if (fout === null) {
-      meld(
-        naam === '' ? t().vergaderNaamTerug(kantNaam(kant, t())) : t().vergaderNaamGegeven(naam)
-      );
-    }
+  /**
+   * Geeft de spreker van een beurt een naam, voor al zijn beurten. Geeft de melding bij een fout.
+   * De melding noemt wat er echt gebeurde: sprekers die samengingen, of na leegmaken de naam die er
+   * nu staat ("Spreker 2", niet "Anderen").
+   */
+  async function geefNaam(beurt: BeurtInfo, naam: string): Promise<string | null> {
+    const voor = stapNummer();
+    const fout = await wijzigVerslag(() => vergaderingNaam(beurt.index, naam));
+    const stap = nieuweStap(voor, huidigeStap());
+    if (fout === null && stap) toonStap(naamMelding(stap, t()));
     return fout;
+  }
+
+  /** De stap aan de sprekers die Rust nu heeft, of `null`. */
+  function huidigeStap(): Sprekerstap | null {
+    return toestand.type === 'verslag' ? toestand.sprekerstap : null;
+  }
+
+  function stapNummer(): number | null {
+    return huidigeStap()?.volgnummer ?? null;
+  }
+
+  function toonStap(zin: string): void {
+    stapZin = zin;
+    meld(zin);
+  }
+
+  async function zetStapTerug(): Promise<void> {
+    const fout = await wijzigVerslag(() => vergaderingStapTerug());
+    if (fout === null) {
+      stapZin = null;
+      meld(t().vergaderOngedaanGemaakt);
+    } else {
+      verslagFout = fout;
+    }
   }
 
   /** Verbetert de tekst van een beurt. Geeft de melding bij een fout. */
@@ -743,11 +790,29 @@
   /** Geeft een beurt aan een andere of nieuwe spreker (`null`). Geeft de melding bij een fout. */
   async function geefAanSpreker(index: number, nummer: number | null): Promise<string | null> {
     const naam = huidigeSprekers().find((s) => s.nummer === nummer)?.naam ?? null;
+    const voor = stapNummer();
+    const start =
+      toestand.type === 'verslag' ? toestand.beurten.find((b) => b.index === index) : null;
     const fout = await wijzigVerslag(() => vergaderingGeefAanSpreker(index, nummer));
-    if (fout === null) {
-      meld(naam === null ? t().vergaderNieuweSprekerGegeven : t().vergaderBeurtGegeven(naam));
+    if (fout === null && nieuweStap(voor, huidigeStap())) {
+      toonStap(naam === null ? t().vergaderNieuweSprekerGegeven : t().vergaderBeurtGegeven(naam));
     }
+    // De knop "Spreker aanwijzen" verdwijnt zodra de alinea een spreker heeft: de focus gaat naar
+    // het nieuwe label van die alinea, niet naar boven in het scherm.
+    if (fout === null && start) void focusLabelBij(start.startMs);
     return fout;
+  }
+
+  /** Zet de focus op het label van de alinea die `startMs` omvat (na aanwijzen kan ze samengaan). */
+  async function focusLabelBij(startMs: number): Promise<void> {
+    await tick();
+    if (toestand.type !== 'verslag') return;
+    const nu = toestand.beurten.find((b) => b.startMs <= startMs && startMs < b.eindMs);
+    if (!nu) return;
+    // Na het sluiten van de popover zet Bits de focus nog even terug; daarna pas de onze.
+    window.setTimeout(() => {
+      document.querySelector<HTMLElement>(`[data-label-beurt="${String(nu.index)}"]`)?.focus();
+    }, 0);
   }
 
   /** Voegt twee sprekers samen: alle beurten van `van` worden van `naar`. */
@@ -756,8 +821,9 @@
     const naam = (nummer: number): string =>
       sprekers.find((s) => s.nummer === nummer)?.naam ?? t().vergaderSpreker(nummer);
     const zin = t().vergaderSamengevoegd(naam(van), naam(naar));
+    const voor = stapNummer();
     const fout = await wijzigVerslag(() => vergaderingVoegSprekersSamen(van, naar));
-    if (fout === null) meld(zin);
+    if (fout === null && nieuweStap(voor, huidigeStap())) toonStap(zin);
     return fout;
   }
 
@@ -806,7 +872,20 @@
     if (ok) verslagMelding = t().opnieuwGestopt;
   }
 
+  /**
+   * De regel voor "Vorige versie terugzetten": ze blijft beschikbaar tot er opnieuw wordt
+   * uitgeschreven of het verslag sluit, wat je ook wijzigt. Terugzetten zet het hele gesprek terug
+   * zoals het was, dus ook je namen en verbeterde tekst van sindsdien; daarom eerst een vraag.
+   */
+  async function vraagVorigeTerug(): Promise<void> {
+    wisMeldingen();
+    vorigeVraag = true;
+    await tick();
+    document.getElementById('vorige-annuleer')?.focus();
+  }
+
   async function zetVorigeTerug(): Promise<void> {
+    vorigeVraag = false;
     const fout = await wijzigVerslag(() => vergaderingVorigeTerugzetten());
     if (fout === null) verslagMelding = t().opnieuwTeruggezet;
     else verslagFout = fout;
@@ -901,8 +980,16 @@
   /** Vanuit Eerder opgenomen: eerst het verslag openen, dan de dialoog. */
   async function opnieuwUitLijst(verslag: VerslagInfo): Promise<void> {
     if (bezig) return;
-    const ok = await voerUit(() => vergaderingVerslagOpenen(verslag.id));
+    const ok = await openUitLijst(verslag);
     if (ok) await vraagOpnieuw();
+  }
+
+  /** Opent een verslag uit de lijst en onthoudt of Mondig weet waar het is opgeslagen. */
+  async function openUitLijst(verslag: VerslagInfo): Promise<boolean> {
+    openingMetBestand = verslag.opgeslagenBekend ? verslag.id : null;
+    const ok = await voerUit(() => vergaderingVerslagOpenen(verslag.id));
+    openingMetBestand = null;
+    return ok;
   }
 
   // ---- Eerder opgenomen ----
@@ -910,7 +997,7 @@
   /** Opent een bewaard verslag uit de lijst; Rust weigert tijdens een opname of het uitschrijven. */
   async function openVerslag(verslag: VerslagInfo): Promise<void> {
     if (bezig) return;
-    await voerUit(() => vergaderingVerslagOpenen(verslag.id));
+    await openUitLijst(verslag);
   }
 
   /** Wist een verslag uit de lijst, na de vraag in de lijst zelf. */
@@ -920,59 +1007,43 @@
     await focusNaWissel('klaar');
   }
 
-  // ---- Wissen en de naam van het verslag ----
+  // ---- Wissen en de naam van het bestand ----
 
-  async function vraagVerslagWissen(): Promise<void> {
+  function vraagVerslagWissen(): void {
     wisMeldingen();
     verslagWisVraag = true;
-    await tick();
-    document.getElementById('verslag-wis-annuleer')?.focus();
-  }
-
-  async function annuleerVerslagWissen(): Promise<void> {
-    verslagWisVraag = false;
-    await tick();
-    document.getElementById('verslag-menu')?.focus();
   }
 
   async function bevestigVerslagWissen(): Promise<void> {
-    verslagWisVraag = false;
     const ok = await voerUit(() => vergaderingVerslagWissen(null));
     if (ok) meld(t().verslagGewistSchermlezer);
     await focusNaWissel('klaar');
   }
 
-  /** De titel wordt een invoerveld met de huidige titel erin. */
-  async function startNaamBewerken(): Promise<void> {
-    if (toestand.type !== 'verslag') return;
-    bewerkNaam = verslagTitel(toestand, t(), locale);
-    await tick();
-    const veld = document.getElementById('verslag-naam');
-    veld?.focus();
-    if (veld instanceof HTMLInputElement) veld.select();
+  /** Bewaart Klant, Onderwerp en Datum van het verslag. Geeft de melding bij een fout, anders `null`. */
+  async function bewaarNaamvelden(velden: Naamvelden): Promise<string | null> {
+    const voor = huidigeTitel();
+    const fout = await wijzigVerslag(() =>
+      vergaderingVerslagNaamvelden(velden.klant, velden.onderwerp, velden.datum)
+    );
+    // De titel verandert met de velden: zeg het voor de schermlezer, alleen als hij veranderde.
+    const na = huidigeTitel();
+    if (fout === null && na !== voor) meld(t().verslagTitelNu(na));
+    return fout;
   }
 
-  /** Bewaart de naam uit het invoerveld. Dezelfde titel als Mondig zelf maakt, of leeg, zet terug. */
-  async function bewaarNaam(): Promise<void> {
-    if (toestand.type !== 'verslag' || bewerkNaam === null) return;
-    const typed = bewerkNaam.trim();
-    const standaard = standaardTitel(toestand.soort, toestand.beginMs, t(), locale);
-    const huidig = toestand.naam ?? '';
-    const gewenst = typed === standaard ? '' : typed;
-    bewerkNaam = null;
-    if (gewenst !== huidig) {
-      const fout = await wijzigVerslag(() => vergaderingVerslagNaam(gewenst));
-      if (fout !== null) verslagFout = fout;
-      else meld(gewenst === '' ? t().verslagNaamTerug : t().verslagNaamGegeven(gewenst));
-    }
-    await tick();
-    document.getElementById('verslag-naam-knop')?.focus();
-  }
-
-  async function annuleerNaam(): Promise<void> {
-    bewerkNaam = null;
-    await tick();
-    document.getElementById('verslag-naam-knop')?.focus();
+  /** De titel zoals de kop hem toont; leeg zonder open verslag. */
+  function huidigeTitel(): string {
+    return toestand.type === 'verslag'
+      ? verslagTitel(
+          {
+            klant: toestand.klantGetoond,
+            onderwerp: toestand.onderwerpGetoond,
+            soort: toestand.soort
+          },
+          t()
+        )
+      : '';
   }
 
   // ---- Teksten ----
@@ -1105,7 +1176,6 @@
   // De naam links is kort: het keuzeveld krijgt de ruimte, zodat de volle tekst past.
   const labelKlasse = 'flex min-w-0 flex-[1_1_7rem] flex-col gap-0.5';
   const kopKlasse = `${paginaTitel} min-w-0 break-words`;
-  const gevaarKnop = 'bg-fout-tekst text-achtergrond not-aria-disabled:hover:bg-fout-tekst/90';
   const kantBalk = 'rounded-groot bg-vlak';
   // Een tekstknop als link, zoals "Opname bewaren…" onder het verslag.
   const tekstKnop =
@@ -1167,27 +1237,27 @@
 {/snippet}
 
 {#snippet weggooiVraag()}
-  <div
-    class="{vlak} flex flex-col gap-2.5 px-4 py-3.5"
-    role="alertdialog"
-    aria-labelledby="weggooi-kop"
-    aria-describedby="weggooi-uitleg"
-  >
-    <b id="weggooi-kop" class="font-semibold"
-      >{weggooi?.id != null ? t().vergaderLijstWeggooienVraag : t().vergaderWeggooienKop}</b
-    >
-    <span id="weggooi-uitleg" class="text-gedempt empty:hidden"
-      >{weggooi?.id != null ? '' : t().vergaderWeggooienTekst}</span
-    >
-    <div class="flex flex-wrap gap-2">
-      <Button class={gevaarKnop} aria-disabled={bezig} onclick={bevestigWeggooien}
-        >{t().vergaderWeggooienBevestig}</Button
-      >
-      <Button id="weggooi-annuleer" variant="spook" onclick={annuleerWeggooien}
-        >{t().annuleren}</Button
-      >
-    </div>
-  </div>
+  <!-- De vraag gaat open zodra `weggooi` gezet is; bij Annuleren terug naar de knop waar hij
+       vandaan kwam (de prullenbak in de lijst, of het menu bij de opname die loopt). -->
+  <VerwijderVraag
+    id="weggooi"
+    knop={false}
+    bind:open={
+      () => weggooi !== null,
+      (waar) => {
+        if (!waar) weggooi = null;
+      }
+    }
+    vraag={weggooi?.id != null ? t().vergaderLijstWeggooienVraag : t().vergaderWeggooienKop}
+    uitleg={weggooi?.id != null ? '' : t().vergaderWeggooienTekst}
+    bevestigTekst={t().vergaderWeggooienBevestig}
+    {bezig}
+    verwijder={bevestigWeggooien}
+    focusTerug={() =>
+      weggooiHerkomst !== null
+        ? document.getElementById(`weg-${weggooiHerkomst}`)
+        : document.getElementById('meer-nu')}
+  />
 {/snippet}
 
 {#snippet meter(label: string, bron: string, niveau: number)}
@@ -1231,25 +1301,37 @@
     <h1 id="vergader-focus" class={kopKlasse} tabindex="-1">{t().menuVergadering}</h1>
     {@render foutMelding()}
 
-    <!-- De soort als schakelaar met drie standen; pijltjes kiezen (bits-ui RadioGroup). -->
+    <!-- Wat ga je opnemen? Drie kaarten met icoon en voorbeeld; pijltjes kiezen (bits-ui
+         RadioGroup). Vanaf 640 px naast elkaar, daaronder onder elkaar (icoon links). -->
     <div class="flex flex-col gap-2">
+      <h2 id="soort-kop" class={sectieKop}>{t().vergaderSoortLabel}</h2>
       <RadioGroup.Root
         bind:value={soort}
         orientation="horizontal"
-        aria-label={t().vergaderSoortLabel}
-        aria-describedby="soort-uitleg"
-        class="inline-flex max-w-full gap-0.5 self-start rounded-[8px] border border-lijn bg-vlak p-[3px]"
+        aria-labelledby="soort-kop"
+        class="grid grid-cols-1 gap-2 sm:grid-cols-3"
       >
         {#each SOORTEN as waarde (waarde)}
+          <!-- Naam als naam, voorbeeld als beschrijving: anders leest de schermlezer bij elke
+               pijltjestoets de hele kaart voor als naam. -->
           <RadioGroup.Item
             value={waarde}
-            class="inline-flex h-[30px] cursor-pointer items-center gap-[7px] rounded-[6px] px-3.5 font-medium whitespace-nowrap max-[639px]:gap-1.5 max-[639px]:px-2.5 text-gedempt transition-colors outline-none hover:text-tekst focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus data-[state=checked]:bg-hover data-[state=checked]:text-tekst"
+            aria-labelledby="soort-naam-{waarde}"
+            aria-describedby="soort-uitleg-{waarde}"
+            class="flex cursor-pointer items-start gap-3 rounded-groot border border-lijn bg-vlak px-3.5 py-3 text-left transition-colors outline-none hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus data-[state=checked]:border-actie data-[state=checked]:bg-nieuw sm:flex-col sm:gap-2"
           >
-            {@render soortIcoon(waarde, 14)}{soortNaam(waarde)}
+            <span class="shrink-0 text-actie">{@render soortIcoon(waarde, 22)}</span>
+            <span class="flex min-w-0 flex-col gap-0.5">
+              <span id="soort-naam-{waarde}" class="font-semibold text-tekst"
+                >{soortNaam(waarde)}</span
+              >
+              <span id="soort-uitleg-{waarde}" class="text-klein text-gedempt"
+                >{soortUitleg(waarde)}</span
+              >
+            </span>
           </RadioGroup.Item>
         {/each}
       </RadioGroup.Root>
-      <p id="soort-uitleg" class="m-0 text-gedempt">{soortUitleg(soort)}</p>
     </div>
 
     <!-- De apparaten met live meters; de microfoon gaat dicht bij een ander scherm. -->
@@ -1383,94 +1465,103 @@
           </div>
           {#if bewaarDagen !== null}
             <p class="-mt-1.5 mb-0 text-klein text-dim">
-              {t().vergaderWachtendWistRegel(bewaarDagen)}
+              <BewaartermijnRegel dagen={bewaarDagen} />
             </p>
           {/if}
-          <ul class="{vlak} m-0 flex list-none flex-col p-0" aria-label={t().vergaderWachtendLabel}>
-            {#each zichtbaar as opname (opname.id)}
-              {@const wanneerTekst = wanneer(opname.beginMs)}
-              {@const wist = wistBinnenkort(opname.wistMs, nuMs)}
-              {@const wistMoment = wistZin(opname.wistMs)}
-              {@const uitleg = [
-                opname.afgesloten
-                  ? null
-                  : t().vergaderAfgebroken(wanneerTekst, duurZin(opname.duurMs)),
-                opname.onzeker ? t().vergaderOnzeker : null,
-                wistMoment
-              ]
-                .filter((z) => z !== null)
-                .join(' ')}
-              <li class="flex flex-col gap-2.5 px-4 py-2.5 [&+&]:border-t [&+&]:border-lijn">
-                <div class="flex items-center gap-3" title={uitleg === '' ? undefined : uitleg}>
-                  <p class="m-0 min-w-0 flex-1">
-                    <span>{hoofdletter(wanneerTekst)}</span>
-                    {#if opname.duurMs !== null}
-                      <span class="text-dim"
-                        ><span aria-hidden="true">·</span>
-                        {t().vergaderMinutenKort(duurMinuten(opname.duurMs))}</span
-                      >
-                    {/if}
-                    {#if !opname.afgesloten}
-                      <span class="text-dim" aria-hidden="true">·</span>
-                      <span class="text-waarsch">{t().vergaderOnderbroken}</span>
-                    {/if}
-                    {#if wist}
-                      <span class="text-dim" aria-hidden="true">·</span>
-                      <span class="text-waarsch"
-                        >{wist === 'vandaag'
-                          ? t().vergaderWistKortVandaag
-                          : t().vergaderWistKortMorgen}</span
-                      >
-                    {/if}
-                    {#if uitleg !== ''}<span class="sr-only">. {uitleg}</span>{/if}
-                  </p>
-                  <Button
-                    variant="tweede"
-                    aria-disabled={bezig}
-                    aria-label={t().vergaderLijstKnopAria(
-                      opname.afgesloten
+          <!-- Lijst en "Alle N tonen" in één vlak, zoals bij Eerder opgenomen (ontwerp scherm 3). -->
+          <div class="{vlak} flex flex-col">
+            <ul class="m-0 flex list-none flex-col p-0" aria-label={t().vergaderWachtendLabel}>
+              {#each zichtbaar as opname (opname.id)}
+                {@const wanneerTekst = wanneer(opname.beginMs)}
+                {@const wist = wistBinnenkort(opname.wistMs, nuMs)}
+                {@const wistMoment = wistZin(opname.wistMs)}
+                {@const uitleg = [
+                  opname.afgesloten
+                    ? null
+                    : t().vergaderAfgebroken(wanneerTekst, duurZin(opname.duurMs)),
+                  opname.onzeker ? t().vergaderOnzeker : null,
+                  wistMoment
+                ]
+                  .filter((z) => z !== null)
+                  .join(' ')}
+                <li class="flex flex-col gap-2.5 px-4 py-2.5 [&+&]:border-t [&+&]:border-lijn">
+                  <div class="flex items-center gap-3" title={uitleg === '' ? undefined : uitleg}>
+                    <p class="m-0 min-w-0 flex-1">
+                      <span>{hoofdletter(wanneerTekst)}</span>
+                      {#if opname.duurMs !== null}
+                        <span class="text-dim"
+                          ><span aria-hidden="true">·</span>
+                          {t().vergaderMinutenKort(duurMinuten(opname.duurMs))}</span
+                        >
+                      {/if}
+                      {#if !opname.afgesloten}
+                        <span class="text-dim" aria-hidden="true">·</span>
+                        <span class="text-waarsch">{t().vergaderOnderbroken}</span>
+                      {/if}
+                      {#if wist}
+                        <span class="text-dim" aria-hidden="true">·</span>
+                        <span class="text-waarsch"
+                          >{wist === 'vandaag'
+                            ? t().vergaderWistKortVandaag
+                            : t().vergaderWistKortMorgen}</span
+                        >
+                      {/if}
+                      {#if uitleg !== ''}<span class="sr-only">. {uitleg}</span>{/if}
+                    </p>
+                    <Button
+                      id="uitschrijf-{opname.id}"
+                      variant="tweede"
+                      aria-disabled={bezig}
+                      aria-label={t().vergaderLijstKnopAria(
+                        opname.afgesloten
+                          ? t().vergaderUitschrijvenKnop
+                          : t().vergaderHerstelUitschrijven,
+                        wanneerTekst
+                      )}
+                      onclick={() => uitOpnameLijst(opname)}
+                      >{opname.afgesloten
                         ? t().vergaderUitschrijvenKnop
-                        : t().vergaderHerstelUitschrijven,
-                      wanneerTekst
-                    )}
-                    onclick={() => uitOpnameLijst(opname)}
-                    >{opname.afgesloten
-                      ? t().vergaderUitschrijvenKnop
-                      : t().vergaderHerstelUitschrijven}</Button
-                  >
-                  <button
-                    type="button"
-                    id="weg-{opname.id}"
-                    class="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-klein text-gedempt transition-colors hover:bg-hover hover:text-tekst aria-disabled:cursor-default aria-disabled:opacity-50"
-                    aria-label={t().vergaderVerwijderAria(wanneerTekst)}
-                    title={t().vergaderVerwijderen}
-                    aria-disabled={bezig}
-                    onclick={() => {
-                      if (!bezig) void vraagWeggooien(opname.id);
-                    }}
-                  >
-                    <Trash2 size={16} aria-hidden="true" />
-                  </button>
-                </div>
-                {#if weggooi?.id === opname.id}
-                  {@render weggooiVraag()}
-                {/if}
-              </li>
-            {/each}
-          </ul>
-          {#if vanSoort.length > WACHTEND_ZICHTBAAR}
-            <button
-              type="button"
-              class="{tekstKnop} self-start text-klein"
-              aria-expanded={alleTonen}
-              onclick={() => {
-                alleTonen = !alleTonen;
+                        : t().vergaderHerstelUitschrijven}</Button
+                    >
+                    <button
+                      type="button"
+                      id="weg-{opname.id}"
+                      class="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-klein text-gedempt transition-colors hover:bg-hover hover:text-tekst aria-disabled:cursor-default aria-disabled:opacity-50"
+                      aria-label={t().vergaderVerwijderAria(wanneerTekst)}
+                      title={t().vergaderVerwijderen}
+                      aria-disabled={bezig}
+                      onclick={() => {
+                        if (!bezig) vraagWeggooien(opname.id);
+                      }}
+                    >
+                      <Trash2 size={16} aria-hidden="true" />
+                    </button>
+                  </div>
+                  {#if weggooi?.id === opname.id}
+                    {@render weggooiVraag()}
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+            <!-- Alle wachtende opnames van deze soort tegelijk, zonder telling en zonder terug. -->
+            <LijstMeer
+              id="wachtend-meer"
+              label={t().vergaderAlleTonen(vanSoort.length)}
+              getoond={zichtbaar.length}
+              totaal={vanSoort.length}
+              meer={() => {
+                alleTonenVoor = soort;
+                return Promise.resolve();
               }}
-              >{alleTonen
-                ? t().vergaderMinderTonen
-                : t().vergaderAlleTonen(vanSoort.length)}</button
-            >
-          {/if}
+              rij={(i: number) => {
+                const opname = zichtbaar[i];
+                return opname ? document.getElementById(`uitschrijf-${opname.id}`) : null;
+              }}
+              bijErbij={(erbij: number) => {
+                meld(t().vergaderOpnamesErbij(erbij));
+              }}
+            />
+          </div>
         {/if}
         {#each anderen as ander (ander.soort)}
           <button
@@ -1498,6 +1589,10 @@
       open={openVerslag}
       wis={wisUitLijst}
       opnieuw={opnieuwUitLijst}
+      bijToonFout={(melding: string) => {
+        schermFout = { melding, vervolg: 'geen' };
+      }}
+      {meld}
     />
   {:else if scherm === 'starten'}
     <h1 class={kopKlasse}>{t().menuVergadering}</h1>
@@ -1591,8 +1686,13 @@
                 if (weggooi !== null) e.preventDefault();
               }}
             >
-              <DropdownMenu.Item class={menuItem} onSelect={() => vraagWeggooien(null)}
-                >{t().vergaderOpnameWeggooien}</DropdownMenu.Item
+              <DropdownMenu.Item
+                class="{menuItem} gap-2"
+                onSelect={() => {
+                  vraagWeggooien(null);
+                }}
+                ><Trash2 size={14} aria-hidden="true" />{t()
+                  .vergaderOpnameWeggooien}</DropdownMenu.Item
               >
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
@@ -1634,52 +1734,43 @@
     </div>
     <div class="flex flex-col items-start gap-1.5 border-t border-lijn pt-4">
       <Button variant="tweede" aria-disabled={bezig} onclick={later}>{t().vergaderLater}</Button>
-      <span class="text-klein text-gedempt">{t().vergaderLaterHulp}</span>
+      <span class="text-klein text-gedempt">{t().vergaderLaterHulp(bewaarDagen)}</span>
     </div>
   {:else if toestand.type === 'verslag'}
     <!-- 5 en 6. Het verslag (N-C1): bovenaan terug en nieuw, dan de titel met zijn knoppen, één
          gegevensregel, en daaronder de werkbalk, de persoonsgegevens en de tekst zelf. -->
     {@const labels = toontLabels(toestand.soort, toestand.beurten)}
     {@const sprekers = sprekersVan(toestand.beurten, t())}
-    {@const titel = verslagTitel(toestand, t(), locale)}
+    {@const titel = verslagTitel(
+      {
+        klant: toestand.klantGetoond,
+        onderwerp: toestand.onderwerpGetoond,
+        soort: toestand.soort
+      },
+      t()
+    )}
     {@const aantal = aantalSprekers(toestand.beurten)}
     {@const rol = toestand.modelRol ?? modelRol(toestand.model, modellenStand.overzicht)}
     {@const bewaarZin = bewaarTotTekst(toestand.wistMs, nuMs, t(), locale)}
-    <div class="-mt-2 -mb-1.5 -ml-2 flex items-center gap-2">
-      <Button
-        variant="spook"
-        aria-disabled={bezig}
-        title={t().verslagSluitenTitel}
-        onclick={() => sluit(false)}
-        ><ArrowLeft size={16} aria-hidden="true" />{t().verslagSluiten}</Button
-      >
-      <Button
-        variant="spook"
-        class="ml-auto"
-        aria-disabled={bezig}
-        title={t().verslagSluitenTitel}
-        onclick={() => sluit(false)}><RingIcoon grootte={11} />{t().verslagNieuweOpname}</Button
-      >
-    </div>
-    {#if verslagWisVraag}
-      <div
-        class="{vlak} flex flex-col gap-2.5 px-4 py-3.5"
-        role="alertdialog"
-        aria-labelledby="verslag-wis-kop"
-        aria-describedby="verslag-wis-uitleg"
-      >
-        <b id="verslag-wis-kop" class="font-semibold">{t().verslagWissenKop}</b>
-        <span id="verslag-wis-uitleg" class="text-gedempt">{t().verslagWissenTekst}</span>
-        <div class="flex flex-wrap gap-2">
-          <Button class={gevaarKnop} aria-disabled={bezig} onclick={bevestigVerslagWissen}
-            >{t().verslagWissenBevestig}</Button
-          >
-          <Button id="verslag-wis-annuleer" variant="spook" onclick={annuleerVerslagWissen}
-            >{t().annuleren}</Button
-          >
-        </div>
-      </div>
-    {/if}
+    {@const modelTekst =
+      rol === 'snel'
+        ? t().verslagModelSnel
+        : rol === 'nauwkeurig'
+          ? t().verslagModelNauwkeurig
+          : rol === 'extra_nauwkeurig'
+            ? t().verslagModelExtraNauwkeurig
+            : toestand.model}
+    <VerwijderVraag
+      id="verslag-wis"
+      knop={false}
+      bind:open={verslagWisVraag}
+      vraag={t().verslagWissenKop}
+      uitleg={t().verslagWissenTekst}
+      bevestigTekst={t().verslagWissenBevestig}
+      {bezig}
+      verwijder={bevestigVerslagWissen}
+      focusTerug={() => document.getElementById('verslag-menu')}
+    />
     {#if klaarMoment}
       <KlaarMoment
         zin={klaarZin(klaarMoment, t())}
@@ -1688,126 +1779,146 @@
         }}
       />
     {/if}
-    <div class="flex items-center gap-2">
-      <VerslagTitel
-        {titel}
-        bind:waarde={bewerkNaam}
-        start={startNaamBewerken}
-        bewaar={bewaarNaam}
-        annuleer={annuleerNaam}
-      />
-      <Button
-        variant="tweede"
-        class="max-[639px]:w-8 max-[639px]:px-0"
-        title={t().kopieren}
-        onclick={kopieer}
-        ><Copy size={16} aria-hidden="true" /><span class="max-[639px]:sr-only">{t().kopieren}</span
-        ></Button
-      >
-      <OpslaanKnop
-        standaard={standaardFormaat}
-        {bezig}
-        kort
-        bind:ref={opslaanKnop}
-        opslaan={(formaat: Formaat | null, anderePlek: boolean) => {
-          void opslaan(formaat, anderePlek);
-        }}
-      />
-      <!-- Opnieuw uitschrijven (N-C4), de opname als geluid, de naam en wissen. -->
-      <DropdownMenu.Root>
-        <DropdownMenu.Trigger>
-          {#snippet child({ props })}
-            <Button
-              {...props}
-              id="verslag-menu"
-              variant="tweede"
-              size="icoon"
-              aria-label={t().verslagMenu}
-              title={t().verslagMenu}
-            >
-              <Ellipsis size={16} aria-hidden="true" />
-            </Button>
-          {/snippet}
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            align="end"
-            sideOffset={6}
-            class={menuInhoud}
-            onCloseAutoFocus={(e) => {
-              // De focus gaat naar het invoerveld, de vraag of de dialoog, niet terug naar de menuknop.
-              if (bewerkNaam !== null || verslagWisVraag || opnieuwOpen) e.preventDefault();
+    <!-- De knoppenrij: terug en een nieuwe opname links, kopiëren, opslaan en het menu rechts. De
+         titel staat op een eigen regel eronder, zodat hij mag afbreken (UI-check punt 11). -->
+    <div class="-mt-2 -mb-1.5 flex flex-wrap items-center gap-2">
+      <div class="-ml-2 flex items-center gap-2">
+        <Button
+          variant="spook"
+          aria-disabled={bezig}
+          title={t().verslagSluitenTitel}
+          onclick={() => sluit(false)}
+          ><ArrowLeft size={16} aria-hidden="true" />{t().verslagSluiten}</Button
+        >
+        <Button
+          variant="spook"
+          aria-disabled={bezig}
+          title={t().verslagSluitenTitel}
+          onclick={() => sluit(false)}><RingIcoon grootte={11} />{t().verslagNieuweOpname}</Button
+        >
+      </div>
+      <div class="ml-auto flex items-center gap-2">
+        {#if heropendId !== null && opgeslagen === null}
+          {@const verslagId = heropendId}
+          <!-- Een heropend verslag: het bestand dat Mondig eerder opsloeg (pad in verslag.json). Na
+               een nieuwe keer opslaan staat de knop in de balk "Opgeslagen". -->
+          <ToonInMap
+            toon={() => vergaderingVerslagToonOpgeslagen(verslagId)}
+            bijFout={(melding: string) => {
+              verslagFout = melding;
             }}
-          >
-            {#if toestand.opnameAanwezig}
-              <DropdownMenu.Item
-                class="{menuItem} gap-2"
-                disabled={toestand.opnieuw !== null}
-                onSelect={() => {
-                  void vraagOpnieuw();
-                }}><RefreshCw size={14} aria-hidden="true" />{t().opnieuwMenu}</DropdownMenu.Item
+          />
+        {/if}
+        <Button
+          variant="tweede"
+          class="max-[639px]:w-8 max-[639px]:px-0"
+          title={t().kopieren}
+          onclick={kopieer}
+          ><Copy size={16} aria-hidden="true" /><span class="max-[639px]:sr-only"
+            >{t().kopieren}</span
+          ></Button
+        >
+        <OpslaanKnop
+          standaard={standaardFormaat}
+          {bezig}
+          kort
+          bind:ref={opslaanKnop}
+          opslaan={(formaat: Formaat | null, anderePlek: boolean) => {
+            void opslaan(formaat, anderePlek);
+          }}
+        />
+        <!-- Opnieuw uitschrijven (N-C4), de opname als geluid en wissen. -->
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger>
+            {#snippet child({ props })}
+              <Button
+                {...props}
+                id="verslag-menu"
+                variant="tweede"
+                size="icoon"
+                aria-label={t().verslagMenu}
+                title={t().verslagMenu}
               >
-            {:else}
-              <DropdownMenu.Item
-                class="flex cursor-default items-start gap-2 rounded-klein px-2.5 py-1.5 text-basis text-dim outline-none select-none"
-                disabled
-                ><RefreshCw size={14} class="mt-1 shrink-0" aria-hidden="true" /><span
-                  class="flex flex-col"
-                  >{t().opnieuwGewistMenu}<small class="text-klein">{t().opnieuwGewistReden}</small
-                  ></span
-                ></DropdownMenu.Item
-              >
-            {/if}
-            <DropdownMenu.Item class="{menuItem} gap-2" onSelect={startNaamBewerken}
-              ><Pencil size={14} aria-hidden="true" />{t().verslagNaamWijzigen}</DropdownMenu.Item
+                <Ellipsis size={16} aria-hidden="true" />
+              </Button>
+            {/snippet}
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              align="end"
+              sideOffset={6}
+              class={menuInhoud}
+              onCloseAutoFocus={(e) => {
+                // De focus gaat naar de vraag of de dialoog, niet terug naar de menuknop.
+                if (verslagWisVraag || opnieuwOpen) e.preventDefault();
+              }}
             >
-            {#if toestand.audioAanwezig}
-              <DropdownMenu.Item class={menuItem} onSelect={bewaarAudio}
-                >{t().vergaderAudioBewarenMenu}</DropdownMenu.Item
+              {#if toestand.opnameAanwezig}
+                <DropdownMenu.Item
+                  class="{menuItem} gap-2"
+                  disabled={toestand.opnieuw !== null}
+                  onSelect={() => {
+                    void vraagOpnieuw();
+                  }}><RefreshCw size={14} aria-hidden="true" />{t().opnieuwMenu}</DropdownMenu.Item
+                >
+              {:else}
+                <DropdownMenu.Item
+                  class="flex cursor-default items-start gap-2 rounded-klein px-2.5 py-1.5 text-basis text-dim outline-none select-none"
+                  disabled
+                  ><RefreshCw size={14} class="mt-1 shrink-0" aria-hidden="true" /><span
+                    class="flex flex-col"
+                    >{t().opnieuwGewistMenu}<small class="text-klein"
+                      >{t().opnieuwGewistReden}</small
+                    ></span
+                  ></DropdownMenu.Item
+                >
+              {/if}
+              {#if toestand.audioAanwezig}
+                <DropdownMenu.Item class="{menuItem} gap-2" onSelect={bewaarAudio}
+                  ><AudioLines size={14} aria-hidden="true" />{t()
+                    .vergaderAudioBewarenMenu}</DropdownMenu.Item
+                >
+              {/if}
+              <DropdownMenu.Separator class="my-1 h-px bg-lijn" />
+              <DropdownMenu.Item
+                class="{menuItem} gap-2 text-fout-tekst"
+                onSelect={vraagVerslagWissen}
+                ><Trash2 size={14} aria-hidden="true" />{t().verslagWissenMenu}</DropdownMenu.Item
               >
-            {/if}
-            <DropdownMenu.Separator class="my-1 h-px bg-lijn" />
-            <DropdownMenu.Item
-              class="{menuItem} gap-2 text-fout-tekst"
-              onSelect={vraagVerslagWissen}
-              ><Trash2 size={14} aria-hidden="true" />{t().verslagWissenMenu}</DropdownMenu.Item
-            >
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      </div>
     </div>
 
-    <!-- Eén gegevensregel, als gedempte tekst met middenpunten. -->
-    <p class="m-0 -mt-3 flex flex-wrap items-center gap-x-1.5 text-klein text-dim">
-      <span>{hoofdletter(wanneer(toestand.beginMs))}</span><span aria-hidden="true">·</span>
-      <span>{t().vergaderMinutenKort(duurMinuten(toestand.duurMs))}</span>
-      {#if aantal !== null}<span aria-hidden="true">·</span><span
-          >{t().verslagSprekers(aantal)}</span
-        >{/if}
-      {#if toestand.soort === 'ruimte'}<span aria-hidden="true">·</span><span
-          >{t().vergaderInDeRuimte}</span
-        >{/if}
-      <span aria-hidden="true">·</span>
-      <span title={t().uitgeschrevenMet(toestand.model)}
-        >{rol === 'snel'
-          ? t().verslagModelSnel
-          : rol === 'nauwkeurig'
-            ? t().verslagModelNauwkeurig
-            : rol === 'extra_nauwkeurig'
-              ? t().verslagModelExtraNauwkeurig
-              : toestand.model}<span class="sr-only">, {t().uitgeschrevenMet(toestand.model)}</span
-        ></span
-      >
-      <span aria-hidden="true">·</span>
-      <span class="inline-flex items-center gap-1"
-        ><ShieldCheck size={14} class="text-actie" aria-hidden="true" />{t().opDezeComputer}</span
-      >
-      {#if bewaarZin}
-        <span class="inline-flex gap-x-1.5 whitespace-nowrap"
-          ><span aria-hidden="true">·</span>{bewaarZin}</span
-        >
-      {/if}
-    </p>
+    <!-- De titel volgt Klant en Onderwerp (UI-E, keuze A) en breekt zo nodig af; daaronder de
+         metaregel (ontwerpsysteem §4 en §5) en de kaart "Naam van het bestand". -->
+    <div class="flex flex-col gap-1">
+      <h1 id="vergader-focus" class="{paginaTitel} break-words" tabindex="-1">{titel}</h1>
+      <MetaRegel
+        soort={soortNaam(toestand.soort)}
+        datumMs={toestand.beginMs}
+        metTijd
+        duurMs={toestand.duurMs}
+        extra={aantal !== null ? [t().verslagSprekers(aantal)] : []}
+        plek={t().opDezeComputer}
+        plekIcoon
+        plekTitel={modelTekst}
+        plekSr={t().uitgeschrevenMet(toestand.model)}
+        staart={bewaarZin ? [bewaarZin] : []}
+      />
+    </div>
+    <NaamVelden
+      id="verslag"
+      bind:this={naamkaart}
+      velden={{
+        klant: toestand.klant,
+        onderwerp: toestand.onderwerp ?? soortwoord(toestand.soort, t()),
+        datum: toestand.datum
+      }}
+      haalVoorbeeld={(v: Naamvelden) => vergaderingNaamvoorbeeld(v.klant, v.onderwerp, v.datum)}
+      bewaar={bewaarNaamvelden}
+    />
 
     <!-- De tabbladen Verslag en Notulen (T3): onder de gegevensregel, want twee tekstkolommen
          naast elkaar zijn op 900 breed niet leesbaar. -->
@@ -1849,7 +1960,39 @@
     {#if toestand.opnieuw}
       <OpnieuwVoortgang stand={toestand.opnieuw} {bezig} stop={stopOpnieuw} />
     {:else if toestand.naOpnieuw && toestand.vorigeVersie}
-      <OpnieuwMelding na={toestand.naOpnieuw} {bezig} terug={zetVorigeTerug} />
+      <OpnieuwMelding na={toestand.naOpnieuw} {bezig} terug={vraagVorigeTerug} />
+      {#if vorigeVraag}
+        <div
+          class="{vlak} flex flex-col gap-2.5 px-4 py-3.5"
+          role="alertdialog"
+          aria-labelledby="vorige-kop"
+          aria-describedby="vorige-uitleg"
+        >
+          <b id="vorige-kop" class="font-semibold">{t().opnieuwTerugzettenKop}</b>
+          <span id="vorige-uitleg" class="text-gedempt">{t().opnieuwTerugzettenTekst}</span>
+          <div class="flex flex-wrap gap-2">
+            <Button variant="tweede" aria-disabled={bezig} onclick={zetVorigeTerug}
+              >{t().opnieuwTerugzettenBevestig}</Button
+            >
+            <Button id="vorige-annuleer" variant="spook" onclick={() => (vorigeVraag = false)}
+              >{t().annuleren}</Button
+            >
+          </div>
+        </div>
+      {/if}
+    {/if}
+
+    <!-- Na een naam, samenvoegen of een andere spreker: wat er gebeurde, met Ongedaan maken. -->
+    {#if toestand.sprekerstap && stapZin}
+      <div
+        class="flex flex-wrap items-center gap-2.5 rounded-groot border border-lijn bg-vlak py-2.5 pr-3 pl-3.5"
+        role="status"
+      >
+        <span class="min-w-0 flex-1 text-klein" data-testid="sprekerstap">{stapZin}</span>
+        <Button variant="spook" aria-disabled={bezig} onclick={() => void zetStapTerug()}
+          >{t().vergaderOngedaanMaken}</Button
+        >
+      </div>
     {/if}
 
     <!-- Wat er net gebeurde: kopiëren, bezig, opgeslagen, de vraag, of een fout. -->
@@ -1887,7 +2030,12 @@
           >
           <span class="ml-auto flex gap-1.5">
             <Button variant="tweede" onclick={openen}>{t().opgeslagenOpenen}</Button>
-            <Button variant="spook" onclick={toonMap}>{t().opgeslagenMapTonen}</Button>
+            <ToonInMap
+              taak={toestand.taak}
+              bijFout={(melding: string) => {
+                verslagFout = melding;
+              }}
+            />
           </span>
         </div>
       {/if}
@@ -1950,7 +2098,9 @@
             eindMs: b.eindMs,
             tekst: b.tekst,
             markeringen: b.markeringen,
-            veranderd: b.veranderd
+            veranderd: b.veranderd,
+            // Een alinea zonder spreker heeft geen naam: zoeken vindt er geen "Jij" in.
+            naam: labels && !zonderSpreker(soort, b) ? beurtNaamGetoond(b, t()) : undefined
           }))}
           {labels}
           lijstLabel={t().vergaderBeurtenLabel}
@@ -1962,18 +2112,40 @@
           haalAudio={toestand.audioAanwezig ? vergaderingAudioStuk : null}
           geenGeluid={t().verslagGeenGeluidOpname}
           opgelicht={oplicht}
+          inBeeld={tab === 'verslag'}
         >
           {#snippet label(regel: VerslagRegel)}
             {@const beurt = beurten.find((b) => b.index === regel.sleutel)}
-            {#if beurt}
+            {#if beurt && zonderSpreker(soort, beurt)}
+              <SprekerNaam
+                {beurt}
+                {sprekers}
+                aanwijzen="kolom"
+                kanAanSpreker
+                geef={(naam: string) => geefNaam(beurt, naam)}
+                wijsToe={(nummer: number | null) => geefAanSpreker(beurt.index, nummer)}
+              />
+            {:else if beurt}
               <SprekerNaam
                 {beurt}
                 {sprekers}
                 kanAanSpreker={kanAanSpreker(soort, beurten, beurt)}
-                geef={(naam: string, bereik: Naambereik) =>
-                  geefNaam(beurt.index, beurt.kant, naam, bereik)}
+                geef={(naam: string) => geefNaam(beurt, naam)}
                 wijsToe={(nummer: number | null) => geefAanSpreker(beurt.index, nummer)}
                 voegSamen={(naar: number) => voegSamen(beurt.sprekernummer ?? naar, naar)}
+              />
+            {/if}
+          {/snippet}
+          {#snippet aanwijs(regel: VerslagRegel)}
+            {@const beurt = beurten.find((b) => b.index === regel.sleutel)}
+            {#if beurt && kanAanSpreker(soort, beurten, beurt)}
+              <SprekerNaam
+                {beurt}
+                {sprekers}
+                aanwijzen="rij"
+                kanAanSpreker
+                geef={(naam: string) => geefNaam(beurt, naam)}
+                wijsToe={(nummer: number | null) => geefAanSpreker(beurt.index, nummer)}
               />
             {/if}
           {/snippet}

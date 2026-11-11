@@ -1,9 +1,16 @@
 [workspace]
 resolver = "3"
-members = ["crates/mondig-core", "crates/mondig-cli", "crates/mondig-engine", "app/src-tauri"]
+members = [
+  "crates/mondig-core",
+  "crates/mondig-cli",
+  "crates/mondig-engine",
+  "crates/mondig-mac",
+  "crates/mondig-mac-slepen",
+  "app/src-tauri",
+]
 
 [workspace.package]
-version = "0.3.0-dev"
+version = "0.6.0-dev"
 edition = "2024"
 # 1.92: de minimale versie van krilla (ADR 0017).
 rust-version = "1.92"
